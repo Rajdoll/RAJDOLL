@@ -1,0 +1,81 @@
+﻿# Append this to file_upload.py before __all__
+
+async def discover_upload_endpoints(
+    base_url: str,
+    auth_session: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Discover file upload endpoints on the target application.
+    
+    Searches for:
+    - Common upload paths (/upload, /file-upload, /api/upload, etc.)
+    - Forms with <input type="file">
+    - API endpoints accepting multipart/form-data
+    
+    OWASP Reference: WSTG-INFO-06 (Entry Point Discovery)
+    """
+    endpoints = []
+    
+    common_paths = [
+        "/upload", "/file-upload", "/fileupload", "/api/upload",
+        "/api/file", "/api/files", "/upload.php", "/upload.jsp",
+        "/upload.aspx", "/profile/upload", "/user/upload",
+        "/admin/upload", "/files/upload", "/media/upload",
+        "/content/upload", "/image/upload", "/images/upload",
+        "/attachments/upload", "/documents/upload",
+    ]
+    
+    headers = _build_headers(auth_session)
+    
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for path in common_paths:
+            test_url = base_url.rstrip('/') + path
+            try:
+                response = await client.get(test_url, headers=headers)
+                
+                if response.status_code < 500:
+                    has_file_input = '<input' in response.text.lower() and ('type="file"' in response.text.lower() or "type='file'" in response.text.lower())
+                    accepts_multipart = 'multipart/form-data' in response.text.lower()
+                    
+                    if has_file_input or accepts_multipart or response.status_code == 200:
+                        endpoints.append({
+                            "url": test_url,
+                            "method": "GET",
+                            "status": response.status_code,
+                            "has_file_input": has_file_input,
+                            "accepts_multipart": accepts_multipart,
+                        })
+            except Exception:
+                pass
+        
+        try:
+            response = await client.get(base_url, headers=headers)
+            if response.status_code == 200:
+                import re
+                form_pattern = r'<form[^>]*action="([^"]*)"[^>]*>.*?<input[^>]*type=["\']file["\'][^>]*>.*?</form>'
+                matches = re.findall(form_pattern, response.text, re.IGNORECASE | re.DOTALL)
+                
+                for form_action in matches:
+                    if form_action.startswith('/'):
+                        form_url = base_url.rstrip('/') + form_action
+                    elif form_action.startswith('http'):
+                        form_url = form_action
+                    else:
+                        form_url = base_url.rstrip('/') + '/' + form_action
+                    
+                    if form_url not in [ep["url"] for ep in endpoints]:
+                        endpoints.append({
+                            "url": form_url,
+                            "method": "POST",
+                            "status": 200,
+                            "has_file_input": True,
+                            "accepts_multipart": True,
+                        })
+        except Exception:
+            pass
+    
+    return {
+        "discovered": len(endpoints) > 0,
+        "endpoints": endpoints,
+        "message": f"Discovered {len(endpoints)} potential upload endpoints" if endpoints else "No upload endpoints discovered"
+    }

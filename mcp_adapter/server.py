@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+import asyncio
+import importlib.util
+import inspect
+import json
+import os
+import shlex
+from typing import Any, Dict, Optional
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+
+app = FastAPI(title="MCP JSON-RPC Adapter", version="0.1.0")
+
+
+def _load_module(module_path: str):
+    if not os.path.exists(module_path):
+        raise FileNotFoundError(f"Module file not found: {module_path}")
+    spec = importlib.util.spec_from_file_location("_mcp_module", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    return module
+
+
+class ToolsCallParams(BaseModel):
+    name: str
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+
+
+class JsonRpcRequest(BaseModel):
+    jsonrpc: str
+    id: Optional[int | str]
+    method: str
+    params: Optional[Dict[str, Any]] = None
+
+
+def _monkeypatch_module(mod: Any, module_path: str) -> None:
+    """
+    Make common runtime adjustments so host-developed MCP scripts run inside Docker:
+    - Replace execute_wsl_command with a local shell executor (no WSL in Linux containers)
+    - Rewrite Windows-specific BASE_OUTPUT_DIR to a container path and recompute derived dirs
+    """
+    # 1) Replace execute_wsl_command if present
+    if hasattr(mod, "execute_wsl_command"):
+        async def execute_local_command(command: str, timeout: int = 60, capture_stderr: bool = True) -> Dict[str, Any]:
+            try:
+                # Run using bash -lc to support pipes and env, without WSL
+                proc = await asyncio.create_subprocess_exec(
+                    "bash", "-lc", command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE if capture_stderr else asyncio.subprocess.DEVNULL,
+                )
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    proc.terminate()
+                    await proc.wait()
+                    return {
+                        "success": False,
+                        "stdout": "",
+                        "stderr": "",
+                        "error": f"Command timed out after {timeout}s",
+                        "return_code": -1,
+                    }
+
+                stdout_str = stdout.decode("utf-8", errors="ignore").strip() if stdout else ""
+                stderr_str = stderr.decode("utf-8", errors="ignore").strip() if stderr else ""
+                return {
+                    "success": proc.returncode == 0,
+                    "stdout": stdout_str,
+                    "stderr": stderr_str,
+                    "error": stderr_str if proc.returncode != 0 else None,
+                    "return_code": proc.returncode,
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "stdout": "",
+                    "stderr": "",
+                    "error": f"Command execution error: {str(e)}",
+                    "return_code": -1,
+                }
+
+        setattr(mod, "execute_wsl_command", execute_local_command)
+
+    # 2) Rewrite Windows paths if detected
+    try:
+        base_dir = getattr(mod, "BASE_OUTPUT_DIR", None)
+        if isinstance(base_dir, str) and base_dir.lower().startswith("/mnt/"):
+            new_base = os.path.join(os.path.dirname(module_path), "output")
+            os.makedirs(new_base, exist_ok=True)
+            setattr(mod, "BASE_OUTPUT_DIR", new_base)
+            # Recompute common derived dirs when present
+            if hasattr(mod, "SUBRESULT_DIR"):
+                setattr(mod, "SUBRESULT_DIR", os.path.join(new_base, "subresult"))
+                os.makedirs(getattr(mod, "SUBRESULT_DIR"), exist_ok=True)
+            if hasattr(mod, "LOGS_DIR"):
+                setattr(mod, "LOGS_DIR", os.path.join(new_base, "logs"))
+                os.makedirs(getattr(mod, "LOGS_DIR"), exist_ok=True)
+    except Exception:
+        # Non-fatal; best-effort adjustments only
+        pass
+
+
+@app.post("/jsonrpc")
+async def jsonrpc_endpoint(req: JsonRpcRequest):
+    if req.jsonrpc != "2.0":
+        raise HTTPException(status_code=400, detail="Only JSON-RPC 2.0 is supported")
+
+    try:
+        if req.method != "tools/call":
+            return {"jsonrpc": "2.0", "id": req.id, "error": {"code": -32601, "message": "Method not found"}}
+
+        if not isinstance(req.params, dict):
+            return {"jsonrpc": "2.0", "id": req.id, "error": {"code": -32602, "message": "Invalid params"}}
+
+        params = ToolsCallParams(**req.params)
+        module_path = os.getenv("MODULE_PATH")
+        if not module_path:
+            return {"jsonrpc": "2.0", "id": req.id, "error": {"code": -32000, "message": "MODULE_PATH not configured"}}
+
+        mod = _load_module(module_path)
+        # Adjust environment for containerized execution
+        _monkeypatch_module(mod, module_path)
+        fn = getattr(mod, params.name, None)
+        if not callable(fn):
+            return {"jsonrpc": "2.0", "id": req.id, "error": {"code": -32601, "message": f"Tool not found: {params.name}"}}
+
+        # 🔑 STRIP AUTH PARAMETERS: Remove _auth_* parameters before calling tool functions
+        # These are metadata from MCPClient for authenticated testing, not tool parameters
+        filtered_args = {
+            k: v for k, v in params.arguments.items()
+            if not k.startswith('_auth_')
+        }
+        
+        # Extract auth data for potential future use (tools can access via closure if needed)
+        auth_cookies = params.arguments.get('_auth_cookies')
+        auth_headers = params.arguments.get('_auth_headers')
+        auth_token = params.arguments.get('_auth_token')
+
+        async def _runner():
+            if inspect.iscoroutinefunction(fn):
+                return await fn(**filtered_args)
+            # Run sync function off the main loop
+            return await asyncio.to_thread(fn, **filtered_args)
+
+        result = await _runner()
+        # Ensure result is JSON-serializable; fallback to string
+        try:
+            json.dumps(result)
+            serializable = result
+        except TypeError:
+            serializable = json.loads(json.dumps(result, default=str))
+
+        return {"jsonrpc": "2.0", "id": req.id, "result": serializable}
+
+    except Exception as e:
+        return {"jsonrpc": "2.0", "id": req.id, "error": {"code": -32001, "message": str(e)}}

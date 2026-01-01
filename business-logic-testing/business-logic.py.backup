@@ -1,0 +1,228 @@
+from mcp.server.fastmcp import FastMCP
+import asyncio
+import httpx
+import random
+import string
+import re
+import json
+import time
+from typing import Dict, Any, List, Optional
+from urllib.parse import urlparse, parse_qs, urlunparse
+
+mcp = FastMCP("business-logic-testing")
+
+# --- Helpers ---
+async def req(method: str, url: str, **kwargs) -> Optional[httpx.Response]:
+    try:
+        async with httpx.AsyncClient(timeout=8, follow_redirects=False, verify=False) as cli:
+            return await cli.request(method, url, **kwargs)
+    except Exception:
+        return None
+
+# --- Tools (Revisi, Peningkatan & Baru) ---
+
+@mcp.tool()
+async def test_data_validation_extremes(url_with_fuzz: str) -> Dict[str, Any]:
+    """
+    [REVISI] Sends boundary and bogus values to a parameter to test data validation.
+    Uses ffuf's JSON output for reliable parsing.
+    """
+    try:
+        # Menggunakan file sementara untuk output JSON ffuf
+        output_file = f"/tmp/bl_val_{random.randint(1000, 9999)}.json"
+        # Wordlist: 0, 1 (batas bawah), 999999 (angka besar), -1 (negatif), abc (string)
+        cmd = f"ffuf -u '{url_with_fuzz}' -w -:0,1,999999,-1,abc -mc all -of json -o {output_file}"
+        proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await proc.communicate()
+
+        if not os.path.exists(output_file):
+            return {"status": "error", "message": "ffuf did not produce an output file."}
+
+        with open(output_file, 'r') as f:
+            results = json.load(f).get("results", [])
+        os.remove(output_file)
+
+        # Cari respons yang tidak biasa, terutama error server (5xx)
+        interesting_results = [r for r in results if r['status'] >= 500 or r['length'] == 0]
+        return {"status": "success", "data": {"results": interesting_results}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_parameter_tampering(url: str, param_to_remove: str) -> Dict[str, Any]:
+    """
+    [PENINGKATAN] Removes a specified parameter from a URL to see if the server-side logic is affected.
+    """
+    try:
+        # Hapus parameter yang ditentukan dari URL
+        parsed_url = urlparse(url)
+        params = parse_qs(parsed_url.query)
+        if param_to_remove in params:
+            del params[param_to_remove]
+        
+        new_query = urlencode(params, doseq=True)
+        stripped_url = urlunparse(parsed_url._replace(query=new_query))
+
+        original_resp = await req("GET", url)
+        stripped_resp = await req("GET", stripped_url)
+
+        if not original_resp or not stripped_resp:
+            return {"status": "error", "message": "One or more requests failed."}
+
+        is_different = (original_resp.status_code != stripped_resp.status_code) or \
+                       (abs(len(original_resp.content) - len(stripped_resp.content)) > 50) # Toleransi kecil
+
+        return {"status": "success", "data": {
+            "tampering_detected": not is_different,
+            "original_response": {"status": original_resp.status_code, "length": len(original_resp.content)},
+            "tampered_response": {"status": stripped_resp.status_code, "length": len(stripped_resp.content)},
+            "description": "If responses are similar, the server may not be re-validating data after parameter removal."
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_mass_assignment(url: str, method: str, valid_data: Dict[str, Any], evil_params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    [BARU] Tests for Mass Assignment by submitting extra, unauthorized parameters.
+    Example evil_params: {"isAdmin": True, "account_balance": 9999}
+    """
+    try:
+        # Gabungkan data valid dengan parameter jahat
+        payload = {**valid_data, **evil_params}
+        
+        resp = await req(method.upper(), url, json=payload if method.upper() in ["POST", "PUT"] else None, data=payload if method.upper() == "POST" else None)
+
+        if not resp:
+            return {"status": "error", "message": "Request failed."}
+
+        return {"status": "success", "data": {
+            "url": url,
+            "method": method,
+            "payload_sent": payload,
+            "response_status": resp.status_code,
+            "response_body_preview": resp.text[:500],
+            "instructions": "Manually verify if the evil parameters (e.g., isAdmin) were successfully saved by checking the user's profile or state."
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_process_timing_race_condition(url: str, method: str, runs: int = 10) -> Dict[str, Any]:
+    """
+    [REVISI] Fires N concurrent requests to test for race conditions (e.g., double-spend).
+    """
+    try:
+        async def fire():
+            # Menambahkan data acak untuk memastikan setiap request unik jika diperlukan
+            return await req(method.upper(), url, json={"item_id": 1, "nonce": random.randint(10000, 99999)})
+
+        tasks = [fire() for _ in range(runs)]
+        responses = await asyncio.gather(*tasks)
+        
+        status_codes = [r.status_code if r else 0 for r in responses]
+        
+        # Kerentanan mungkin ada jika beberapa request berhasil (200) sementara yang lain gagal (4xx)
+        successful_requests = status_codes.count(200) + status_codes.count(201)
+        
+        return {"status": "success", "data": {
+            "total_requests": runs,
+            "status_codes_received": status_codes,
+            "successful_requests": successful_requests,
+            "description": f"Received {successful_requests} successful statuses out of {runs}. If > 1, may indicate a race condition."
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_usage_limits_burst(url: str, method: str, burst_count: int = 20) -> Dict[str, Any]:
+    """
+    [PENINGKATAN] Hits an endpoint with a rapid burst of concurrent requests to test rate-limiting.
+    """
+    try:
+        async def fire():
+            return await req(method.upper(), url)
+
+        tasks = [fire() for _ in range(burst_count)]
+        responses = await asyncio.gather(*tasks)
+
+        status_codes = [r.status_code if r else 0 for r in responses]
+        rate_limit_triggered = 429 in status_codes
+        
+        return {"status": "success", "data": {
+            "total_requests": burst_count,
+            "status_codes_received": status_codes,
+            "rate_limit_enforced": rate_limit_triggered
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_file_upload_logic(upload_url: str, filename: str, content: bytes, content_type: str) -> Dict[str, Any]:
+    """
+    [KONSOLIDASI] A generic tool to test file upload logic with various file types.
+    Consolidates test_unexpected_upload and test_malicious_upload.
+    """
+    try:
+        files = {'file': (filename, content, content_type)}
+        resp = await req("POST", upload_url, files=files)
+        if not resp:
+            return {"status": "error", "message": "Upload request failed."}
+            
+        return {"status": "success", "data": {
+            "filename_sent": filename,
+            "content_type_sent": content_type,
+            "response_status": resp.status_code,
+            "description": "Check status code. 200/201 may indicate success. 400/415 is expected for invalid files."
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def get_manual_checklist(topic: str) -> Dict[str, Any]:
+    """
+    [KONSOLIDASI] Provides checklists for manual business logic testing.
+    Topics: 'integrity_checks', 'workflow_circumvention', 'app_misuse'
+    """
+    checklists = {
+        "integrity_checks": [
+            "During a transaction, intercept the request and modify the price or quantity of an item to a lower or negative value. Verify if the server rejects it.",
+            "If a JWT or cookie contains privilege information (e.g., 'role: user'), modify it to 'role: admin' and see if access changes.",
+            "Check if checksums or signatures for client-side data are validated on the server."
+        ],
+        "workflow_circumvention": [
+            "Map out a multi-step process (e.g., checkout). Try to access step 3 directly by guessing the URL, bypassing steps 1 and 2.",
+            "Look for JavaScript flags in the browser that control UI flow (e.g., `isPaymentStepComplete = true`). Try to manipulate them in the console.",
+            "If a process depends on a specific sequence of API calls, try calling them out of order."
+        ],
+        "app_misuse": [
+            "Identify resource-intensive operations (e.g., report generation, complex search). Try to trigger them repeatedly to test for DoS protection.",
+            "Test for CAPTCHA or other anti-automation controls on critical functions like login, registration, and password reset after several attempts.",
+            "If there is a 'free trial' feature, check if you can sign up for multiple trials using slight variations of an email address (e.g., user+1@, user+2@)."
+        ]
+    }
+    if topic in checklists:
+        return {"status": "success", "data": {"topic": topic, "checklist": checklists[topic]}}
+    else:
+        return {"status": "error", "message": f"Invalid topic. Available topics: {list(checklists.keys())}"}
+
+# --- Prompt ---
+@mcp.prompt()
+def setup_prompt(domainname: str) -> str:
+    return f"""
+You are an expert penetration tester specialising in **business-logic flaws**.  
+Your mission is to probe **{domainname}** for logic and workflow vulnerabilities per OWASP WSTG 4.10.
+
+**Strategy:**
+1.  **Map Workflows:** First, manually or using a browser controller, understand the key business processes: registration, login, shopping cart, user profile update, etc.
+2.  **Test Data & Price Logic:** On transaction-related endpoints, use `test_data_validation_extremes` and look for opportunities to tamper with price or quantity parameters.
+3.  **Test for Privilege/State Manipulation:** On endpoints that modify user data (e.g., `/api/user/update`), use `test_mass_assignment` to try and inject privileged fields like `isAdmin` or `role`.
+4.  **Test Concurrency & Limits:** Use `test_process_timing_race_condition` on functions that should only be executed once (e.g., applying a coupon) and `test_usage_limits_burst` on functions that should be rate-limited (e.g., sending a message).
+5.  **Test File Uploads:** Use the `test_file_upload_logic` tool with various malicious/unexpected file types.
+6.  **Consult Checklists:** Use `get_manual_checklist` for complex, context-heavy tests.
+
+Your goal is to subvert the application's intended logic. Think like an attacker trying to get a product for free, elevate their privileges, or bypass a payment step.
+"""
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

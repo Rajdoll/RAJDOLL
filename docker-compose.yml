@@ -1,0 +1,240 @@
+services:
+  api:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+      - DATABASE_URL=postgresql+psycopg://rajdoll:rajdoll@db:5432/rajdoll
+      - REDIS_URL=redis://redis:6379/0
+      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","nuclei-testing":"http://nuclei-mcp:9014/jsonrpc"}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+      - info-mcp
+      - auth-mcp
+      - authorz-mcp
+      - session-mcp
+      - input-mcp
+      - error-mcp
+      - crypto-mcp
+      - client-mcp
+      - biz-mcp
+      - confdep-mcp
+      - identity-mcp
+      - fileupload-mcp
+      - api-testing-mcp
+      - nuclei-mcp
+  worker:
+    build: .
+    command: ["celery", "-A", "multi_agent_system.tasks.celery_app.celery_app", "worker", "-l", "INFO"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://rajdoll:rajdoll@db:5432/rajdoll
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+      # RESEARCH MODE: Intelligent Coverage Enforcement
+      # LLM tetap sebagai "otak" planning, sistem ensure minimum coverage
+      - MIN_TOOLS_PER_AGENT=7
+      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","nuclei-testing":"http://nuclei-mcp:9014/jsonrpc"}
+    depends_on:
+      - db
+      - redis
+      - info-mcp
+      - auth-mcp
+      - authorz-mcp
+      - session-mcp
+      - input-mcp
+      - error-mcp
+      - crypto-mcp
+      - client-mcp
+      - biz-mcp
+      - confdep-mcp
+      - identity-mcp
+      - fileupload-mcp
+      - api-testing-mcp
+      - nuclei-mcp
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=rajdoll
+      - POSTGRES_PASSWORD=rajdoll
+      - POSTGRES_DB=rajdoll
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # MCP adapter services (one per category), all using the same image but different MODULE_PATH and ports
+  info-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9001"]
+    environment:
+      - MODULE_PATH=/app/information-gathering/information_gathering.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9001"
+  auth-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9002"]
+    environment:
+      - MODULE_PATH=/app/authentication-testing/authentication.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9002"
+  authorz-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9003"]
+    environment:
+      - MODULE_PATH=/app/authorization-testing/authorization.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9003"
+  session-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9004"]
+    environment:
+      - MODULE_PATH=/app/session-managemenet-testing/session-management.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9004"
+  input-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9005"]
+    environment:
+      - MODULE_PATH=/app/input-validation-testing/input-validation.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9005"
+  error-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9006"]
+    environment:
+      - MODULE_PATH=/app/error-handling-testing/error-handling.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9006"
+  crypto-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9007"]
+    environment:
+      - MODULE_PATH=/app/testing-for-weak-cryptography/weak-cryptography.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9007"
+  client-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9008"]
+    environment:
+      - MODULE_PATH=/app/client-side-testing/client-side.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9008"
+  biz-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9009"]
+    environment:
+      - MODULE_PATH=/app/business-logic-testing/business-logic.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9009"
+  confdep-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9010"]
+    environment:
+      - MODULE_PATH=/app/configuration-and-deployment-testing/configuration-and-deployment.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9010"
+  identity-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9011"]
+    environment:
+      - MODULE_PATH=/app/identity-management-testing/identity-management.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9011"
+  fileupload-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9012"]
+    environment:
+      - MODULE_PATH=/app/file-upload-testing/file_upload.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9012"
+  
+  api-testing-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-tools
+    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9013"]
+    environment:
+      - MODULE_PATH=/app/api-testing/api_testing.py
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+    expose:
+      - "9013"
+
+  nuclei-mcp:
+    build:
+      context: ./nuclei-testing
+      dockerfile: Dockerfile
+    container_name: rajdoll-nuclei-mcp-1
+    expose:
+      - "9014"
+    networks:
+      - rajdoll-net
+    environment:
+      - LOG_LEVEL=INFO
+
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+

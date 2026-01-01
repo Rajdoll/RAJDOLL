@@ -1,0 +1,743 @@
+# from mcp.server.fastmcp import FastMCP  # REMOVED: Using JSON-RPC adapter
+import httpx
+import asyncio
+import os
+import re
+import json
+from typing import List, Dict, Any
+
+# Logging configuration
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s [configuration-and-deployment-testing] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
+
+
+# Inisialisasi server
+# mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"configuration-and-deployment-management")
+
+# Helper yang sama, pastikan encoding utf-8 untuk menangani output yang beragam
+async def execute_wsl_command(command: str, timeout: int = 180) -> str:
+    try:
+        escaped = command.replace("'", "'\\''")
+        proc = await asyncio.create_subprocess_shell(
+            f"wsl /bin/bash -c '{escaped}'",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        out = stdout.decode('utf-8', errors='ignore').strip()
+        # Stderr tidak kita sertakan langsung untuk menjaga kebersihan output bagi LLM
+        return out or "No output"
+    except asyncio.TimeoutError:
+        return "Error: Command timed out"
+    except Exception as e:
+        return f"Error: {e}"
+
+# Helper function to validate ffuf findings by following redirects
+async def _validate_ffuf_findings(domain: str, ffuf_results: List[Dict]) -> List[Dict]:
+    """
+    Validates ffuf findings by following redirects and checking actual content.
+    Returns only findings that are actually accessible admin interfaces.
+    """
+    validated = []
+    
+    async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        for result in ffuf_results:
+            try:
+                url = result.get("url", "")
+                status = result.get("status", 0)
+                
+                # Skip if not a redirect or auth-required status
+                if status not in [200, 301, 302, 401, 403]:
+                    continue
+                
+                # Test the actual URL
+                resp = await client.get(url)
+                content = resp.text.lower()
+                
+                # Check for actual admin interface indicators
+                is_admin_interface = any([
+                    "login" in content and ("admin" in content or "dashboard" in content),
+                    "username" in content and "password" in content and len(content) < 50000,  # Login form
+                    "phpmyadmin" in content,
+                    "administration" in content and "login" in content,
+                    "wp-admin" in content,
+                    "cpanel" in content,
+                    resp.status_code == 401,  # Authentication required
+                    resp.status_code == 403 and "forbidden" in content,  # Forbidden but exists
+                ])
+                
+                # Check for false positives (common redirects to homepage)
+                is_false_positive = any([
+                    resp.status_code == 200 and len(content) > 10000 and "homepage" in content,
+                    "home" in url.lower() and resp.status_code == 200,
+                    resp.url != url and "index" in str(resp.url),  # Redirected to homepage
+                    "404" in content or "not found" in content,
+                ])
+                
+                if is_admin_interface and not is_false_positive:
+                    validated.append({
+                        "original_url": url,
+                        "final_url": str(resp.url),
+                        "status_code": resp.status_code,
+                        "original_status": status,
+                        "validation": "confirmed_admin_interface",
+                        "indicators": _get_admin_indicators(content),
+                        "content_length": len(content)
+                    })
+                elif status in [401, 403]:
+                    # Auth required or forbidden - likely real
+                    validated.append({
+                        "original_url": url,
+                        "final_url": str(resp.url),
+                        "status_code": resp.status_code,
+                        "original_status": status,
+                        "validation": "access_restricted",
+                        "content_length": len(content)
+                    })
+                    
+            except Exception as e:
+                # If request fails, it might be a real endpoint that's protected
+                if "timeout" not in str(e).lower():
+                    validated.append({
+                        "original_url": url,
+                        "status_code": "error",
+                        "original_status": status,
+                        "validation": "request_failed",
+                        "error": str(e)
+                    })
+                continue
+    
+    return validated
+
+# Helper function to identify admin interface indicators
+def _get_admin_indicators(content: str) -> List[str]:
+    """Returns list of indicators that suggest this is an admin interface."""
+    indicators = []
+    content_lower = content.lower()
+    
+    if "login" in content_lower and "password" in content_lower:
+        indicators.append("login_form")
+    if "dashboard" in content_lower:
+        indicators.append("dashboard")
+    if "admin" in content_lower:
+        indicators.append("admin_reference")
+    if "phpmyadmin" in content_lower:
+        indicators.append("phpmyadmin")
+    if "wp-admin" in content_lower or "wordpress" in content_lower:
+        indicators.append("wordpress_admin")
+    if "cpanel" in content_lower:
+        indicators.append("cpanel")
+    if "management" in content_lower:
+        indicators.append("management_interface")
+    
+    return indicators
+
+# [REVISED] Prompt diperbarui setelah subjack dipindahkan
+# @mcp.prompt()  # REMOVED: Using JSON-RPC adapter
+def setup_prompt(domain: str) -> str:
+    return f"""
+You are an expert web application security tester focusing on OWASP WSTG v4.2 'Configuration & Deployment Management' defects for the domain **{domain}**.
+
+Your main objectives are:
+- **Scan Network & Services:** Use Nmap to identify open ports and running services.
+- **Automated Configuration Scan:** Use Nuclei with specific templates to find misconfigurations, exposed panels, and vulnerabilities.
+- **Find Sensitive Files:** Use ffuf to discover exposed backup, config, and administrative files or directories.
+- **Check HTTP Security:** Test for insecure HTTP methods and missing security headers.
+
+**Your Workflow:**
+1.  **Reason:** State your plan before acting.
+2.  **Execute:** Call a tool.
+3.  **Analyze:** Process the JSON output. Summarize your findings.
+4.  **Adapt:** Update your plan based on the new information.
+Report all findings with clear, actionable mitigation advice.
+"""
+
+# --- TOOLS ---
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_network_infrastructure(domain: str) -> Dict[str, Any]:
+    """
+    [ENHANCED] Runs comprehensive Nmap scan and validates critical services.
+    logger.info(f"🔍 Executing test_network_infrastructure")
+    Phase 1: Fast scan for top 1000 open TCP ports.
+    Phase 2: Detailed service scan with version detection.
+    Phase 3: Validation of critical exposed services.
+    """
+    try:
+        # Phase 1: Extended port scan for better coverage
+        top_scan_cmd = f"nmap -Pn -T4 --top-ports 1000 {domain}"
+        top_out = await execute_wsl_command(top_scan_cmd, timeout=180)
+        open_ports = ",".join(re.findall(r"^(\d+)/tcp\s+open", top_out, re.MULTILINE))
+
+        if not open_ports:
+            return {"status": "success", "data": {"message": f"No open TCP ports found in the top 1000 for {domain}."}}
+
+        # Phase 2: Service version detection
+        svc_scan_cmd = f"nmap -Pn -T4 -sV -sC -p {open_ports} {domain}"
+        svc_out = await execute_wsl_command(svc_scan_cmd, timeout=300)
+        
+        # Parse service information manually since JSON output might not work
+        port_details = []
+        critical_services = []
+        
+        lines = svc_out.split('\n')
+        for line in lines:
+            if '/tcp' in line and 'open' in line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    port_num = parts[0].split('/')[0]
+                    service = parts[2] if len(parts) > 2 else "unknown"
+                    version = ' '.join(parts[3:]) if len(parts) > 3 else "unknown"
+                    
+                    port_info = {
+                        "port": int(port_num),
+                        "service": service,
+                        "version": version,
+                        "risk_level": _assess_port_risk(int(port_num), service)
+                    }
+                    port_details.append(port_info)
+                    
+                    # Mark critical services
+                    if port_info["risk_level"] in ["critical", "high"]:
+                        critical_services.append(port_info)
+
+        # Phase 3: Validate critical services
+        validated_critical = await _validate_critical_services(domain, critical_services)
+
+        return {
+            "status": "success",
+            "data": {
+                "open_ports_summary": {
+                    "total_open": len(port_details),
+                    "critical_services": len(critical_services),
+                    "validated_critical": len(validated_critical)
+                },
+                "port_details": port_details,
+                "critical_services": critical_services,
+                "validated_critical_services": validated_critical,
+                "raw_nmap_output": svc_out[:1000] + "..." if len(svc_out) > 1000 else svc_out
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# Helper function to assess port risk level
+def _assess_port_risk(port: int, service: str) -> str:
+    """Assesses the risk level of an exposed port/service."""
+    critical_ports = {
+        22: "ssh",
+        23: "telnet", 
+        3306: "mysql",
+        5432: "postgresql",
+        1433: "mssql",
+        5900: "vnc",
+        3389: "rdp",
+        6379: "redis",
+        27017: "mongodb"
+    }
+    
+    high_risk_ports = {
+        21: "ftp",
+        25: "smtp",
+        53: "dns",
+        135: "rpc",
+        139: "netbios",
+        445: "smb",
+        1521: "oracle",
+        2049: "nfs"
+    }
+    
+    if port in critical_ports:
+        return "critical"
+    elif port in high_risk_ports:
+        return "high"
+    elif port in [80, 443, 8080, 8443]:
+        return "low"  # Standard web ports
+    else:
+        return "medium"
+
+# Helper function to validate critical services
+async def _validate_critical_services(domain: str, critical_services: List[Dict]) -> List[Dict]:
+    """Validates that critical services are actually accessible and responsive."""
+    validated = []
+    
+    for service in critical_services:
+        port = service["port"]
+        service_name = service["service"]
+        
+        try:
+            # Test basic connectivity
+            connectivity_test = await execute_wsl_command(
+                f"timeout 5 nc -zv {domain} {port}", timeout=10
+            )
+            
+            is_accessible = "succeeded" in connectivity_test or "open" in connectivity_test
+            
+            if is_accessible:
+                validated.append({
+                    **service,
+                    "accessibility": "confirmed_accessible",
+                    "validation_method": "netcat_test"
+                })
+            else:
+                validated.append({
+                    **service,
+                    "accessibility": "connection_failed",
+                    "validation_method": "netcat_test",
+                    "note": "Port appears closed or filtered"
+                })
+                
+        except Exception as e:
+            validated.append({
+                **service,
+                "accessibility": "validation_error",
+                "error": str(e)
+            })
+    
+    return validated
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def run_nuclei_config_scan(domain: str) -> Dict[str, Any]:
+    """
+    [NEW & REPLACES NIKTO]
+    logger.info(f"🔍 Executing run_nuclei_config_scan")
+    Runs Nuclei with specific templates for configuration issues, exposed panels, and CVEs.
+    """
+    try:
+        output_file = f"nuclei_output_{domain}.json"
+        cmd = (
+            f"nuclei -u https://{domain} -t exposures/,misconfiguration/,technologies/ "
+            f"-json -o {output_file}"
+        )
+        await execute_wsl_command(cmd, timeout=300)
+
+        results = []
+        if os.path.exists(output_file):
+            with open(output_file, 'r') as f:
+                for line in f:
+                    try:
+                        results.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue # Abaikan baris yang bukan JSON valid
+            os.remove(output_file)
+
+        return {
+            "status": "success",
+            "data": {"findings": results} if results else {"message": "Nuclei found no issues with the selected templates."}
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Nuclei scan failed: {str(e)}"}
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def find_sensitive_files_and_dirs(domain: str) -> Dict[str, Any]:
+    """
+    [ENHANCED] Brute-forces for sensitive admin panels and directories using ffuf.
+    Validates findings by following redirects to determine actual accessibility.
+    """
+    try:
+        # Menggunakan path wordlist yang Anda tentukan sebelumnya
+        login_list = "/mnt/d/MCP/RAJDOLL/SecLists/Discovery/Web-Content/Logins.fuzz.txt"
+        output_file = f"ffuf_output_{domain}.json"
+        
+        if not os.path.exists(login_list):
+            return {"status": "error", "message": f"Wordlist not found at: {login_list}"}
+            
+        cmd = (
+            f"ffuf -w {login_list} -u https://{domain}/FUZZ "
+            f"-mc 200,301,302,401,403 -o {output_file} -of json"
+        )
+        await execute_wsl_command(cmd, timeout=300)
+
+        results = {}
+        if os.path.exists(output_file):
+             with open(output_file, 'r') as f:
+                results = json.load(f)
+             os.remove(output_file)
+
+        # Validate findings by following redirects and checking actual content
+        validated_findings = await _validate_ffuf_findings(domain, results.get("results", []))
+
+        return {
+            "status": "success",
+            "data": {"validated_findings": validated_findings} if validated_findings else {"message": "No confirmed sensitive admin interfaces found after validation."}
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"ffuf scan failed: {str(e)}"}
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_http_methods_and_headers(domain: str) -> Dict[str, Any]:
+    """
+    [ENHANCED] Checks for enabled HTTP methods and analyzes security headers.
+    logger.info(f"🔍 Executing test_http_methods_and_headers")
+    Tests multiple dangerous methods and provides detailed security assessment.
+    """
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            # Test basic GET request for headers
+            resp = await client.get(f"https://{domain}")
+            headers = {h.lower(): resp.headers[h] for h in resp.headers}
+
+            # Test dangerous HTTP methods
+            dangerous_methods = ["PUT", "DELETE", "TRACE", "CONNECT", "PATCH"]
+            method_results = {}
+            
+            for method in dangerous_methods:
+                try:
+                    method_resp = await client.request(method, f"https://{domain}")
+                    method_results[method] = {
+                        "status_code": method_resp.status_code,
+                        "allowed": method_resp.status_code not in [400, 405, 501],
+                        "response_length": len(method_resp.text) if method_resp.text else 0
+                    }
+                except Exception as e:
+                    method_results[method] = {
+                        "status_code": "error",
+                        "allowed": False,
+                        "error": str(e)
+                    }
+
+        # Analyze security headers
+        security_headers = {
+            "strict-transport-security": {
+                "present": "strict-transport-security" in headers,
+                "value": headers.get("strict-transport-security"),
+                "secure": bool(headers.get("strict-transport-security"))
+            },
+            "content-security-policy": {
+                "present": "content-security-policy" in headers,
+                "value": headers.get("content-security-policy"),
+                "secure": bool(headers.get("content-security-policy"))
+            },
+            "x-frame-options": {
+                "present": "x-frame-options" in headers,
+                "value": headers.get("x-frame-options"),
+                "secure": headers.get("x-frame-options", "").upper() in ["DENY", "SAMEORIGIN"]
+            },
+            "x-content-type-options": {
+                "present": "x-content-type-options" in headers,
+                "value": headers.get("x-content-type-options"),
+                "secure": headers.get("x-content-type-options", "").lower() == "nosniff"
+            },
+            "x-xss-protection": {
+                "present": "x-xss-protection" in headers,
+                "value": headers.get("x-xss-protection"),
+                "secure": headers.get("x-xss-protection") in ["1", "1; mode=block"]
+            }
+        }
+
+        # Calculate security score
+        total_headers = len(security_headers)
+        secure_headers = sum(1 for h in security_headers.values() if h["secure"])
+        security_score = (secure_headers / total_headers) * 100
+
+        # Check for dangerous methods
+        dangerous_allowed = [method for method, result in method_results.items() if result.get("allowed", False)]
+
+        return {
+            "status": "success",
+            "data": {
+                "security_headers": security_headers,
+                "security_score": round(security_score, 1),
+                "http_methods": method_results,
+                "dangerous_methods_allowed": dangerous_allowed,
+                "server_info": {
+                    "server": headers.get("server"),
+                    "x-powered-by": headers.get("x-powered-by"),
+                    "http_version": "HTTP/1.0" if "HTTP/1.0" in str(resp.http_version) else "HTTP/1.1+"
+                }
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"HTTP method/header check failed: {str(e)}"}
+
+
+# ========== OPSI B: 4 NEW CONFIGURATION & DEPLOYMENT TOOLS ==========
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_file_extensions(base_url: str, test_extensions: List[str] = None) -> Dict[str, Any]:
+    """
+    [OPSI B] Tests for dangerous file upload/execution capabilities.
+    logger.info(f"🔍 Executing test_file_extensions")
+    Checks if server executes uploaded files with dangerous extensions.
+    WSTG-CONF-05: Testing for File Extension Handling
+    """
+    if test_extensions is None:
+        test_extensions = [".php", ".jsp", ".asp", ".aspx", ".exe", ".sh", ".pl", ".cgi", ".py"]
+    
+    try:
+        findings = []
+        
+        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+            # Test 1: Check if dangerous extensions are mapped to handlers
+            for ext in test_extensions:
+                test_url = f"{base_url.rstrip('/')}/test{ext}"
+                try:
+                    resp = await client.get(test_url)
+                    
+                    # Check if server tries to execute (vs downloading)
+                    content_type = resp.headers.get("content-type", "")
+                    content_disposition = resp.headers.get("content-disposition", "")
+                    
+                    is_executable = any([
+                        "text/html" in content_type,
+                        "application/x-httpd-php" in content_type,
+                        "application/x-jsp" in content_type,
+                        "download" not in content_disposition.lower()
+                    ])
+                    
+                    if resp.status_code in [200, 500] and is_executable:
+                        findings.append({
+                            "extension": ext,
+                            "status_code": resp.status_code,
+                            "content_type": content_type,
+                            "risk": "Server may execute files with this extension",
+                            "severity": "High"
+                        })
+                except Exception:
+                    continue
+            
+            # Test 2: Double extension bypass (.php.jpg)
+            for ext in [".php", ".jsp", ".asp"]:
+                test_url = f"{base_url.rstrip('/')}/test{ext}.jpg"
+                try:
+                    resp = await client.get(test_url)
+                    if "php" in resp.headers.get("content-type", "").lower() or resp.status_code == 500:
+                        findings.append({
+                            "extension": f"{ext}.jpg",
+                            "type": "double_extension_bypass",
+                            "risk": "Server may parse double extensions allowing execution",
+                            "severity": "Critical"
+                        })
+                except Exception:
+                    continue
+        
+        return {"status": "success", "data": {
+            "tested_extensions": test_extensions,
+            "vulnerabilities_found": len(findings),
+            "findings": findings,
+            "description": "Dangerous file extensions can allow code execution if not properly restricted"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_ria_cross_domain(base_url: str) -> Dict[str, Any]:
+    """
+    [OPSI B] Tests for RIA cross-domain policy misconfigurations.
+    logger.info(f"🔍 Executing test_ria_cross_domain")
+    Checks crossdomain.xml (Flash) and clientaccesspolicy.xml (Silverlight).
+    WSTG-CONF-08: Testing for RIA Cross Domain Policy
+    """
+    try:
+        findings = []
+        
+        policy_files = [
+            {"path": "/crossdomain.xml", "type": "Flash"},
+            {"path": "/clientaccesspolicy.xml", "type": "Silverlight"}
+        ]
+        
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+            for policy in policy_files:
+                url = f"{base_url.rstrip('/')}{policy['path']}"
+                try:
+                    resp = await client.get(url)
+                    
+                    if resp.status_code == 200:
+                        content = resp.text
+                        
+                        # Check for overly permissive policies
+                        is_vulnerable = any([
+                            'domain="*"' in content,
+                            'allow-access-from domain="*"' in content,
+                            '<allow-from>' in content and '*' in content,
+                            'secure="false"' in content
+                        ])
+                        
+                        if is_vulnerable:
+                            findings.append({
+                                "file": policy['path'],
+                                "type": policy['type'],
+                                "vulnerability": "Overly permissive cross-domain policy",
+                                "content_preview": content[:200],
+                                "severity": "High"
+                            })
+                        else:
+                            findings.append({
+                                "file": policy['path'],
+                                "type": policy['type'],
+                                "status": "Policy exists but appears restrictive",
+                                "severity": "Info"
+                            })
+                except Exception:
+                    continue
+        
+        return {"status": "success", "data": {
+            "policies_checked": [p['path'] for p in policy_files],
+            "vulnerabilities_found": len([f for f in findings if f.get("severity") == "High"]),
+            "findings": findings,
+            "description": "Permissive RIA policies allow cross-domain data access from untrusted sources"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_file_permissions(base_url: str) -> Dict[str, Any]:
+    """
+    [OPSI B] Tests for insecure file permissions and directory traversal.
+    logger.info(f"🔍 Executing test_file_permissions")
+    Attempts to access sensitive files via path traversal.
+    WSTG-CONF-09: Testing for File Permission
+    """
+    try:
+        findings = []
+        
+        # Path traversal payloads
+        traversal_payloads = [
+            "../../../../etc/passwd",
+            "..\\..\\..\\..\\windows\\win.ini",
+            "....//....//....//....//etc/passwd",
+            "%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+            "..%252f..%252f..%252f..%252fetc%252fpasswd"
+        ]
+        
+        # Sensitive files to test direct access
+        sensitive_files = [
+            "/.env",
+            "/config.php",
+            "/wp-config.php",
+            "/web.config",
+            "/.git/config",
+            "/.htaccess",
+            "/backup.sql"
+        ]
+        
+        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+            # Test 1: Path traversal
+            for payload in traversal_payloads:
+                test_url = f"{base_url.rstrip('/')}/{payload}"
+                try:
+                    resp = await client.get(test_url)
+                    
+                    # Check for successful traversal indicators
+                    if resp.status_code == 200:
+                        content = resp.text.lower()
+                        if any(indicator in content for indicator in ["root:x:", "[extensions]", "bin/bash"]):
+                            findings.append({
+                                "type": "path_traversal",
+                                "payload": payload,
+                                "status_code": resp.status_code,
+                                "evidence": "System file content detected",
+                                "severity": "Critical"
+                            })
+                except Exception:
+                    continue
+            
+            # Test 2: Direct access to sensitive files
+            for file_path in sensitive_files:
+                test_url = f"{base_url.rstrip('/')}{file_path}"
+                try:
+                    resp = await client.get(test_url)
+                    
+                    if resp.status_code == 200 and len(resp.text) > 0:
+                        findings.append({
+                            "type": "sensitive_file_access",
+                            "file": file_path,
+                            "status_code": resp.status_code,
+                            "content_length": len(resp.text),
+                            "severity": "High"
+                        })
+                except Exception:
+                    continue
+        
+        return {"status": "success", "data": {
+            "traversal_payloads_tested": len(traversal_payloads),
+            "sensitive_files_tested": len(sensitive_files),
+            "vulnerabilities_found": len(findings),
+            "findings": findings,
+            "description": "File permission issues can expose sensitive system or application files"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_cloud_storage(domain: str) -> Dict[str, Any]:
+    """
+    [OPSI B] Tests for misconfigured cloud storage (S3, Azure, GCS).
+    logger.info(f"🔍 Executing test_cloud_storage")
+    Checks for publicly accessible buckets and containers.
+    WSTG-CONF-11: Testing Cloud Storage
+    """
+    try:
+        findings = []
+        
+        # Common cloud storage patterns
+        cloud_patterns = [
+            {"name": "AWS S3", "pattern": f"{domain.replace('.', '-')}.s3.amazonaws.com"},
+            {"name": "AWS S3 Regional", "pattern": f"{domain.replace('.', '-')}.s3-us-west-2.amazonaws.com"},
+            {"name": "Azure Blob", "pattern": f"{domain.replace('.', '')}.blob.core.windows.net"},
+            {"name": "Google Cloud Storage", "pattern": f"{domain.replace('.', '-')}.storage.googleapis.com"},
+        ]
+        
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+            for cloud in cloud_patterns:
+                url = f"https://{cloud['pattern']}"
+                try:
+                    resp = await client.get(url)
+                    
+                    if resp.status_code == 200:
+                        content = resp.text
+                        
+                        # Check for bucket listing
+                        is_public = any([
+                            "<ListBucketResult" in content,  # S3 XML listing
+                            "<EnumerationResults" in content,  # Azure blob listing
+                            '"kind": "storage#' in content,  # GCS JSON listing
+                        ])
+                        
+                        if is_public:
+                            findings.append({
+                                "cloud_provider": cloud['name'],
+                                "url": url,
+                                "vulnerability": "Publicly accessible cloud storage",
+                                "evidence": "Bucket/container listing accessible",
+                                "severity": "Critical"
+                            })
+                        else:
+                            findings.append({
+                                "cloud_provider": cloud['name'],
+                                "url": url,
+                                "status": "Storage exists but listing not public",
+                                "severity": "Info"
+                            })
+                    elif resp.status_code == 403:
+                        # Storage exists but access denied (good)
+                        findings.append({
+                            "cloud_provider": cloud['name'],
+                            "url": url,
+                            "status": "Storage exists with proper access control",
+                            "severity": "Info"
+                        })
+                except Exception:
+                    continue
+        
+        return {"status": "success", "data": {
+            "cloud_providers_checked": len(cloud_patterns),
+            "vulnerabilities_found": len([f for f in findings if f.get("severity") == "Critical"]),
+            "findings": findings,
+            "description": "Public cloud storage can expose sensitive data, backups, or credentials"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# if __name__ == "__main__":  # REMOVED: Using JSON-RPC adapter
+#     mcp.run(transport='stdio')
+

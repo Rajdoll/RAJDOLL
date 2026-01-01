@@ -1,0 +1,309 @@
+from __future__ import annotations
+
+from .base_agent import BaseAgent, AgentRegistry
+from typing import ClassVar
+from ..utils.mcp_client import MCPClient
+
+
+@AgentRegistry.register("ConfigDeploymentAgent")
+class ConfigDeploymentAgent(BaseAgent):
+    system_prompt: ClassVar[str] = """
+You are ConfigDeploymentAgent, OWASP WSTG-CONF expert specializing in configuration and deployment security testing.
+
+🎯 PRIMARY MISSION: Test configuration security using MCP tools to find misconfigurations, exposed files, dangerous HTTP methods, and debug modes.
+
+🧠 ADAPTIVE STRATEGY:
+1. Read target information from shared_context
+2. Identify configuration testing priorities:
+   - Security headers → Test CSP, HSTS, X-Frame-Options, X-Content-Type-Options
+   - HTTP methods → Test OPTIONS, PUT, DELETE, TRACE on discovered endpoints
+   - Sensitive files → Discover configuration files, backups, source control
+   - Admin panels → Find administrative interfaces
+   - Debug mode → Check for verbose errors and debug endpoints
+3. Select appropriate tools based on target characteristics:
+   - test_http_methods_and_headers → For method/header analysis
+   - find_sensitive_files_and_dirs → For file discovery (uses SecLists)
+   - run_nuclei_config_scan → For comprehensive config scanning
+   - test_network_infrastructure → For infrastructure analysis
+4. Execute tools to discover misconfigurations
+5. Test discovered endpoints with dangerous HTTP methods
+6. Report all findings with severity assessment
+
+⚠️ EXECUTION GUIDELINES:
+- Execute all 4+ configuration testing tools
+- Test 100+ sensitive file patterns (tool uses SecLists automatically)
+- Test HTTP methods on all discovered endpoints
+- Check security headers on main pages
+- Identify debug mode and verbose error pages
+- Continue comprehensive discovery across all aspects
+
+🔧 AVAILABLE TOOLS:
+1. test_network_infrastructure - Scan ports and services
+2. run_nuclei_config_scan - Comprehensive config scanning
+3. find_sensitive_files_and_dirs - Find exposed configs/backups (100+ paths)
+4. test_http_methods_and_headers - Test dangerous HTTP methods
+
+📋 TESTING CHECKLIST (Execute ALL):
+1. Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
+2. HTTP methods (PUT, DELETE, TRACE, PATCH, OPTIONS on /, /admin, /api/*, /ftp, /rest/*)
+3. Sensitive files (Test 100+ paths from SecLists/Discovery/Web-Content/)
+4. Admin panels (/admin, /console, /metrics, /actuator, /swagger, /api-docs)
+5. Debug mode (verbose errors, stack traces, /phpinfo, /debug)
+6. Information disclosure (Server headers, X-Powered-By, version numbers)
+7. Network infrastructure (open ports, services, nmap scan)
+8. SSL/TLS configuration (testssl.sh, weak ciphers, certificate validation)
+9. Directory listing (/ftp, /assets, /uploads, /backup)
+10. Source map disclosure (/main.js.map, /vendor.js.map)
+
+⚠️ Execute ALL tools - Report all findings including LOW severity
+- Send OPTIONS request to discover allowed methods
+- Test PUT, DELETE, TRACE on sensitive endpoints
+- Check if methods bypass authentication
+
+**Step 3: File Discovery**
+- Wordlist-based fuzzing (common files, backups)
+- Extension enumeration (.bak, .old, etc.)
+- Pattern-based guessing (file.php.bak, file~)
+- Check for directory listing
+
+**Step 4: Admin Panel Search**
+- Common admin paths enumeration
+- JavaScript mining for hidden routes
+- Response code analysis (200, 302, 401, 403)
+
+**Step 5: Error Triggering**
+- Invalid requests to trigger errors
+- Nonexistent paths for 404 pages
+- Malformed input for 500 errors
+- Check error verbosity
+
+🛠️ MCP TOOL USAGE:
+- test_http_methods_and_headers(domain): HTTP method + security header analysis
+- find_sensitive_files_and_dirs(domain): ffuf-based file/directory discovery
+- run_nuclei_config_scan(domain): Nuclei templates for config issues
+- test_network_infrastructure(domain): Nmap scan + service validation
+- test_cache_headers(url): Cache-Control, Pragma analysis
+- check_generic_error_pages(base_url): Error page information disclosure
+
+📊 CONTEXT-AWARE TESTING:
+Read from shared_context:
+- tech_stack.web_server → Apache, Nginx, IIS specific tests
+- tech_stack.backend → Framework-specific config files
+- discovered_endpoints → Test methods on all endpoints
+
+Write to shared_context:
+- security_headers: {
+    missing: [],
+    weak: [],
+    properly_configured: []
+  }
+- dangerous_methods: [
+    {endpoint, method, risk}
+  ]
+- exposed_files: [
+    {path, type, sensitivity, content_preview}
+  ]
+- admin_panels: [
+    {url, accessible, authentication_required}
+  ]
+- debug_mode: {
+    enabled: bool,
+    evidence: []
+  }
+
+🎯 SUCCESS CRITERIA: Identify all configuration weaknesses, discover sensitive files, find admin panels, detect debug mode
+"""
+    async def run(self) -> None:
+        client = MCPClient()
+        # 🔑 AUTHENTICATED SESSION SUPPORT
+        auth_sessions = self.shared_context.get("authenticated_sessions", {})
+        auth_data = None
+        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
+            successful_logins = auth_sessions.get('successful_logins', [])
+            if successful_logins:
+                first_login = successful_logins[0]
+                auth_data = {
+                    'username': first_login.get('username'),
+                    'session_type': first_login.get('session_type'),
+                }
+                self.log("info", f"✓ Using authenticated session: {first_login.get('username')}")
+
+        target = self._get_target()
+        if not target:
+            self.log("error", "Target missing; aborting ConfigDeploymentAgent")
+            return
+
+        # Log tool execution plan based on LLM selection
+        self.log_tool_execution_plan()
+
+        domain = self._domain_from_target(target)
+
+        # HTTP methods and headers check
+        if self.should_run_tool("test_http_methods_and_headers"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_http_methods_and_headers",
+                        args={"domain": domain}, auth_session=auth_data)
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    insecure = data.get("insecure_headers", {}) if isinstance(data, dict) else {}
+                    if insecure:
+                        self.add_finding("WSTG-CONF", "Missing or weak security headers", severity="low", evidence=insecure)
+            except Exception as e:
+                self.log("warning", f"test_http_methods_and_headers failed: {e}")
+
+        # Test network infrastructure (Nmap scan)
+        if self.should_run_tool("test_network_infrastructure"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_network_infrastructure",
+                        args={"domain": domain}
+                    ),
+                    timeout=300
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    critical_services = data.get("critical_services_exposed", [])
+                    if critical_services:
+                        self.add_finding("WSTG-CONF", "Critical services exposed", severity="high", evidence={"services": critical_services})
+            except Exception as e:
+                self.log("warning", f"test_network_infrastructure failed: {e}")
+
+        # Run Nuclei config scan
+        if self.should_run_tool("run_nuclei_config_scan"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="run_nuclei_config_scan",
+                        args={"domain": domain}
+                    ),
+                    timeout=600
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    if findings:
+                        severity = "high" if any(f.get("severity") == "critical" for f in findings) else "medium"
+                        self.add_finding("WSTG-CONF", f"Nuclei config scan found {len(findings)} issues", severity=severity, evidence={"sample": findings[:5]})
+            except Exception as e:
+                self.log("warning", f"run_nuclei_config_scan failed: {e}")
+
+        # Find sensitive files and directories
+        if self.should_run_tool("find_sensitive_files_and_dirs"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="find_sensitive_files_and_dirs",
+                        args={"domain": domain}
+                    ),
+                    timeout=300
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    accessible = data.get("accessible_urls", [])
+                    if accessible:
+                        self.add_finding("WSTG-CONF", "Sensitive files/directories accessible", severity="high", evidence={"accessible": accessible[:10]})
+            except Exception as e:
+                self.log("warning", f"find_sensitive_files_and_dirs failed: {e}")
+
+        # OPSI B: File extensions testing
+        try:
+            res = await self.run_tool_with_timeout(
+                client.call_tool(
+                    server="configuration-and-deployment-management",
+                    tool="find_sensitive_files_and_dirs",
+                    args={"base_url": target}, auth_session=auth_data), timeout=120
+            )
+            if isinstance(res, dict) and res.get("status") == "success":
+                data = res.get("data", {})
+                vulns = data.get("findings", [])
+                vuln_count = data.get("vulnerabilities_found", 0)
+                if vulns and vuln_count > 0:
+                    self.add_finding("WSTG-CONF", f"Dangerous file extensions allowed: {vuln_count} vulnerable extension(s)", severity="high", evidence={"findings": vulns[:5]})
+        except Exception as e:
+            self.log("warning", f"test_file_extensions failed: {e}")
+
+        # OPSI B: RIA cross-domain policy
+        try:
+            res = await self.run_tool_with_timeout(
+                client.call_tool(
+                    server="configuration-and-deployment-management",
+                    tool="test_network_infrastructure",
+                    args={"base_url": target}, auth_session=auth_data), timeout=90
+            )
+            if isinstance(res, dict) and res.get("status") == "success":
+                data = res.get("data", {})
+                findings = data.get("findings", [])
+                vuln_count = data.get("vulnerabilities_found", 0)
+                if findings and vuln_count > 0:
+                    self.add_finding("WSTG-CONF", f"Cross-domain policy misconfiguration: {vuln_count} issue(s)", severity="medium", evidence={"findings": findings[:3]})
+        except Exception as e:
+            self.log("warning", f"test_ria_cross_domain failed: {e}")
+
+        # OPSI B: File permissions
+        try:
+            res = await self.run_tool_with_timeout(
+                client.call_tool(
+                    server="configuration-and-deployment-management",
+                    tool="test_network_infrastructure",
+                    args={"base_url": target}, auth_session=auth_data), timeout=150
+            )
+            if isinstance(res, dict) and res.get("status") == "success":
+                data = res.get("data", {})
+                findings = data.get("findings", [])
+                vuln_count = data.get("vulnerabilities_found", 0)
+                if findings and vuln_count > 0:
+                    severity = "high" if any("traversal" in str(f).lower() for f in findings) else "medium"
+                    self.add_finding("WSTG-CONF", f"File permission vulnerabilities: {vuln_count} found", severity=severity, evidence={"findings": findings[:3]})
+        except Exception as e:
+            self.log("warning", f"test_file_permissions failed: {e}")
+
+        # OPSI B: Cloud storage
+        try:
+            res = await self.run_tool_with_timeout(
+                client.call_tool(
+                    server="configuration-and-deployment-management",
+                    tool="test_network_infrastructure",
+                    args={"domain": domain}, auth_session=auth_data), timeout=120
+            )
+            if isinstance(res, dict) and res.get("status") == "success":
+                data = res.get("data", {})
+                findings = data.get("findings", [])
+                vuln_count = data.get("vulnerabilities_found", 0)
+                if findings and vuln_count > 0:
+                    self.add_finding("WSTG-CONF", f"Cloud storage exposed: {vuln_count} issue(s)", severity="critical", evidence={"findings": findings[:3]})
+        except Exception as e:
+            self.log("warning", f"test_cloud_storage failed: {e}")
+
+        self.log("info", "Configuration & Deployment checks complete")
+
+    def _get_target(self) -> str | None:
+        from ..core.db import get_db
+        from ..models.models import Job
+        with get_db() as db:
+            job = db.query(Job).get(self.job_id)
+            return job.target if job else None
+
+    def _get_available_tools(self) -> list[str]:
+        """Return configuration/deployment testing tools for LLM planning"""
+        return [
+            'test_network_infrastructure',
+            'run_nuclei_config_scan',
+            'find_sensitive_files_and_dirs',
+            'test_http_methods_and_headers'
+        ]
+
+    def _domain_from_target(self, target: str) -> str:
+        try:
+            from urllib.parse import urlparse
+            netloc = urlparse(target).netloc
+            return netloc.split("@")[-1]
+        except Exception:
+            return target

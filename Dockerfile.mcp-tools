@@ -1,0 +1,107 @@
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH=/usr/local/go/bin:/root/go/bin:$PATH \
+    GO111MODULE=on
+
+WORKDIR /app
+
+# Base OS deps and common CLIs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget git unzip xz-utils jq gnupg \
+    build-essential golang \
+    dnsutils whois \
+    nmap \
+    ruby \
+    whatweb \
+    nodejs npm \
+    sqlmap \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy repo and install Python deps (FastAPI, MCP, etc.)
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && pip install --no-cache-dir websockets
+
+# Copy source (for adapter and scripts)
+COPY . /app
+
+# Symlink SecLists to standard path expected by scripts (if present)
+RUN mkdir -p /usr/share && \
+    if [ -d "/app/SecLists" ]; then ln -s /app/SecLists /usr/share/seclists || true; fi
+
+# Install retire.js (client-side testing)
+RUN npm install -g retire
+
+# Install testssl.sh
+RUN git clone --depth=1 https://github.com/drwetter/testssl.sh.git /opt/testssl.sh && \
+    ln -sf /opt/testssl.sh/testssl.sh /usr/local/bin/testssl.sh
+
+# Install smuggler (HTTP desync/smuggling tester)
+RUN git clone --depth=1 https://github.com/defparam/smuggler.git /opt/smuggler && \
+    if [ -f /opt/smuggler/requirements.txt ]; then pip install --no-cache-dir -r /opt/smuggler/requirements.txt; else pip install --no-cache-dir h2 hyperframe hpack; fi && \
+    ln -sf /opt/smuggler/smuggler.py /usr/local/bin/smuggler && chmod +x /usr/local/bin/smuggler
+
+# Fetch prebuilt binaries for common Go-based tools (amd64/linux)
+ARG ARCH=amd64
+ARG OS=linux
+
+# ProjectDiscovery: nuclei, subfinder, httpx
+# Hardcoded versions to avoid GitHub API rate limiting
+RUN set -eux; \
+    NUCLEI_VER=3.3.7 && \
+    SUBFINDER_VER=2.6.7 && \
+    HTTPX_VER=1.6.9 && \
+    curl -L -o /tmp/nuclei.zip https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VER}/nuclei_${NUCLEI_VER}_${OS}_${ARCH}.zip && \
+    curl -L -o /tmp/subfinder.zip https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VER}/subfinder_${SUBFINDER_VER}_${OS}_${ARCH}.zip && \
+    curl -L -o /tmp/httpx.zip https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VER}/httpx_${HTTPX_VER}_${OS}_${ARCH}.zip && \
+    unzip -o /tmp/nuclei.zip -d /usr/local/bin && \
+    unzip -o /tmp/subfinder.zip -d /usr/local/bin && \
+    unzip -o /tmp/httpx.zip -d /usr/local/bin && \
+    rm -f /tmp/*.zip
+
+# ffuf (build from source using Go to avoid asset/name changes)
+RUN GOBIN=/usr/local/bin GO111MODULE=on go install github.com/ffuf/ffuf/v2@latest && \
+    ffuf -V || true
+
+# dirsearch - Advanced web path scanner with recursive capability
+RUN pip install --no-cache-dir dirsearch && \
+    dirsearch --version || true
+
+# dalfox (build from source using Go to ensure correct binary)
+RUN GOBIN=/usr/local/bin GO111MODULE=on go install github.com/hahwul/dalfox/v2@latest && \
+        dalfox version || true
+
+# kxss
+RUN KXSS_VER=$(curl -s https://api.github.com/repos/tomnomnom/hacks/releases/latest | jq -r .tag_name | sed 's/^v//') || true; \
+    curl -L -o /usr/local/bin/kxss https://github.com/Emoe/kxss/releases/latest/download/kxss_${OS}_${ARCH} || \
+    curl -L -o /usr/local/bin/kxss https://github.com/itc-asia/kxss/releases/latest/download/kxss_${OS}_${ARCH} || true; \
+    chmod +x /usr/local/bin/kxss || true
+
+# subjack
+RUN SUBJACK_VER=$(curl -s https://api.github.com/repos/haccer/subjack/releases/latest | jq -r .tag_name | sed 's/^v//') || true; \
+    curl -L -o /tmp/subjack.tar.gz https://github.com/haccer/subjack/releases/latest/download/subjack_${OS}_${ARCH}.tar.gz || true; \
+    tar -xzf /tmp/subjack.tar.gz -C /usr/local/bin subjack || true; \
+    rm -f /tmp/subjack.tar.gz || true
+
+# tplmap - Server-Side Template Injection (SSTI) scanner
+RUN git clone --depth=1 https://github.com/epinna/tplmap.git /opt/tplmap && \
+    chmod +x /opt/tplmap/tplmap.py && \
+    ln -sf /opt/tplmap/tplmap.py /usr/local/bin/tplmap
+
+# commix - Command Injection scanner
+RUN git clone --depth=1 https://github.com/commixproject/commix.git /opt/commix && \
+    chmod +x /opt/commix/commix.py && \
+    ln -sf /opt/commix/commix.py /usr/local/bin/commix
+
+# SSRFmap - SSRF exploitation tool
+RUN git clone --depth=1 https://github.com/swisskyrepo/SSRFmap.git /opt/ssrfmap && \
+    pip install --no-cache-dir -r /opt/ssrfmap/requirements.txt && \
+    chmod +x /opt/ssrfmap/ssrfmap.py && \
+    ln -sf /opt/ssrfmap/ssrfmap.py /usr/local/bin/ssrfmap
+
+EXPOSE 9001-9011
+
+# Default CMD overridden by compose service commands
+CMD ["bash", "-lc", "which nuclei && nuclei -version && uvicorn mcp_adapter.server:app --host 0.0.0.0 --port 9001"]

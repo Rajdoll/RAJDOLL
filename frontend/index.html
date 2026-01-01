@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAJDOLL | Agentic Multi-Agent Vulnerability Assessment System</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;400;500;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">◉</span>
+                <h1>RAJDOLL</h1>
+            </div>
+            <p class="subtitle">Agentic Multi-Agent System for Vulnerability Assessment</p>
+            <p class="subtitle-small">Based on OWASP WSTG 4.2</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Scan Form Section -->
+            <section class="panel scan-panel">
+                <div class="panel-header">
+                    <span class="panel-icon">▶</span>
+                    <h2>Initialize Scan</h2>
+                </div>
+                <div class="panel-body">
+                    <form id="scanForm">
+                        <div class="form-group">
+                            <label for="targetUrl">Target URL</label>
+                            <input 
+                                type="text" 
+                                id="targetUrl" 
+                                placeholder="https://target-domain.com" 
+                                value="http://juice-shop:3000"
+                                required>
+                        </div>
+                        <div class="form-group">
+                            <label for="scanName">Scan Name (Optional)</label>
+                            <input 
+                                type="text" 
+                                id="scanName" 
+                                placeholder="My Security Assessment">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="startBtn">
+                            <span class="btn-icon">⚡</span>
+                            Start Scan
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Status Section -->
+            <section class="panel status-panel" id="statusPanel" style="display:none;">
+                <div class="panel-header">
+                    <span class="panel-icon">◈</span>
+                    <h2>Scan Status</h2>
+                </div>
+                <div class="panel-body">
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="status-label">Job ID:</span>
+                            <span class="status-value" id="jobId">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Status:</span>
+                            <span class="status-value status-badge" id="scanStatus">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Target:</span>
+                            <span class="status-value" id="targetDisplay">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Progress:</span>
+                            <span class="status-value" id="progressText">-</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressBar"></div>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn btn-danger" id="cancelBtn" style="display:none;">
+                            <span class="btn-icon">⊗</span>
+                            Cancel Scan
+                        </button>
+                        <button class="btn btn-success" id="downloadBtn" style="display:none;">
+                            <span class="btn-icon">⬇</span>
+                            Download Report
+                        </button>
+                        <button class="btn btn-success" id="downloadPdfBtn" style="display:none;">
+                            <span class="btn-icon">📄</span>
+                            Download PDF Report
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agents Section -->
+            <section class="panel agents-panel" id="agentsPanel" style="display:none;">
+                <div class="panel-header">
+                    <span class="panel-icon">⚙</span>
+                    <h2>Agent Activity</h2>
+                </div>
+                <div class="panel-body">
+                    <div id="agentsList" class="agents-list">
+                        <!-- Agents will be populated dynamically -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs Section -->
+            <section class="panel logs-panel" id="logsPanel" style="display:none;">
+                <div class="panel-header">
+                    <span class="panel-icon">▣</span>
+                    <h2>System Logs</h2>
+                    <button class="btn btn-small" id="clearLogsBtn">Clear</button>
+                </div>
+                <div class="panel-body">
+                    <div id="logsContainer" class="logs-container">
+                        <div class="log-line">[SYSTEM] Waiting for scan initialization...</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>RAJDOLL v1.0 | Multi-Agent Security Testing Framework | OWASP WSTG 4.2 Compliant</p>
+        </footer>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
