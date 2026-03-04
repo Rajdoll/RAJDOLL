@@ -439,6 +439,104 @@ body {
     background: var(--text-secondary);
 }
 
+/* ========== HITL LIVE EXECUTION MONITOR ========== */
+.monitor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 18px;
+}
+
+.monitor-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.monitor-label {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.monitor-value {
+    color: var(--accent-info);
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.monitor-url {
+    font-size: 0.85rem;
+    word-break: break-all;
+    color: var(--accent-primary);
+}
+
+.monitor-badge {
+    background: var(--accent-danger);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    animation: blink 1s infinite;
+}
+
+.monitor-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 18px;
+}
+
+.monitor-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-info), var(--accent-primary));
+    width: 0%;
+    transition: width 0.4s ease;
+    box-shadow: 0 0 8px var(--accent-info);
+}
+
+.monitor-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.btn-warning {
+    background: var(--accent-warning);
+    color: var(--bg-primary);
+}
+
+.btn-warning:hover {
+    background: #cc8800;
+    box-shadow: 0 0 20px rgba(255, 170, 0, 0.5);
+}
+
+.monitor-select {
+    padding: 6px 12px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.85rem;
+    background: var(--bg-secondary);
+    color: var(--text-white);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.monitor-select:hover,
+.monitor-select:focus {
+    border-color: var(--accent-primary);
+    outline: none;
+    box-shadow: var(--shadow-glow);
+}
+
 /* ========== FOOTER ========== */
 .footer {
     text-align: center;

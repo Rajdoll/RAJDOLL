@@ -7,6 +7,10 @@ const API_BASE = window.location.origin + '/api';
 let currentJobId = null;
 let statusPollInterval = null;
 let websocket = null;
+let wsReconnectAttempts = 0;
+let wsReconnectTimer = null;
+const WS_MAX_RECONNECT_ATTEMPTS = 5;
+const WS_BASE_DELAY_MS = 1000;
 
 // DOM Elements
 const scanForm = document.getElementById('scanForm');
@@ -18,6 +22,7 @@ const clearLogsBtn = document.getElementById('clearLogsBtn');
 
 const statusPanel = document.getElementById('statusPanel');
 const agentsPanel = document.getElementById('agentsPanel');
+const monitorPanel = document.getElementById('monitorPanel');
 const logsPanel = document.getElementById('logsPanel');
 
 const jobIdDisplay = document.getElementById('jobId');
@@ -35,7 +40,18 @@ document.addEventListener('DOMContentLoaded', () => {
     downloadBtn.addEventListener('click', handleDownloadReport);
     downloadPdfBtn.addEventListener('click', handleDownloadPdfReport);
     clearLogsBtn.addEventListener('click', clearLogs);
-    
+
+    // HITL Live Monitor buttons
+    document.getElementById('hitlSkipUrl').addEventListener('click', () => sendIntervention('skip_url'));
+    document.getElementById('hitlCancelTest').addEventListener('click', () => sendIntervention('cancel_test'));
+    document.getElementById('hitlSkipAgent').addEventListener('click', () => sendIntervention('skip_agent'));
+    document.getElementById('hitlTechniqueSelect').addEventListener('change', (e) => {
+        if (e.target.value) {
+            sendIntervention('change_technique', e.target.value);
+            e.target.value = '';
+        }
+    });
+
     addLog('[SYSTEM] RAJDOLL initialized. Ready to scan.', 'success');
 });
 
@@ -79,6 +95,7 @@ async function handleScanSubmit(e) {
         // Show status panels
         statusPanel.style.display = 'block';
         agentsPanel.style.display = 'block';
+        monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
         
         // Update displays
@@ -335,7 +352,12 @@ function handleScanComplete(status) {
     startBtn.disabled = false;
     startBtn.innerHTML = '<span class="btn-icon">⚡</span> Start Scan';
     
-    // Disconnect WebSocket
+    // Disconnect WebSocket and cancel pending reconnects
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+    wsReconnectAttempts = WS_MAX_RECONNECT_ATTEMPTS; // Prevent reconnect during close
     if (websocket) {
         websocket.close();
     }
@@ -347,29 +369,50 @@ function connectWebSocket() {
         console.warn('[WebSocket] No currentJobId, skipping connection');
         return;
     }
-    
+
+    // Reset reconnect state on fresh connection
+    wsReconnectAttempts = 0;
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+
+    _createWebSocket();
+}
+
+function _createWebSocket() {
+    if (!currentJobId) return;
+
     // Close existing connection
     if (websocket && websocket.readyState !== WebSocket.CLOSED) {
         console.log('[WebSocket] Closing existing connection');
         websocket.close();
     }
-    
+
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/${currentJobId}`;
-    
-    console.log(`[WebSocket] Attempting to connect to: ${wsUrl}`);
-    addLog(`[SYSTEM] Connecting to real-time log stream (Job ${currentJobId})...`, 'info');
-    
+
+    const isReconnect = wsReconnectAttempts > 0;
+    console.log(`[WebSocket] ${isReconnect ? 'Reconnecting' : 'Connecting'} to: ${wsUrl} (attempt ${wsReconnectAttempts + 1})`);
+    if (!isReconnect) {
+        addLog(`[SYSTEM] Connecting to real-time log stream (Job ${currentJobId})...`, 'info');
+    }
+
     try {
         let suppressServerConnectedMessage = false;
         websocket = new WebSocket(wsUrl);
-        
+
         websocket.onopen = () => {
             console.log('[WebSocket] Connection OPENED');
-            addLog('[SYSTEM] ✅ Connected to log stream', 'success');
+            if (isReconnect) {
+                addLog('[SYSTEM] Reconnected to log stream', 'success');
+            } else {
+                addLog('[SYSTEM] Connected to log stream', 'success');
+            }
             suppressServerConnectedMessage = true;
+            wsReconnectAttempts = 0; // Reset on successful connection
         };
-        
+
         websocket.onmessage = (event) => {
             console.log('[WebSocket] Message received:', event.data);
             try {
@@ -384,30 +427,109 @@ function connectWebSocket() {
                 ) {
                     return;
                 }
-                
+
                 if (data.type === 'log') {
                     addLog(`[${data.agent || 'SYSTEM'}] ${data.message}`, data.level || 'info');
                 } else if (data.type === 'agent_update') {
                     addLog(`[AGENT] ${data.agent}: ${data.status}`, 'info');
+                } else if (data.type === 'execution_status') {
+                    updateExecutionMonitor(data);
                 }
             } catch (error) {
                 console.error('[WebSocket] Message parse error:', error);
                 addLog(`[WebSocket] Raw message: ${event.data}`, 'info');
             }
         };
-        
+
         websocket.onerror = (error) => {
             console.error('[WebSocket] ERROR:', error);
-            addLog('[ERROR] ❌ WebSocket connection error - check browser console', 'error');
         };
-        
+
         websocket.onclose = (event) => {
             console.log(`[WebSocket] Connection CLOSED - Code: ${event.code}, Reason: ${event.reason}`);
-            addLog(`[SYSTEM] ⚠️ Log stream disconnected (code: ${event.code})`, 'warning');
+
+            // Don't reconnect if scan is in a terminal state or was intentionally closed (code 1000)
+            const statusText = scanStatusDisplay ? scanStatusDisplay.textContent.toLowerCase() : '';
+            const isTerminal = ['completed', 'failed', 'cancelled'].some(s => statusText.includes(s));
+
+            if (event.code === 1000 || isTerminal) {
+                addLog(`[SYSTEM] Log stream closed`, 'info');
+                return;
+            }
+
+            // Attempt reconnect with exponential backoff
+            if (wsReconnectAttempts < WS_MAX_RECONNECT_ATTEMPTS) {
+                wsReconnectAttempts++;
+                const delay = WS_BASE_DELAY_MS * Math.pow(2, wsReconnectAttempts - 1);
+                addLog(`[SYSTEM] Log stream disconnected. Reconnecting in ${delay / 1000}s (attempt ${wsReconnectAttempts}/${WS_MAX_RECONNECT_ATTEMPTS})...`, 'warning');
+                wsReconnectTimer = setTimeout(() => _createWebSocket(), delay);
+            } else {
+                addLog('[SYSTEM] Log stream disconnected. Max reconnect attempts reached — using status polling only.', 'warning');
+            }
         };
     } catch (error) {
         console.error('[WebSocket] Failed to create WebSocket:', error);
         addLog(`[ERROR] Failed to create WebSocket: ${error.message}`, 'error');
+    }
+}
+
+// ========== HITL LIVE EXECUTION MONITOR ==========
+function updateExecutionMonitor(data) {
+    const monAgent = document.getElementById('monAgent');
+    const monUrl = document.getElementById('monUrl');
+    const monTestType = document.getElementById('monTestType');
+    const monProgress = document.getElementById('monProgress');
+    const monTechniques = document.getElementById('monTechniques');
+    const monFindings = document.getElementById('monFindings');
+    const monProgressBar = document.getElementById('monProgressBar');
+    const monitorBadge = document.getElementById('monitorBadge');
+
+    if (data.agent) monAgent.textContent = formatAgentName(data.agent);
+
+    if (data.phase === 'url_testing') {
+        monUrl.textContent = data.current_url || '-';
+        monTestType.textContent = (data.tests_for_url || []).join(', ').toUpperCase() || '-';
+        monProgress.textContent = `URL ${data.current_url_index || 0} / ${data.total_urls || 0}`;
+        monFindings.textContent = data.findings_so_far || 0;
+        const pct = data.total_urls ? (data.current_url_index / data.total_urls) * 100 : 0;
+        monProgressBar.style.width = `${pct}%`;
+        monitorBadge.style.display = 'none';
+    } else if (data.phase === 'react_loop') {
+        monUrl.textContent = data.url || '-';
+        monTestType.textContent = (data.test_type || '-').toUpperCase();
+        monProgress.textContent = `Iteration ${data.iteration || 0} / ${data.max_iterations || 0}`;
+        monTechniques.textContent = (data.techniques_tried || []).join(', ') || '-';
+        monFindings.textContent = data.findings_count || 0;
+        const pct = data.max_iterations ? (data.iteration / data.max_iterations) * 100 : 0;
+        monProgressBar.style.width = `${pct}%`;
+
+        // Loop detection: iteration >= 2 with 0 findings
+        if ((data.iteration || 0) >= 2 && (data.findings_count || 0) === 0) {
+            monitorBadge.style.display = 'inline-block';
+        } else {
+            monitorBadge.style.display = 'none';
+        }
+    }
+}
+
+async function sendIntervention(action, technique) {
+    if (!currentJobId) return;
+
+    const body = { action, reason: 'User intervention from dashboard' };
+    if (technique) body.technique = technique;
+
+    try {
+        addLog(`[HITL] Sending intervention: ${action}${technique ? ' (' + technique + ')' : ''}`, 'warning');
+        const response = await fetch(`${API_BASE}/scans/${currentJobId}/intervene`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        addLog(`[HITL] ${data.message}`, 'success');
+    } catch (error) {
+        addLog(`[HITL] Intervention failed: ${error.message}`, 'error');
     }
 }
 
@@ -430,6 +552,11 @@ function clearLogs() {
 // ========== CLEANUP ==========
 window.addEventListener('beforeunload', () => {
     stopStatusPolling();
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+    wsReconnectAttempts = WS_MAX_RECONNECT_ATTEMPTS; // Prevent reconnect during close
     if (websocket) {
         websocket.close();
     }

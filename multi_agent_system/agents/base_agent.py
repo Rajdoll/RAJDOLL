@@ -95,7 +95,38 @@ class BaseAgent:
 	def shared_context(self) -> Dict[str, Any]:
 		"""Access shared context snapshot for this agent"""
 		return self._shared_context_snapshot
-	
+
+	# ====================================================================
+	# HITL Live Execution Monitor — broadcast status & check signals
+	# ====================================================================
+
+	def broadcast_execution_status(self, status: Dict[str, Any]) -> None:
+		"""Write structured execution state to SharedContext for dashboard consumption."""
+		from datetime import datetime as _dt
+		status.setdefault("agent", self.agent_name)
+		status.setdefault("timestamp", _dt.utcnow().isoformat())
+		try:
+			self.context_manager.write("execution_status", status)
+		except Exception:
+			pass  # non-critical, never block agent execution
+
+	def check_hitl_signal(self) -> Optional[Dict[str, Any]]:
+		"""Read and consume a pending HITL intervention signal (if any).
+
+		Returns the signal dict and clears it from SharedContext so it is
+		processed only once.  Returns ``None`` when no signal is pending.
+		"""
+		try:
+			signal = self.context_manager.read("hitl_intervention")
+			if signal:
+				# Clear after reading so agent doesn't re-process it
+				self.context_manager.write("hitl_intervention", None)
+				self.log("warning", f"HITL intervention received: {signal.get('action')}", signal)
+				return signal
+		except Exception:
+			pass
+		return None
+
 	def get_auth_session(self) -> Optional[Dict[str, Any]]:
 		"""
 		Get authenticated session from shared_context for use with MCP tools.

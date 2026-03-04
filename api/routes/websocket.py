@@ -4,7 +4,7 @@ from fastapi import APIRouter, WebSocket
 import asyncio
 from datetime import datetime
 from multi_agent_system.core.db import get_db
-from multi_agent_system.models.models import JobAgent, AgentEvent
+from multi_agent_system.models.models import JobAgent, AgentEvent, SharedContext
 
 
 router = APIRouter()
@@ -84,7 +84,21 @@ async def ws_logs(ws: WebSocket, job_id: int):
 								"agent": agent.agent_name,
 								"status": agent.status
 							})
-	
+
+				# HITL Live Monitor: broadcast execution_status to dashboard
+				try:
+					exec_record = db.query(SharedContext).filter(
+						SharedContext.job_id == job_id,
+						SharedContext.key == "execution_status"
+					).one_or_none()
+					if exec_record and exec_record.value:
+						await ws.send_json({
+							"type": "execution_status",
+							**exec_record.value
+						})
+				except Exception:
+					pass
+
 	except Exception as e:
 		# Connection closed or error
 		pass

@@ -284,10 +284,17 @@ class ReActLoop:
         self.llm_client = llm_client or SimpleLLMClient()
         self.mcp_client = mcp_client or MCPClient()
         self._log_callback = None
-    
+        self._signal_check_callback = None   # HITL: check for intervention signals
+        self._broadcast_callback = None       # HITL: broadcast execution status
+
     def set_log_callback(self, callback):
         """Set callback for logging (integrates with agent logging)"""
         self._log_callback = callback
+
+    def set_hitl_callbacks(self, signal_check=None, broadcast=None):
+        """Set HITL callbacks for live intervention from dashboard."""
+        self._signal_check_callback = signal_check
+        self._broadcast_callback = broadcast
     
     def _log(self, level: str, message: str):
         """Log message via callback or print"""
@@ -410,7 +417,32 @@ PAYLOAD GENERATION STRATEGIES:
         while state.iteration < state.max_iterations and not state.confirmed:
             state.iteration += 1
             self._log("info", f"=== Iteration {state.iteration}/{state.max_iterations} ===")
-            
+
+            # HITL: Check for intervention signal before each iteration
+            if self._signal_check_callback:
+                signal = self._signal_check_callback()
+                if signal:
+                    action_type = signal.get("action", "")
+                    if action_type in ("cancel_test", "skip_test"):
+                        self._log("warning", f"HITL: Test cancelled by user — {signal.get('reason', '')}")
+                        break
+                    elif action_type == "change_technique":
+                        # Will be picked up in _think via injected technique
+                        state._hitl_technique_override = signal.get("technique")
+                        self._log("info", f"HITL: Technique override → {signal.get('technique')}")
+
+            # HITL: Broadcast current iteration status to dashboard
+            if self._broadcast_callback:
+                self._broadcast_callback({
+                    "phase": "react_loop",
+                    "test_type": test_type,
+                    "url": target_url,
+                    "iteration": state.iteration,
+                    "max_iterations": state.max_iterations,
+                    "techniques_tried": state.techniques_tried[-3:],
+                    "findings_count": len(state.vulnerabilities_found),
+                })
+
             # STEP 1: THOUGHT - LLM analyzes state and decides action
             thought, action = await self._think(state)
             state.thoughts.append(thought)

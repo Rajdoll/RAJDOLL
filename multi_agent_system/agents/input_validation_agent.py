@@ -441,34 +441,64 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             self.log("info", f"⚡ Performance cap: testing top {MAX_PRIORITY_URLS} of {len(priority_urls)} prioritized URLs (sorted by priority score)")
 
         # Execute tests for each LLM-selected URL
+        _skip_agent = False
         for idx, url_info in enumerate(capped_urls, 1):
-            print(f"🔍 EXEC-LOOP-5: INSIDE FOR LOOP - iteration {idx}, url_info={url_info}", file=sys.stderr, flush=True)
+            # ── HITL: check for skip_agent / skip_url signals ──
+            signal = self.check_hitl_signal()
+            if signal:
+                sig_action = signal.get("action", "")
+                if sig_action == "skip_agent":
+                    self.log("warning", f"HITL: Agent skipped by user — {signal.get('reason', '')}")
+                    _skip_agent = True
+                    break
+                elif sig_action == "skip_url":
+                    self.log("warning", f"HITL: Skipping URL {url_info.get('url','')} per user request")
+                    continue
+
             url = url_info.get('url', '')
             tests = url_info.get('tests', [])
             parameters = url_info.get('parameters', ['id'])
             if not isinstance(parameters, list) or not parameters:
-                # Guard against LLM returning an explicit empty list (would skip Phase-2 GET tests)
                 parameters = ['id', 'q', 'search']
             priority_score = url_info.get('priority_score', 0)
             reason = url_info.get('reason', 'LLM selected')
 
-            print(f"🔍 EXEC-LOOP-6: Extracted URL={url}, tests={tests}", file=sys.stderr, flush=True)
+            # ── HITL: broadcast current execution state to dashboard ──
+            self.broadcast_execution_status({
+                "phase": "url_testing",
+                "current_url": url,
+                "current_url_index": idx,
+                "total_urls": len(capped_urls),
+                "tests_for_url": tests[:MAX_TESTS_PER_URL],
+                "priority_score": priority_score,
+                "findings_so_far": sum(len(v) for v in all_findings.values()),
+            })
+
             self.log("info", f"\n{'='*60}")
-            self.log("info", f"🎯 Testing URL {idx}/{len(priority_urls)}: {url}")
+            self.log("info", f"🎯 Testing URL {idx}/{len(capped_urls)}: {url}")
             self.log("info", f"   Priority Score: {priority_score}/100")
             self.log("info", f"   Reason: {reason}")
-            self.log("info", f"   Tests: {', '.join(tests)}")
+            self.log("info", f"   Tests: {', '.join(tests[:MAX_TESTS_PER_URL])}")
             self.log("info", f"   Parameters: {', '.join(parameters)}")
             self.log("info", f"{'='*60}\n")
 
             # Execute each test LLM selected for this URL (capped to prevent explosion)
             for test_type in tests[:MAX_TESTS_PER_URL]:
-                print(f"🔍 EXEC-LOOP-8: Inner loop - test_type={test_type}", file=sys.stderr, flush=True)
+                # ── HITL: check for skip_test signal before each test type ──
+                signal = self.check_hitl_signal()
+                if signal:
+                    sig_action = signal.get("action", "")
+                    if sig_action == "skip_agent":
+                        self.log("warning", f"HITL: Agent skipped by user mid-test")
+                        _skip_agent = True
+                        break
+                    elif sig_action in ("skip_url", "cancel_test", "skip_test"):
+                        self.log("warning", f"HITL: Skipping {test_type} on {url} per user request")
+                        continue
+
                 try:
                     if test_type == 'sqli':
-                        print(f"🔍 EXEC-LOOP-9: Calling _execute_sqli_test for {url}", file=sys.stderr, flush=True)
                         await self._execute_sqli_test(url, parameters, all_findings, auth_data)
-                        print(f"🔍 EXEC-LOOP-10: _execute_sqli_test completed", file=sys.stderr, flush=True)
                     elif test_type == 'xss':
                         await self._execute_xss_test(url, parameters, all_findings, auth_data)
                     elif test_type == 'lfi':
@@ -487,6 +517,9 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                         self.log("warning", f"   Unknown test type: {test_type}")
                 except Exception as e:
                     self.log("warning", f"   {test_type.upper()} test failed for {url}: {e}")
+
+            if _skip_agent:
+                break
 
         print(f"🔍 EXEC-LOOP-7: FOR LOOP COMPLETED - tested {len(priority_urls)} URLs", file=sys.stderr, flush=True)
         # Report all findings
@@ -536,7 +569,11 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         # Initialize ReAct loop
         react_loop = ReActLoop()
         react_loop.set_log_callback(self.log)
-        
+        react_loop.set_hitl_callbacks(
+            signal_check=self.check_hitl_signal,
+            broadcast=self.broadcast_execution_status,
+        )
+
         # Get tech stack from shared context for intelligent payload selection
         tech_stack = self.shared_context.get("tech_stack", {})
         

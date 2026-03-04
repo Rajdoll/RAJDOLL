@@ -113,6 +113,69 @@
                 </div>
             </section>
 
+            <!-- HITL Live Execution Monitor -->
+            <section class="panel monitor-panel" id="monitorPanel" style="display:none;">
+                <div class="panel-header">
+                    <span class="panel-icon">◎</span>
+                    <h2>Live Execution Monitor</h2>
+                    <span class="monitor-badge" id="monitorBadge" style="display:none;">LOOP DETECTED</span>
+                </div>
+                <div class="panel-body">
+                    <div class="monitor-grid">
+                        <div class="monitor-item">
+                            <span class="monitor-label">Agent</span>
+                            <span class="monitor-value" id="monAgent">-</span>
+                        </div>
+                        <div class="monitor-item">
+                            <span class="monitor-label">URL</span>
+                            <span class="monitor-value monitor-url" id="monUrl">-</span>
+                        </div>
+                        <div class="monitor-item">
+                            <span class="monitor-label">Test Type</span>
+                            <span class="monitor-value" id="monTestType">-</span>
+                        </div>
+                        <div class="monitor-item">
+                            <span class="monitor-label">Progress</span>
+                            <span class="monitor-value" id="monProgress">-</span>
+                        </div>
+                        <div class="monitor-item">
+                            <span class="monitor-label">Techniques Tried</span>
+                            <span class="monitor-value" id="monTechniques">-</span>
+                        </div>
+                        <div class="monitor-item">
+                            <span class="monitor-label">Findings</span>
+                            <span class="monitor-value" id="monFindings">0</span>
+                        </div>
+                    </div>
+                    <div class="monitor-progress-bar">
+                        <div class="monitor-progress-fill" id="monProgressBar"></div>
+                    </div>
+                    <div class="monitor-actions">
+                        <button class="btn btn-danger btn-small" id="hitlSkipUrl" title="Skip to next URL">
+                            Skip URL
+                        </button>
+                        <button class="btn btn-warning btn-small" id="hitlCancelTest" title="Cancel current test (ReAct loop)">
+                            Cancel Test
+                        </button>
+                        <button class="btn btn-warning btn-small" id="hitlSkipAgent" title="Skip entire agent">
+                            Skip Agent
+                        </button>
+                        <select id="hitlTechniqueSelect" class="monitor-select">
+                            <option value="">Change Technique...</option>
+                            <option value="error_based_generic">Error-Based Generic</option>
+                            <option value="union_based">Union-Based</option>
+                            <option value="blind_boolean">Blind Boolean</option>
+                            <option value="blind_time">Blind Time-Based</option>
+                            <option value="reflected_basic">XSS Reflected Basic</option>
+                            <option value="event_handlers">XSS Event Handlers</option>
+                            <option value="dom_based">XSS DOM-Based</option>
+                            <option value="polyglot">Polyglot</option>
+                            <option value="encoded_bypass">Encoded Bypass</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
             <!-- Logs Section -->
             <section class="panel logs-panel" id="logsPanel" style="display:none;">
                 <div class="panel-header">

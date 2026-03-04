@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from multi_agent_system.core.db import get_db
 from multi_agent_system.models.models import Job, JobStatus, JobAgent, AgentStatus, ScanCost
@@ -168,6 +169,60 @@ def cancel_scan(job_id: int):
 			print(f"[API] Warning: Could not revoke Celery task: {e}")
 		
 	return {"message": "Scan cancelled successfully", "job_id": job_id}
+
+
+# ============================================================================
+# HITL Live Execution Monitor — status & intervention
+# ============================================================================
+
+@router.get("/scans/{job_id}/execution-status")
+def get_execution_status(job_id: int):
+	"""Return real-time execution status (current URL, test type, ReAct iteration)."""
+	from multi_agent_system.models.models import SharedContext
+	with get_db() as db:
+		job = db.query(Job).get(job_id)
+		if not job:
+			raise HTTPException(status_code=404, detail="Job not found")
+		record = db.query(SharedContext).filter(
+			SharedContext.job_id == job_id,
+			SharedContext.key == "execution_status"
+		).one_or_none()
+		return record.value if record and record.value else {}
+
+
+class InterventionRequest(BaseModel):
+	action: str   # cancel_test, skip_url, skip_test, skip_agent, change_technique
+	technique: str | None = None
+	reason: str | None = None
+
+
+@router.post("/scans/{job_id}/intervene")
+def intervene(job_id: int, req: InterventionRequest):
+	"""Send a HITL intervention signal to a running agent."""
+	valid_actions = {"cancel_test", "skip_url", "skip_test", "skip_agent", "change_technique"}
+	if req.action not in valid_actions:
+		raise HTTPException(status_code=400, detail=f"Invalid action. Must be one of: {valid_actions}")
+
+	from multi_agent_system.models.models import SharedContext
+	signal = {"action": req.action, "reason": req.reason or "User intervention from dashboard"}
+	if req.technique:
+		signal["technique"] = req.technique
+
+	with get_db() as db:
+		job = db.query(Job).get(job_id)
+		if not job:
+			raise HTTPException(status_code=404, detail="Job not found")
+		record = db.query(SharedContext).filter(
+			SharedContext.job_id == job_id,
+			SharedContext.key == "hitl_intervention"
+		).one_or_none()
+		if record:
+			record.value = signal
+		else:
+			db.add(SharedContext(job_id=job_id, key="hitl_intervention", value=signal))
+		db.commit()
+
+	return {"status": "success", "message": f"Intervention '{req.action}' sent", "job_id": job_id}
 
 
 @router.get("/scans/{job_id}/costs")
