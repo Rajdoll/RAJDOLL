@@ -347,7 +347,11 @@ class SessionManager:
                         "username": username,
                         "password": creds['password'],
                         "login_url": login_form['url'],
-                        "session_type": session['type']
+                        "session_type": session.get('type'),
+                        # Preserve full session material for downstream agents/tools
+                        "token": session.get('token'),
+                        "cookies": session.get('cookies', {}),
+                        "headers": session.get('headers', {}),
                     })
                     
                     # Don't test all credentials if we got admin

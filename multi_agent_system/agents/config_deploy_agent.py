@@ -23,7 +23,6 @@ You are ConfigDeploymentAgent, OWASP WSTG-CONF expert specializing in configurat
 3. Select appropriate tools based on target characteristics:
    - test_http_methods_and_headers → For method/header analysis
    - find_sensitive_files_and_dirs → For file discovery (uses SecLists)
-   - run_nuclei_config_scan → For comprehensive config scanning
    - test_network_infrastructure → For infrastructure analysis
 4. Execute tools to discover misconfigurations
 5. Test discovered endpoints with dangerous HTTP methods
@@ -39,9 +38,8 @@ You are ConfigDeploymentAgent, OWASP WSTG-CONF expert specializing in configurat
 
 🔧 AVAILABLE TOOLS:
 1. test_network_infrastructure - Scan ports and services
-2. run_nuclei_config_scan - Comprehensive config scanning
-3. find_sensitive_files_and_dirs - Find exposed configs/backups (100+ paths)
-4. test_http_methods_and_headers - Test dangerous HTTP methods
+2. find_sensitive_files_and_dirs - Find exposed configs/backups (100+ paths)
+3. test_http_methods_and_headers - Test dangerous HTTP methods
 
 📋 TESTING CHECKLIST (Execute ALL):
 1. Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
@@ -80,7 +78,6 @@ You are ConfigDeploymentAgent, OWASP WSTG-CONF expert specializing in configurat
 🛠️ MCP TOOL USAGE:
 - test_http_methods_and_headers(domain): HTTP method + security header analysis
 - find_sensitive_files_and_dirs(domain): ffuf-based file/directory discovery
-- run_nuclei_config_scan(domain): Nuclei templates for config issues
 - test_network_infrastructure(domain): Nmap scan + service validation
 - test_cache_headers(url): Cache-Control, Pragma analysis
 - check_generic_error_pages(base_url): Error page information disclosure
@@ -115,18 +112,12 @@ Write to shared_context:
 """
     async def run(self) -> None:
         client = MCPClient()
-        # 🔑 AUTHENTICATED SESSION SUPPORT
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        auth_data = None
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                }
-                self.log("info", f"✓ Using authenticated session: {first_login.get('username')}")
+        # 🔑 AUTHENTICATED SESSION SUPPORT (via Orchestrator auto-login)
+        auth_data = self.get_auth_session()
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')}")
+        else:
+            self.log("warning", "⚠ No authenticated session available")
 
         target = self._get_target()
         if not target:
@@ -162,7 +153,8 @@ Write to shared_context:
                     client.call_tool(
                         server="configuration-and-deployment-management",
                         tool="test_network_infrastructure",
-                        args={"domain": domain}
+                        args={"domain": domain},
+                        auth_session=auth_data
                     ),
                     timeout=300
                 )
@@ -174,26 +166,6 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_network_infrastructure failed: {e}")
 
-        # Run Nuclei config scan
-        if self.should_run_tool("run_nuclei_config_scan"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="configuration-and-deployment-management",
-                        tool="run_nuclei_config_scan",
-                        args={"domain": domain}
-                    ),
-                    timeout=600
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    findings = data.get("findings", [])
-                    if findings:
-                        severity = "high" if any(f.get("severity") == "critical" for f in findings) else "medium"
-                        self.add_finding("WSTG-CONF", f"Nuclei config scan found {len(findings)} issues", severity=severity, evidence={"sample": findings[:5]})
-            except Exception as e:
-                self.log("warning", f"run_nuclei_config_scan failed: {e}")
-
         # Find sensitive files and directories
         if self.should_run_tool("find_sensitive_files_and_dirs"):
             try:
@@ -201,7 +173,8 @@ Write to shared_context:
                     client.call_tool(
                         server="configuration-and-deployment-management",
                         tool="find_sensitive_files_and_dirs",
-                        args={"domain": domain}
+                        args={"domain": domain},
+                        auth_session=auth_data
                     ),
                     timeout=300
                 )
@@ -295,7 +268,6 @@ Write to shared_context:
         """Return configuration/deployment testing tools for LLM planning"""
         return [
             'test_network_infrastructure',
-            'run_nuclei_config_scan',
             'find_sensitive_files_and_dirs',
             'test_http_methods_and_headers'
         ]

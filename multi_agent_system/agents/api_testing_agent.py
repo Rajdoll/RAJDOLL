@@ -99,9 +99,9 @@ class APITestingAgent(BaseAgent):
                     server="api-testing",
                     tool="parse_openapi_spec",
                     args={
-                        "url": target,
-                        "auth_session": auth_data
-                    }
+                        "url": target
+                    },
+                    auth_session=auth_data
                 )
                 
                 if result.get("data", {}).get("discovered"):
@@ -140,9 +140,9 @@ class APITestingAgent(BaseAgent):
                         server="api-testing",
                         tool="test_rest_api_abuse",
                         args={
-                            "url": test_url,
-                            "auth_session": auth_data
-                        }
+                            "url": test_url
+                        },
+                        auth_session=auth_data
                     )
                     
                     if result.get("data", {}).get("vulnerable"):
@@ -167,9 +167,9 @@ class APITestingAgent(BaseAgent):
                     server="api-testing",
                     tool="test_graphql_introspection",
                     args={
-                        "url": target,
-                        "auth_session": auth_data
-                    }
+                        "url": target
+                    },
+                    auth_session=auth_data
                 )
                 
                 if result.get("data", {}).get("vulnerable"):
@@ -199,9 +199,9 @@ class APITestingAgent(BaseAgent):
                     server="api-testing",
                     tool="test_graphql_mutations",
                     args={
-                        "url": target,
-                        "auth_session": auth_data
-                    }
+                        "url": target
+                    },
+                    auth_session=auth_data
                 )
                 
                 if result.get("data", {}).get("vulnerable"):
@@ -238,9 +238,9 @@ class APITestingAgent(BaseAgent):
                         tool="test_rate_limiting",
                         args={
                             "url": test_url,
-                            "auth_session": auth_data,
                             "request_count": 50  # Reduced to 50 to avoid overload
-                        }
+                        },
+                        auth_session=auth_data
                     )
                     
                     if result.get("data", {}).get("vulnerable"):
@@ -266,9 +266,9 @@ class APITestingAgent(BaseAgent):
                     server="api-testing",
                     tool="test_api_versioning_issues",
                     args={
-                        "url": target,
-                        "auth_session": auth_data
-                    }
+                        "url": target
+                    },
+                    auth_session=auth_data
                 )
                 
                 if result.get("data", {}).get("vulnerable"):
@@ -295,25 +295,8 @@ class APITestingAgent(BaseAgent):
     
     def _extract_auth_from_context(self) -> Optional[Dict[str, Any]]:
         """Extract authenticated session from shared_context."""
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        
-        if not auth_sessions:
-            return None
-        
-        # Check if there are successful logins
-        successful_logins = auth_sessions.get('successful_logins', [])
-        if not successful_logins:
-            return None
-        
-        # Use the first successful login
-        first_login = successful_logins[0]
-        
-        return {
-            'username': first_login.get('username', ''),
-            'session_type': first_login.get('session_type', 'cookie'),
-            'token': first_login.get('token', ''),
-            'cookies': first_login.get('cookies', {})
-        }
+        # Use base_agent's get_auth_session() which reads from authenticated_session
+        return self.get_auth_session()
     
     def _get_recommendation(self, finding_type: str) -> str:
         """Get recommendation based on finding type."""

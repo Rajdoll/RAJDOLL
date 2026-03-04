@@ -42,7 +42,7 @@ from urllib.parse import urlparse, quote, unquote
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_dom_xss(url: str, check_sources: bool = True) -> Dict[str, Any]:
+async def test_dom_xss(url: str, check_sources: bool = True, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-01: Test for DOM-Based Cross-Site Scripting
     logger.info(f"🔍 Executing test_dom_xss")
@@ -97,7 +97,15 @@ async def test_dom_xss(url: str, check_sources: bool = True) -> Dict[str, Any]:
             (r'window\.name', 'window.name'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get base page to analyze JavaScript
             response = await client.get(url)
             html_content = response.text
@@ -192,7 +200,7 @@ async def test_dom_xss(url: str, check_sources: bool = True) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_javascript_execution(url: str) -> Dict[str, Any]:
+async def test_javascript_execution(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-02: Test for JavaScript Execution Vulnerabilities
     logger.info(f"🔍 Executing test_javascript_execution")
@@ -224,7 +232,15 @@ async def test_javascript_execution(url: str) -> Dict[str, Any]:
             (r'setTimeout\(["\'][^"\']*["\'],', 'setTimeout with string', 'MEDIUM'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get page content
             response = await client.get(url)
             html = response.text
@@ -290,7 +306,7 @@ async def test_javascript_execution(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_html_injection(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_html_injection(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-03: Test for HTML Injection (Client-Side)
     logger.info(f"🔍 Executing test_html_injection")
@@ -313,7 +329,15 @@ async def test_html_injection(url: str, param: Optional[str] = None) -> Dict[str
             ('<details open ontoggle=alert(1)>', 'details_ontoggle'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Discover parameters
             test_params = []
             if param:
@@ -375,7 +399,7 @@ async def test_html_injection(url: str, param: Optional[str] = None) -> Dict[str
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_client_url_redirect(url: str) -> Dict[str, Any]:
+async def test_client_url_redirect(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-04: Test for Client-Side URL Redirect
     logger.info(f"🔍 Executing test_client_url_redirect")
@@ -406,7 +430,15 @@ async def test_client_url_redirect(url: str) -> Dict[str, Any]:
             (r'window\.open\(', 'window.open'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0), follow_redirects=False) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False, "follow_redirects": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get page and check for redirect patterns
             response = await client.get(url)
             html = response.text
@@ -485,7 +517,7 @@ async def test_client_url_redirect(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_css_injection(url: str) -> Dict[str, Any]:
+async def test_css_injection(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-05: Test for CSS Injection
     logger.info(f"🔍 Executing test_css_injection")
@@ -522,7 +554,15 @@ async def test_css_injection(url: str) -> Dict[str, Any]:
             (r'@import.*http', 'External CSS import', 'MEDIUM'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get page
             response = await client.get(url)
             html = response.text
@@ -580,7 +620,7 @@ async def test_css_injection(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_cors_misconfiguration(url: str) -> Dict[str, Any]:
+async def test_cors_misconfiguration(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-07: Test for Cross-Origin Resource Sharing (CORS) Misconfiguration
     logger.info(f"🔍 Executing test_cors_misconfiguration")
@@ -605,7 +645,15 @@ async def test_cors_misconfiguration(url: str) -> Dict[str, Any]:
             (f'{urlparse(url).scheme}://{urlparse(url).netloc}.evil.com', 'suffix_bypass'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test each origin
             for origin, attack_type in test_origins:
                 try:
@@ -779,7 +827,7 @@ async def test_cors_misconfiguration(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_clickjacking(url: str) -> Dict[str, Any]:
+async def test_clickjacking(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-09: Test for Clickjacking
     logger.info(f"🔍 Executing test_clickjacking")
@@ -794,7 +842,15 @@ async def test_clickjacking(url: str) -> Dict[str, Any]:
     try:
         findings = []
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             response = await client.get(url)
             
             xfo = response.headers.get('X-Frame-Options', '').upper()
@@ -879,7 +935,7 @@ async def test_clickjacking(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_websockets(url: str) -> Dict[str, Any]:
+async def test_websockets(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-10: Test for WebSockets Security Issues
     logger.info(f"🔍 Executing test_websockets")
@@ -899,7 +955,15 @@ async def test_websockets(url: str) -> Dict[str, Any]:
         ws_url = url.replace('http://', 'ws://').replace('https://', 'wss://')
         
         # Check if WebSocket is used
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             response = await client.get(url)
             html = response.text
             
@@ -978,7 +1042,7 @@ async def test_websockets(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_browser_storage(url: str) -> Dict[str, Any]:
+async def test_browser_storage(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-12: Test for Browser Storage Security
     logger.info(f"🔍 Executing test_browser_storage")
@@ -994,7 +1058,15 @@ async def test_browser_storage(url: str) -> Dict[str, Any]:
     try:
         findings = []
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             response = await client.get(url)
             html = response.text
             
@@ -1084,7 +1156,7 @@ async def test_browser_storage(url: str) -> Dict[str, Any]:
 # WSTG-CLNT-13: Test for Prototype Pollution
 # ============================================================================
 
-async def test_prototype_pollution(url: str) -> Dict[str, Any]:
+async def test_prototype_pollution(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-13: Test for Prototype Pollution Vulnerabilities
     logger.info(f"🔍 Executing test_prototype_pollution")
@@ -1126,7 +1198,15 @@ async def test_prototype_pollution(url: str) -> Dict[str, Any]:
             (r'merge\([^)]*\)', 'Deep merge function', 'HIGH'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get base page
             response = await client.get(url)
             html_content = response.text
@@ -1187,7 +1267,7 @@ async def test_prototype_pollution(url: str) -> Dict[str, Any]:
 # WSTG-CLNT-14: Test for postMessage Vulnerabilities
 # ============================================================================
 
-async def test_postmessage_vulnerabilities(url: str) -> Dict[str, Any]:
+async def test_postmessage_vulnerabilities(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-14: Test for Cross-Origin postMessage Vulnerabilities
     logger.info(f"🔍 Executing test_postmessage_vulnerabilities")
@@ -1234,7 +1314,15 @@ async def test_postmessage_vulnerabilities(url: str) -> Dict[str, Any]:
              'Regex-based origin validation (potentially bypassable)', 'MEDIUM'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             response = await client.get(url)
             html_content = response.text
             
@@ -1297,7 +1385,7 @@ async def test_postmessage_vulnerabilities(url: str) -> Dict[str, Any]:
 # WSTG-CLNT-15: Test for Client-Side Template Injection
 # ============================================================================
 
-async def test_client_side_template_injection(url: str) -> Dict[str, Any]:
+async def test_client_side_template_injection(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-15: Test for Client-Side Template Injection (CSTI)
     logger.info(f"🔍 Executing test_client_side_template_injection")
@@ -1341,7 +1429,15 @@ async def test_client_side_template_injection(url: str) -> Dict[str, Any]:
             (r'\[\[.*?\]\]', 'Template expressions (alternate delimiter)', 'MEDIUM'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             response = await client.get(url)
             html_content = response.text
             

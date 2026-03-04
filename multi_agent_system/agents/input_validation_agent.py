@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 from .base_agent import BaseAgent, AgentRegistry
-from typing import ClassVar
+from typing import ClassVar, Dict, Any, List, Optional
 from ..utils.mcp_client import MCPClient
 from ..utils.session_manager import SessionManager
+from ..utils.react_loop import ReActLoop, react_test
 import re
 import httpx
+import os
 import sys  # Required for debug logging to stderr
+
+# Environment variable to enable ReAct mode (iterative testing)
+REACT_MODE_ENABLED = os.getenv("REACT_MODE", "true").lower() == "true"
+REACT_MAX_ITERATIONS = int(os.getenv("REACT_MAX_ITERATIONS", "3"))
+
+# Performance caps to prevent combinatorial explosion (configurable via env vars)
+MAX_PRIORITY_URLS = int(os.getenv("MAX_PRIORITY_URLS", "10"))
+MAX_TESTS_PER_URL = int(os.getenv("MAX_TESTS_PER_URL", "3"))
 
 
 @AgentRegistry.register("InputValidationAgent")
@@ -41,7 +51,6 @@ You are InputValidationAgent, OWASP WSTG-INPV expert specializing in input valid
 5. test_lfi - Test LFI/path traversal
 6. test_ssti - Test template injection
 7. test_http_smuggling - Test HTTP smuggling
-8. run_nuclei_scan - Comprehensive scanning
 
 📋 TESTING STRATEGY:
 1. Read endpoints from shared_context (ReconnaissanceAgent)
@@ -79,7 +88,6 @@ You are InputValidationAgent, OWASP WSTG-INPV expert specializing in input valid
 - test_sqli(url, data, dbms): Comprehensive SQLMap scan
 - test_xss_reflected(target_url): Dalfox XSS detection
 - test_lfi(url_with_fuzz): ffuf-based LFI fuzzing
-- run_nuclei_scan(url, templates): Template-based detection (ssrf, xxe, lfi, ssti, cve)
 - find_reflected_params(url): Identify parameters that reflect in response
 - test_http_smuggling(host): HTTP request smuggling detection
 
@@ -143,7 +151,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 - Test common files: `/etc/passwd`, `/windows/win.ini`, application config files
 
 **4. ITERATIVE TESTING STRATEGY:**
-- Start with broad reconnaissance (Nuclei comprehensive scan)
+- Start with broad reconnaissance (endpoint discovery + parameter mining)
 - Analyze initial findings → Identify patterns
 - Execute targeted deep-dive testing on promising endpoints
 - Use findings from one tool to inform parameters for next tool
@@ -181,38 +189,21 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 
         print(f"🔍 DEBUG-3: After initial logs", file=sys.stderr, flush=True)
 
-        # Check for authenticated sessions from ReconnaissanceAgent
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
+        # Check for authenticated session (from Orchestrator auto-login)
+        auth_data = self.get_auth_session()  # Use base_agent method
         session_mgr = None
         authenticated = False
-        auth_data = None  # Will be passed to MCP tools
 
         print(f"🔍 DEBUG-4: After auth variables init", file=sys.stderr, flush=True)
         
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            users = auth_sessions['sessions'].get('available_users', [])
-            self.log("info", f"✓ Using authenticated session: {users}")
-            
-            # Extract session data for MCP tool injection
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                # Build auth data structure for MCPClient
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                    'token': first_login.get('token'),  # BUGFIX: Use actual JWT token, not placeholder
-                    'cookies': first_login.get('cookies', {}),  # Include cookies if available
-                }
-
-                self.log("info", f"✓ Auth data prepared for MCP tools: {auth_data['session_type']} (token: {auth_data.get('token', 'None')[:20] if auth_data.get('token') else 'None'}...)")
-            
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')} (token: {'Present' if auth_data.get('token') else 'None'})")
             session_mgr = SessionManager(target)
             session_mgr.sessions = {}
             session_mgr.logged_in = True
             authenticated = True
         else:
-            self.log("warning", "No authenticated session - testing public endpoints only")
+            self.log("warning", "⚠ No authenticated session - testing public endpoints only")
 
         print(f"🔍 DEBUG-5: Auth checking complete, authenticated={authenticated}", file=sys.stderr, flush=True)
 
@@ -444,12 +435,20 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             'http_smuggling': []
         }
 
+        # Cap priority URLs to prevent combinatorial explosion
+        capped_urls = priority_urls[:MAX_PRIORITY_URLS]
+        if len(priority_urls) > MAX_PRIORITY_URLS:
+            self.log("info", f"⚡ Performance cap: testing top {MAX_PRIORITY_URLS} of {len(priority_urls)} prioritized URLs (sorted by priority score)")
+
         # Execute tests for each LLM-selected URL
-        for idx, url_info in enumerate(priority_urls, 1):
+        for idx, url_info in enumerate(capped_urls, 1):
             print(f"🔍 EXEC-LOOP-5: INSIDE FOR LOOP - iteration {idx}, url_info={url_info}", file=sys.stderr, flush=True)
             url = url_info.get('url', '')
             tests = url_info.get('tests', [])
             parameters = url_info.get('parameters', ['id'])
+            if not isinstance(parameters, list) or not parameters:
+                # Guard against LLM returning an explicit empty list (would skip Phase-2 GET tests)
+                parameters = ['id', 'q', 'search']
             priority_score = url_info.get('priority_score', 0)
             reason = url_info.get('reason', 'LLM selected')
 
@@ -462,8 +461,8 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             self.log("info", f"   Parameters: {', '.join(parameters)}")
             self.log("info", f"{'='*60}\n")
 
-            # Execute each test LLM selected for this URL
-            for test_type in tests:
+            # Execute each test LLM selected for this URL (capped to prevent explosion)
+            for test_type in tests[:MAX_TESTS_PER_URL]:
                 print(f"🔍 EXEC-LOOP-8: Inner loop - test_type={test_type}", file=sys.stderr, flush=True)
                 try:
                     if test_type == 'sqli':
@@ -495,7 +494,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 
         self.log("info", "=" * 60)
         self.log("info", "✅ LLM-DRIVEN INPUT VALIDATION TESTING COMPLETE")
-        self.log("info", f"   Total URLs tested: {len(priority_urls)}")
+        self.log("info", f"   Total URLs tested: {len(capped_urls)}")
         self.log("info", f"   Total findings: {sum(len(v) for v in all_findings.values())}")
         self.log("info", "=" * 60)
 
@@ -503,13 +502,100 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
     # 🔧 LLM-DRIVEN TEST EXECUTION METHODS
     # ============================================================================
 
+    # ============================================================================
+    # 🧠 ReAct LOOP INTEGRATION - Iterative Testing with LLM Reasoning
+    # ============================================================================
+    
+    async def _execute_react_test(
+        self, 
+        url: str, 
+        test_type: str, 
+        parameters: list, 
+        auth_data: dict = None
+    ) -> Dict[str, Any]:
+        """
+        Execute vulnerability test using ReAct (Reasoning + Acting) loop.
+        
+        This is the KEY INNOVATION - instead of static tool execution:
+        1. LLM analyzes what to test
+        2. Execute test with specific payload
+        3. LLM analyzes result and decides next action
+        4. Iterate until vulnerability confirmed or exhausted
+        
+        Args:
+            url: Target URL to test
+            test_type: Type of test (sqli, xss, lfi, etc.)
+            parameters: Parameters to test
+            auth_data: Authentication session
+            
+        Returns:
+            Dict with findings and confidence
+        """
+        self.log("info", f"   🧠 ReAct Loop: Starting iterative {test_type.upper()} testing on {url}")
+        
+        # Initialize ReAct loop
+        react_loop = ReActLoop()
+        react_loop.set_log_callback(self.log)
+        
+        # Get tech stack from shared context for intelligent payload selection
+        tech_stack = self.shared_context.get("tech_stack", {})
+        
+        # Run ReAct loop
+        result = await react_loop.run(
+            target_url=url,
+            test_type=test_type,
+            parameters=parameters,
+            auth_session=auth_data,
+            tech_stack=tech_stack,
+            max_iterations=REACT_MAX_ITERATIONS
+        )
+        
+        # Log results
+        if result.get("confirmed"):
+            self.log("info", f"   ✅ ReAct: {test_type.upper()} CONFIRMED - {result.get('confidence')} confidence")
+            self.log("info", f"      Evidence: {result.get('summary')}")
+        else:
+            self.log("info", f"   ❌ ReAct: {test_type.upper()} not found after {result.get('iterations')} iterations")
+        
+        return result
+
     async def _execute_sqli_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
         """Execute SQL injection test on LLM-selected URL with LLM-selected parameters."""
         import sys
         print(f"🔥🔥🔥🔥 FUNCTION ENTRY: _execute_sqli_test called with url={url}", file=sys.stderr, flush=True)
         self.log("info", f"   🔍 SQLi testing: {url}")
 
+        if not isinstance(parameters, list) or not parameters:
+            parameters = ['id', 'q', 'search']
+
+        # ============================================================================
+        # 🧠 ReAct MODE: Use iterative LLM-guided testing
+        # ============================================================================
+        if REACT_MODE_ENABLED:
+            self.log("info", f"   🧠 Using ReAct iterative testing mode")
+            
+            react_result = await self._execute_react_test(url, "sqli", parameters, auth_data)
+            
+            if react_result.get("vulnerabilities"):
+                for vuln in react_result["vulnerabilities"]:
+                    all_findings['sqli'].append({
+                        "url": url,
+                        "type": "SQL Injection",
+                        "technique": vuln.get("technique", "unknown"),
+                        "payload": vuln.get("payload", ""),
+                        "evidence": vuln.get("evidence", []),
+                        "confidence": react_result.get("confidence", "LOW"),
+                        "iterations": react_result.get("iterations", 0),
+                        "react_mode": True
+                    })
+                self.log("info", f"      ✅ ReAct found {len(react_result['vulnerabilities'])} SQLi vulnerabilities!")
+            
+            # Still run traditional tests for comprehensive coverage
+            self.log("info", f"   📋 Also running traditional SQLi tests for comparison...")
+
+        # ============================================================================
         # PHASE 1: Test POST endpoints with JSON bodies (CRITICAL FIX)
+        # ============================================================================
         print(f"🔥🔥🔥 PHASE 1 SQLI: ENTERED - url={url}", file=sys.stderr, flush=True)
         self.log("warning", f"🔥🔥🔥 PHASE 1 SQLI: ENTERED - url={url}")
 
@@ -587,6 +673,33 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         """Execute XSS test on LLM-selected URL with LLM-selected parameters."""
         self.log("info", f"   🔍 XSS testing: {url}")
 
+        if not isinstance(parameters, list) or not parameters:
+            parameters = ['q', 'search', 'query']
+
+        # ============================================================================
+        # 🧠 ReAct MODE: Use iterative LLM-guided XSS testing
+        # ============================================================================
+        if REACT_MODE_ENABLED:
+            self.log("info", f"   🧠 Using ReAct iterative testing mode for XSS")
+            
+            react_result = await self._execute_react_test(url, "xss", parameters, auth_data)
+            
+            if react_result.get("vulnerabilities"):
+                for vuln in react_result["vulnerabilities"]:
+                    all_findings['xss'].append({
+                        "url": url,
+                        "type": "Cross-Site Scripting (XSS)",
+                        "technique": vuln.get("technique", "unknown"),
+                        "payload": vuln.get("payload", ""),
+                        "evidence": vuln.get("evidence", []),
+                        "confidence": react_result.get("confidence", "LOW"),
+                        "iterations": react_result.get("iterations", 0),
+                        "react_mode": True
+                    })
+                self.log("info", f"      ✅ ReAct found {len(react_result['vulnerabilities'])} XSS vulnerabilities!")
+            
+            self.log("info", f"   📋 Also running traditional XSS tests for comparison...")
+
         # PHASE 1: Test POST endpoints with JSON bodies (CRITICAL FIX)
         self.log("warning", f"🔥🔥🔥 PHASE 1 XSS: ENTERED - url={url}")
 
@@ -662,6 +775,31 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         """Execute LFI test on LLM-selected URL."""
         self.log("info", f"   🔍 LFI testing: {url}")
 
+        # ============================================================================
+        # 🧠 ReAct MODE: Use iterative LLM-guided LFI testing
+        # ============================================================================
+        if REACT_MODE_ENABLED:
+            self.log("info", f"   🧠 Using ReAct iterative testing mode for LFI")
+            
+            react_result = await self._execute_react_test(url, "lfi", parameters if parameters else ['file', 'path', 'page'], auth_data)
+            
+            if react_result.get("vulnerabilities"):
+                for vuln in react_result["vulnerabilities"]:
+                    all_findings['lfi'].append({
+                        "url": url,
+                        "type": "Local File Inclusion (LFI)",
+                        "technique": vuln.get("technique", "unknown"),
+                        "payload": vuln.get("payload", ""),
+                        "evidence": vuln.get("evidence", []),
+                        "confidence": react_result.get("confidence", "LOW"),
+                        "iterations": react_result.get("iterations", 0),
+                        "react_mode": True
+                    })
+                self.log("info", f"      ✅ ReAct found {len(react_result['vulnerabilities'])} LFI vulnerabilities!")
+            
+            self.log("info", f"   📋 Also running traditional LFI tests for comparison...")
+
+        # Traditional LFI test
         result = await self.execute_tool(
             server="input-validation-testing",
             tool="test_lfi",
@@ -906,6 +1044,9 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 
         # Sort by priority score (highest first) - this ensures intelligent execution order
         merged_urls.sort(key=lambda x: x.get('priority_score', 50), reverse=True)
+
+        # Cap merged URLs to prevent the 80% rule from re-inflating beyond performance limit
+        merged_urls = merged_urls[:MAX_PRIORITY_URLS]
 
         # Calculate statistics
         llm_count = len(llm_plan.get('priority_urls', []))
@@ -1374,7 +1515,7 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
 
     async def _query_llm(self, prompt: str, max_tokens: int = 1500) -> str:
         """
-        Query OpenAI API for LLM-based planning.
+        Query the configured LLM endpoint for planning.
         
         Args:
             prompt: The planning/analysis prompt
@@ -1383,41 +1524,17 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         Returns:
             str: LLM response text
         """
-        import os
-        import httpx
-        
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not set - LLM planning unavailable")
-        
-        async with httpx.AsyncClient(timeout=60) as client:
-            # Use model from environment if provided, else default
-            model = os.getenv("LLM_MODEL", "gpt-4o-mini")
-            # Choose token parameter name dynamically
-            token_param = "max_completion_tokens" if (model.startswith("gpt-5") or model.startswith("o1")) else "max_tokens"
+        from ..utils.simple_llm_client import SimpleLLMClient
 
-            payload = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                token_param: max_tokens
-            }
-            # Only include temperature for models that support it (not gpt-5/o1)
-            if not (model.startswith("gpt-5") or model.startswith("o1")):
-                payload["temperature"] = 0.7
-
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+        client = SimpleLLMClient()
+        return await client.chat_completion(
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=max_tokens,
+            temperature=0.7,
+        )
     
     def _read_previous_agent_findings(self) -> list[dict]:
         """
@@ -1711,12 +1828,7 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
                 'severity': 'High',
                 'owasp': 'WSTG-INPV-15'
             },
-            'run_nuclei_scan': {
-                'priority': 'HIGH',
-                'description': 'Nuclei vulnerability scanner',
-                'severity': 'Varies',
-                'owasp': 'WSTG-INPV-*'
-            }
+			
         }
 
     def _get_target(self) -> str | None:
@@ -1739,7 +1851,6 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         CRITICAL_TOOLS = [
             'test_sqli',           # SQL injection (OWASP A03:2021 - Injection)
             'test_xss_reflected',  # XSS (OWASP A03:2021 - Injection)
-            'run_nuclei_scan',     # Comprehensive multi-vulnerability scanner
             'test_lfi',            # Path traversal / LFI (OWASP A01:2021 - Broken Access Control)
         ]
 

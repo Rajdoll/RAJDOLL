@@ -160,7 +160,6 @@ You are WeakCryptographyAgent, an OWASP WSTG-CRYP expert specializing in cryptog
 - test_tls_configuration(host, port): testssl.sh comprehensive TLS scan
 - analyze_jwt(token): Decode + vulnerability analysis
 - test_cleartext_info(domain): Check HTTP transmission of sensitive data
-- run_nuclei_crypto_scan(url, tags): Nuclei crypto-related templates
 - analyze_token_randomness(tokens): Statistical entropy analysis
 
 📊 CONTEXT-AWARE TESTING:
@@ -191,20 +190,12 @@ Write to shared_context:
     
     async def run(self) -> None:
         client = MCPClient()
-        # 🔑 AUTHENTICATED SESSION SUPPORT
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        auth_data = None
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                    'token': first_login.get('token'),  # BUGFIX: Include JWT token for authenticated API calls
-                    'cookies': first_login.get('cookies', {}),  # Include cookies if available
-                }
-                self.log("info", f"✅ Using authenticated session: {first_login.get('username')} (token: {first_login.get('token')[:20] if first_login.get('token') else 'None'}...)")
+        # 🔑 AUTHENTICATED SESSION SUPPORT (via Orchestrator auto-login)
+        auth_data = self.get_auth_session()
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')} (token: {'Present' if auth_data.get('token') else 'None'})")
+        else:
+            self.log("warning", "⚠ No authenticated session available")
 
         target = self._get_target()
         if not target:
@@ -249,22 +240,6 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_cleartext_info failed: {e}")
 
-        # Run nuclei crypto scan
-        if self.should_run_tool("run_nuclei_crypto_scan"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="weak-cryptography-testing",
-                        tool="run_nuclei_crypto_scan",
-                        args={"url": target, "tags": ["crypto", "ssl", "tls"]}, auth_session=auth_data), timeout=600
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    findings = res.get("data", {}).get("findings", [])
-                    if findings:
-                        self.add_finding("WSTG-CRYP", "Cryptography vulnerabilities detected by nuclei", severity="medium", evidence={"sample": findings[:3]})
-            except Exception as e:
-                self.log("warning", f"run_nuclei_crypto_scan failed: {e}")
-
         # Analyze token randomness
         if self.should_run_tool("analyze_token_randomness"):
             try:
@@ -291,11 +266,8 @@ Write to shared_context:
             try:
                 # Extract JWT from authenticated session
                 jwt_token = None
-                if auth_sessions and auth_sessions.get('successful_logins'):
-                    for login in auth_sessions['successful_logins']:
-                        if login.get('token'):
-                            jwt_token = login['token']
-                            break
+                if auth_data and auth_data.get('token'):
+                    jwt_token = auth_data['token']
 
                 if jwt_token:
                     self.log("info", f"Testing JWT token for vulnerabilities (length: {len(jwt_token)})")
@@ -303,7 +275,8 @@ Write to shared_context:
                         client.call_tool(
                             server="weak-cryptography-testing",
                             tool="test_jwt_weakness",
-                            args={"token": jwt_token, "target_url": target}
+                            args={"token": jwt_token, "target_url": target},
+                            auth_session=auth_data
                         ), timeout=300
                     )
                     if isinstance(res, dict) and res.get("status") == "success":
@@ -329,7 +302,6 @@ Write to shared_context:
         return [
             'test_tls_configuration',
             'test_cleartext_info',
-            'run_nuclei_crypto_scan',
             'analyze_token_randomness',
             'test_jwt_weakness'  # PHASE 2.4: JWT vulnerability testing
         ]

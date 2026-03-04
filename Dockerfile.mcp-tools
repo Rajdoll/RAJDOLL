@@ -47,16 +47,13 @@ RUN git clone --depth=1 https://github.com/defparam/smuggler.git /opt/smuggler &
 ARG ARCH=amd64
 ARG OS=linux
 
-# ProjectDiscovery: nuclei, subfinder, httpx
+# ProjectDiscovery: subfinder, httpx
 # Hardcoded versions to avoid GitHub API rate limiting
 RUN set -eux; \
-    NUCLEI_VER=3.3.7 && \
     SUBFINDER_VER=2.6.7 && \
     HTTPX_VER=1.6.9 && \
-    curl -L -o /tmp/nuclei.zip https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VER}/nuclei_${NUCLEI_VER}_${OS}_${ARCH}.zip && \
     curl -L -o /tmp/subfinder.zip https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VER}/subfinder_${SUBFINDER_VER}_${OS}_${ARCH}.zip && \
     curl -L -o /tmp/httpx.zip https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VER}/httpx_${HTTPX_VER}_${OS}_${ARCH}.zip && \
-    unzip -o /tmp/nuclei.zip -d /usr/local/bin && \
     unzip -o /tmp/subfinder.zip -d /usr/local/bin && \
     unzip -o /tmp/httpx.zip -d /usr/local/bin && \
     rm -f /tmp/*.zip
@@ -65,7 +62,18 @@ RUN set -eux; \
 RUN GOBIN=/usr/local/bin GO111MODULE=on go install github.com/ffuf/ffuf/v2@latest && \
     ffuf -V || true
 
-# dirsearch - Advanced web path scanner with recursive capability
+# feroxbuster - Fast, concurrent directory/content scanner (8-10x faster than dirsearch)
+# Using pre-built binary for speed (Rust-based tool)
+RUN set -eux; \
+    FEROX_VER=2.11.0 && \
+    curl -L -o /tmp/feroxbuster.zip https://github.com/epi052/feroxbuster/releases/download/v${FEROX_VER}/x86_64-linux-feroxbuster.zip && \
+    unzip -o /tmp/feroxbuster.zip -d /tmp && \
+    mv /tmp/feroxbuster /usr/local/bin/feroxbuster && \
+    chmod +x /usr/local/bin/feroxbuster && \
+    rm -f /tmp/*.zip && \
+    feroxbuster --version || true
+
+# dirsearch - Advanced web path scanner with recursive capability (LEGACY - use feroxbuster for speed)
 RUN pip install --no-cache-dir dirsearch && \
     dirsearch --version || true
 
@@ -104,4 +112,4 @@ RUN git clone --depth=1 https://github.com/swisskyrepo/SSRFmap.git /opt/ssrfmap 
 EXPOSE 9001-9011
 
 # Default CMD overridden by compose service commands
-CMD ["bash", "-lc", "which nuclei && nuclei -version && uvicorn mcp_adapter.server:app --host 0.0.0.0 --port 9001"]
+CMD ["bash", "-lc", "uvicorn mcp_adapter.server:app --host 0.0.0.0 --port 9001"]

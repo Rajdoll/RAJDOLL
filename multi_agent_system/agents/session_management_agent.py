@@ -156,18 +156,12 @@ Write to shared_context:
     async def run(self) -> None:
         client = MCPClient()
 
-        #  AUTHENTICATED SESSION SUPPORT
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        auth_data = None
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                }
-                self.log("info", f" Using authenticated session: {first_login.get('username')}")
+        # 🔑 AUTHENTICATED SESSION SUPPORT (via Orchestrator auto-login)
+        auth_data = self.get_auth_session()
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')}")
+        else:
+            self.log("warning", "⚠ No authenticated session available")
 
 
         target = self._get_target()
@@ -222,7 +216,8 @@ Write to shared_context:
                         client.call_tool(
                             server="session-management-testing",
                             tool="test_session_timeout",
-                            args={"url": target, "session": auth_data, "wait_seconds": 30}
+                            args={"url": target, "session": auth_data, "wait_seconds": 30},
+                            auth_session=auth_data
                         ),
                         timeout=60
                     )
@@ -236,15 +231,15 @@ Write to shared_context:
         # Test logout functionality
         if self.should_run_tool("test_logout_functionality"):
             try:
-                if auth_data and auth_sessions.get('successful_logins'):
-                    first_login = auth_sessions.get('successful_logins', [])[0]
-                    logout_url = first_login.get('logout_url', f"{target}/logout")
-                    protected_url = first_login.get('protected_url', f"{target}/profile")
+                if auth_data:
+                    logout_url = auth_data.get('logout_url', f"{target}/logout")
+                    protected_url = auth_data.get('protected_url', f"{target}/profile")
                     res = await self.run_tool_with_timeout(
                         client.call_tool(
                             server="session-management-testing",
                             tool="test_logout_functionality",
-                            args={"logout_url": logout_url, "protected_url": protected_url, "initial_session": auth_data}
+                            args={"logout_url": logout_url, "protected_url": protected_url, "initial_session": auth_data},
+                            auth_session=auth_data
                         ),
                         timeout=45
                     )
@@ -260,15 +255,15 @@ Write to shared_context:
             try:
                 login_url = f"{target}/login"
                 login_data = {"username": "test", "password": "test123"}
-                if auth_sessions.get('successful_logins'):
-                    first_login = auth_sessions.get('successful_logins', [])[0]
-                    login_url = first_login.get('login_url', login_url)
-                    login_data = {"username": first_login.get('username'), "password": "test"}
+                if auth_data:
+                    login_url = auth_data.get('login_url', login_url)
+                    login_data = {"username": auth_data.get('username'), "password": "test"}
                 res = await self.run_tool_with_timeout(
                     client.call_tool(
                         server="session-management-testing",
                         tool="test_session_fixation",
-                        args={"login_url": login_url, "login_data": login_data}
+                        args={"login_url": login_url, "login_data": login_data},
+                        auth_session=auth_data
                     ),
                     timeout=60
                 )
@@ -286,7 +281,8 @@ Write to shared_context:
                     client.call_tool(
                         server="session-management-testing",
                         tool="test_exposed_session_vars",
-                        args={"url": target}
+                        args={"url": target},
+                        auth_session=auth_data
                     ),
                     timeout=30
                 )
@@ -344,11 +340,10 @@ Write to shared_context:
             self.log("warning", f"test_session_puzzling failed: {e}")
 
         # OPSI B: Session Hijacking Tests
-        if auth_data and auth_sessions.get('successful_logins'):
+        if auth_data:
             try:
                 # Extract session cookies from authenticated session
-                first_login = auth_sessions.get('successful_logins', [])[0]
-                session_cookies = {"token": first_login.get('username', 'test_token')}  # Simplified
+                session_cookies = {"token": auth_data.get('token') or auth_data.get('username', 'test_token')}
                 
                 res = await self.run_tool_with_timeout(
                     client.call_tool(

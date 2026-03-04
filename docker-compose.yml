@@ -3,12 +3,14 @@ services:
     build: .
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
       - DATABASE_URL=postgresql+psycopg://rajdoll:rajdoll@db:5432/rajdoll
       - REDIS_URL=redis://redis:6379/0
-      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","nuclei-testing":"http://nuclei-mcp:9014/jsonrpc"}
+      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
     ports:
       - "8000:8000"
     depends_on:
@@ -27,21 +29,26 @@ services:
       - identity-mcp
       - fileupload-mcp
       - api-testing-mcp
-      - nuclei-mcp
+      - katana-mcp
   worker:
     build: .
     command: ["celery", "-A", "multi_agent_system.tasks.celery_app.celery_app", "worker", "-l", "INFO"]
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=postgresql+psycopg://rajdoll:rajdoll@db:5432/rajdoll
       - REDIS_URL=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
+      # ReAct Mode: Iterative LLM-guided testing
+      - REACT_MODE=${REACT_MODE:-true}
+      - REACT_MAX_ITERATIONS=${REACT_MAX_ITERATIONS:-8}
       # RESEARCH MODE: Intelligent Coverage Enforcement
       # LLM tetap sebagai "otak" planning, sistem ensure minimum coverage
       - MIN_TOOLS_PER_AGENT=7
-      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","nuclei-testing":"http://nuclei-mcp:9014/jsonrpc"}
+      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
     depends_on:
       - db
       - redis
@@ -58,7 +65,7 @@ services:
       - identity-mcp
       - fileupload-mcp
       - api-testing-mcp
-      - nuclei-mcp
+      - katana-mcp
   db:
     image: postgres:16-alpine
     environment:
@@ -218,15 +225,13 @@ services:
     expose:
       - "9013"
 
-  nuclei-mcp:
+  katana-mcp:
     build:
-      context: ./nuclei-testing
+      context: ./katana-crawler
       dockerfile: Dockerfile
-    container_name: rajdoll-nuclei-mcp-1
+    container_name: rajdoll-katana-mcp-1
     expose:
-      - "9014"
-    networks:
-      - rajdoll-net
+      - "9015"
     environment:
       - LOG_LEVEL=INFO
 
@@ -237,4 +242,3 @@ services:
       - NODE_ENV=production
     ports:
       - "3000:3000"
-

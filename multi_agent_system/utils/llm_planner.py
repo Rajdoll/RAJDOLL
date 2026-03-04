@@ -137,15 +137,15 @@ class LLMPlanner:
         
         prompt = f"""Plan security test. Tech: {tech_str}, Endpoints: {len(endpoints)}
 
-Agents: {agent_list}
+Valid Agents (EXACT NAMES REQUIRED): {agent_list}
 
 Return JSON:
 {{
   "strategy": "test all",
-  "execution_plan": {{"sequence": ["ReconnaissanceAgent", "InputValidationAgent", "AuthenticationAgent", "SessionManagementAgent", "AuthorizationAgent", "IdentityManagementAgent", "ConfigurationDeploymentAgent", "ErrorHandlingAgent", "CryptographyAgent", "BusinessLogicAgent", "ClientSideAgent", "APITestingAgent", "FileUploadAgent"]}}
+  "execution_plan": {{"sequence": ["ReconnaissanceAgent", "InputValidationAgent", "AuthenticationAgent", "SessionManagementAgent", "AuthorizationAgent", "IdentityManagementAgent", "ConfigDeploymentAgent", "ErrorHandlingAgent", "WeakCryptographyAgent", "BusinessLogicAgent", "ClientSideAgent", "APITestingAgent", "FileUploadAgent"]}}
 }}
 
-Rules: Use all 13 agents starting with ReconnaissanceAgent. Output valid JSON only."""
+CRITICAL: Use EXACT agent names from the Valid Agents list above. Output valid JSON only."""
 
         try:
             # Call LLM based on provider
@@ -578,13 +578,13 @@ Select ALL relevant tools (10-15 tools minimum) for comprehensive OWASP WSTG cov
         """Compact MCP tools catalog"""
         return {
             "WSTG-INFO": [{"tool": "run_whois_lookup"}, {"tool": "run_dig_lookup"}, {"tool": "run_comprehensive_scan"}, {"tool": "advanced_technology_fingerprinting"}, {"tool": "find_entry_points"}],
-            "WSTG-CONF": [{"tool": "check_meta_files"}, {"tool": "test_http_methods_and_headers"}, {"tool": "find_sensitive_files_and_dirs"}, {"tool": "test_network_infrastructure"}, {"tool": "run_nuclei_config_scan"}],
+            "WSTG-CONF": [{"tool": "check_meta_files"}, {"tool": "test_http_methods_and_headers"}, {"tool": "find_sensitive_files_and_dirs"}, {"tool": "test_network_infrastructure"}],
             "WSTG-ATHN": [{"tool": "test_tls_credentials"}, {"tool": "test_cache_headers"}, {"tool": "test_default_credentials"}, {"tool": "test_auth_bypass"}, {"tool": "test_password_policy"}],
             "WSTG-AUTHZ": [{"tool": "test_vertical_privilege_escalation"}, {"tool": "test_idor_vulnerability"}, {"tool": "test_http_method_tampering"}],
             "WSTG-SESS": [{"tool": "analyze_cookies"}, {"tool": "test_session_fixation"}, {"tool": "test_logout_functionality"}, {"tool": "test_session_timeout"}, {"tool": "test_cors_misconfiguration"}, {"tool": "test_exposed_session_vars"}],
-            "WSTG-INPV": [{"tool": "find_reflected_params"}, {"tool": "test_xss_reflected"}, {"tool": "test_sqli"}, {"tool": "test_lfi"}, {"tool": "run_nuclei_scan"}, {"tool": "test_http_smuggling"}],
+            "WSTG-INPV": [{"tool": "find_reflected_params"}, {"tool": "test_xss_reflected"}, {"tool": "test_sqli"}, {"tool": "test_lfi"}, {"tool": "test_http_smuggling"}],
             "WSTG-ERRH": [{"tool": "check_generic_error_pages"}, {"tool": "probe_for_error_leaks"}],
-            "WSTG-CRYP": [{"tool": "test_tls_configuration"}, {"tool": "test_cleartext_info"}, {"tool": "analyze_token_randomness"}, {"tool": "run_nuclei_crypto_scan"}],
+            "WSTG-CRYP": [{"tool": "test_tls_configuration"}, {"tool": "test_cleartext_info"}, {"tool": "analyze_token_randomness"}],
             "WSTG-CLNT": [{"tool": "security_headers_analysis"}],
             "WSTG-IDNT": [{"tool": "generate_test_usernames"}, {"tool": "test_account_enumeration"}],
         }
@@ -649,7 +649,7 @@ Select ALL relevant tools (10-15 tools minimum) for comprehensive OWASP WSTG cov
         return {
             "strategy": "Expanded fallback: run broad multi-agent OWASP WSTG 4.2 coverage with safe parallel phases",
             "owasp_categories": [
-                {"category": "WSTG-CONF", "priority": "high", "agent": "ConfigDeploymentAgent", "mcp_tools": [{"tool": "run_nuclei_config_scan", "reason": "Check panels/configs quickly"}, {"tool": "test_http_methods_and_headers", "reason": "Headers & methods"}]},
+                {"category": "WSTG-CONF", "priority": "high", "agent": "ConfigDeploymentAgent", "mcp_tools": [{"tool": "test_http_methods_and_headers", "reason": "Headers & methods"}]},
                 {"category": "WSTG-CLNT", "priority": "medium", "agent": "ClientSideAgent", "mcp_tools": [{"tool": "security_headers_analysis", "reason": "Client-side headers"}]},
                 {"category": "WSTG-ATHN", "priority": "high", "agent": "AuthenticationAgent", "mcp_tools": [{"tool": "test_password_reset", "reason": "AO takeover risk"}, {"tool": "test_cache_headers", "reason": "Sensitive cache"}]},
                 {"category": "WSTG-INPV", "priority": "critical", "agent": "InputValidationAgent", "mcp_tools": [{"tool": "test_xss_reflected", "reason": "High prevalence"}, {"tool": "test_sqli", "reason": "Critical impact"}, {"tool": "test_lfi", "reason": "File read risk"}]},

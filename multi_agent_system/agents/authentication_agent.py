@@ -119,7 +119,7 @@ You are AuthenticationAgent, an OWASP WSTG-ATHN expert specializing in authentic
 
 �️ MCP TOOL USAGE:
 - test_auth_bypass(url): ffuf-based authentication bypass fuzzing
-- test_default_credentials(target): Nuclei default-credentials templates
+- test_default_credentials(target): Default credential checks
 - analyze_jwt(token): Decode JWT, check algorithm, expiration, claims
 - test_session_fixation(login_url, login_data): Set session before/after auth
 - get_manual_testing_checklist(topic): Checklists for 'security_questions', 'alt_channel'
@@ -142,18 +142,12 @@ Write to shared_context:
 	async def run(self) -> None:
 		client = MCPClient()
 		
-		# 🔑 AUTHENTICATED SESSION SUPPORT
-		auth_sessions = self.shared_context.get("authenticated_sessions", {})
-		auth_data = None
-		if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-			successful_logins = auth_sessions.get('successful_logins', [])
-			if successful_logins:
-				first_login = successful_logins[0]
-				auth_data = {
-					'username': first_login.get('username'),
-					'session_type': first_login.get('session_type'),
-				}
-				self.log("info", f"✓ Using authenticated session: {first_login.get('username')}")
+		# 🔑 AUTHENTICATED SESSION SUPPORT (via Orchestrator auto-login)
+		auth_data = self.get_auth_session()
+		if auth_data:
+			self.log("info", f"✅ Using authenticated session: {auth_data.get('username')}")
+		else:
+			self.log("info", "🔓 No pre-existing session - AuthenticationAgent will test login mechanisms")
 
 		target = self._get_target()
 		if not target:

@@ -466,6 +466,23 @@ async def run_ffuf_lfi_scan(
         elif aggression == "conservative":
             cmd += ["-t", "15"]
 
+        # Add auth_session support
+        auth_session = config.get("auth_session", {})
+        if auth_session:
+            token = auth_session.get("token") or auth_session.get("access_token")
+            if token:
+                cmd += ["-H", f"Authorization: Bearer {token}"]
+                logger.info(f"[run_ffuf_lfi_scan] Auth header added (token: {token[:20]}...)")
+
+            cookies = auth_session.get("cookies")
+            if cookies:
+                if isinstance(cookies, dict):
+                    cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+                else:
+                    cookie_str = str(cookies)
+                cmd += ["-b", cookie_str]
+                logger.info(f"[run_ffuf_lfi_scan] Cookies added: {cookie_str[:50]}...")
+
         headers = config.get("headers")
         if headers and isinstance(headers, dict):
             for key, value in headers.items():
@@ -544,6 +561,9 @@ async def run_tplmap_scan(
     if not shutil.which(TPLMAP_BIN):
         return {"status": "error", "message": "tplmap binary not found"}
 
+    config = config or {}
+    auth_session = config.get("auth_session", {})
+
     cmd = [
         TPLMAP_BIN,
         "-u", url,
@@ -554,6 +574,22 @@ async def run_tplmap_scan(
 
     if param:
         cmd += ["-p", param]
+
+    # Add authentication support
+    if auth_session:
+        token = auth_session.get("token") or auth_session.get("access_token")
+        if token:
+            cmd += ["--headers", f"Authorization: Bearer {token}"]
+            logger.info(f"[run_tplmap_scan] Auth header added (token: {token[:20]}...)")
+
+        cookies = auth_session.get("cookies")
+        if cookies:
+            if isinstance(cookies, dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+            else:
+                cookie_str = str(cookies)
+            cmd += ["--cookie", cookie_str]
+            logger.info(f"[run_tplmap_scan] Cookies added: {cookie_str[:50]}...")
 
     tool_result = await _run_external_tool(cmd, TPLMAP_TIMEOUT)
     stdout_text = tool_result.pop("stdout", "")
@@ -592,6 +628,9 @@ async def run_commix_scan(
     if not shutil.which(os.getenv("COMMIX_BIN", "commix")):
         return {"status": "error", "message": "commix binary not found"}
 
+    config = config or {}
+    auth_session = config.get("auth_session", {})
+
     cmd = [
         os.getenv("COMMIX_BIN", "commix"),
         "--url", url,
@@ -603,6 +642,22 @@ async def run_commix_scan(
 
     if param:
         cmd += ["-p", param]
+
+    # Add authentication support
+    if auth_session:
+        token = auth_session.get("token") or auth_session.get("access_token")
+        if token:
+            cmd += ["--header", f"Authorization: Bearer {token}"]
+            logger.info(f"[run_commix_scan] Auth header added (token: {token[:20]}...)")
+
+        cookies = auth_session.get("cookies")
+        if cookies:
+            if isinstance(cookies, dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+            else:
+                cookie_str = str(cookies)
+            cmd += ["--cookie", cookie_str]
+            logger.info(f"[run_commix_scan] Cookies added: {cookie_str[:50]}...")
 
     timeout = int(os.getenv("COMMIX_TIMEOUT_SECONDS", "300"))
     tool_result = await _run_external_tool(cmd, timeout)
@@ -646,6 +701,9 @@ async def run_ssrfmap_scan(
     if not param:
         return {"status": "error", "message": "SSRFmap requires a parameter to test"}
 
+    config = config or {}
+    auth_session = config.get("auth_session", {})
+
     cmd = [
         SSRFMAP_BIN,
         "-r", url,
@@ -653,6 +711,22 @@ async def run_ssrfmap_scan(
         "-m", "readfiles",  # Test for file reading
         "--lhost", "127.0.0.1",  # Local testing
     ]
+
+    # Add authentication support
+    if auth_session:
+        token = auth_session.get("token") or auth_session.get("access_token")
+        if token:
+            cmd += ["--header", f"Authorization: Bearer {token}"]
+            logger.info(f"[run_ssrfmap_scan] Auth header added (token: {token[:20]}...)")
+
+        cookies = auth_session.get("cookies")
+        if cookies:
+            if isinstance(cookies, dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+            else:
+                cookie_str = str(cookies)
+            cmd += ["--cookie", cookie_str]
+            logger.info(f"[run_ssrfmap_scan] Cookies added: {cookie_str[:50]}...")
 
     tool_result = await _run_external_tool(cmd, SSRFMAP_TIMEOUT)
     stdout_text = tool_result.pop("stdout", "")
@@ -687,7 +761,8 @@ async def run_ssrfmap_scan(
 async def test_stored_xss(
     url: str,
     form_data: Optional[Dict[str, str]] = None,
-    test_fields: Optional[List[str]] = None
+    test_fields: Optional[List[str]] = None,
+    auth_session: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     WSTG-INPV-02: Test for Stored (Persistent) Cross-Site Scripting
@@ -741,7 +816,15 @@ async def test_stored_xss(
         
         # If form_data not provided, discover via common REST API endpoints
         if not form_data:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            req_kwargs = {"timeout": 30, "follow_redirects": True, "verify": False}
+            if auth_session:
+                if 'cookies' in auth_session:
+                    req_kwargs['cookies'] = auth_session['cookies']
+                if 'headers' in auth_session:
+                    req_kwargs['headers'] = auth_session.get('headers', {})
+                elif 'token' in auth_session:
+                    req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+            async with httpx.AsyncClient(**req_kwargs) as client:
                 # Try generic feedback/comment/review endpoints (common across web applications)
                 generic_endpoints = [
                     url,  # Original URL
@@ -771,7 +854,15 @@ async def test_stored_xss(
             return {"status": "success", "data": {"vulnerable": False, "message": "No form fields found"}}
         
         # Test each field with each payload
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True, verify=False) as client:
+        req_kwargs = {"timeout": 30, "follow_redirects": True, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for field_name in (test_fields or form_data.keys()):
                 for payload in payloads[:8]:  # Test first 8 payloads (basic + bypass techniques)
                     test_data = form_data.copy()
@@ -819,7 +910,7 @@ async def test_stored_xss(
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_http_parameter_pollution(url: str) -> Dict[str, Any]:
+async def test_http_parameter_pollution(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-04: Test for HTTP Parameter Pollution (HPP)
     
@@ -837,7 +928,15 @@ async def test_http_parameter_pollution(url: str) -> Dict[str, Any]:
         
         findings = []
         
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        req_kwargs = {"timeout": 30, "follow_redirects": True, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test each parameter with duplication
             for param_name, param_values in params.items():
                 original_value = param_values[0] if param_values else ""
@@ -900,7 +999,7 @@ async def test_http_parameter_pollution(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_ldap_injection(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_ldap_injection(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-06: Test for LDAP Injection
     
@@ -933,7 +1032,15 @@ async def test_ldap_injection(url: str, param: Optional[str] = None) -> Dict[str
         findings = []
         test_params = [param] if param else list(params.keys())
         
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        req_kwargs = {"timeout": 30, "follow_redirects": True, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get baseline response
             baseline_resp = await client.get(url)
             baseline_length = len(baseline_resp.text)
@@ -999,12 +1106,17 @@ async def test_ldap_injection(url: str, param: Optional[str] = None) -> Dict[str
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_command_injection(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_command_injection(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-12: Test for OS Command Injection
 
     Uses commix automated tool for comprehensive command injection testing.
     LLM analyzes reconnaissance to determine which parameters to test.
+
+    Args:
+        url: Target URL to test
+        param: Specific parameter to test (optional)
+        auth_session: Authentication session dict with token/cookies
 
     Reference: https://portswigger.net/web-security/os-command-injection
     """
@@ -1037,7 +1149,7 @@ async def test_command_injection(url: str, param: Optional[str] = None) -> Dict[
         return {"status": "error", "message": str(e)}
 
 
-async def _test_command_injection_manual_backup(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def _test_command_injection_manual_backup(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     BACKUP: Manual command injection testing (only used if commix fails)
     Kept as fallback for edge cases.
@@ -1075,7 +1187,15 @@ async def _test_command_injection_manual_backup(url: str, param: Optional[str] =
         findings = []
         test_params = [param] if param else list(params.keys())
         
-        async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
+        req_kwargs = {"timeout": 45, "follow_redirects": True, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for param_name in test_params:
                 for payload in payloads:
                     # Build test URL
@@ -1155,7 +1275,7 @@ async def _test_command_injection_manual_backup(url: str, param: Optional[str] =
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_host_header_injection(url: str) -> Dict[str, Any]:
+async def test_host_header_injection(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-17: Test for Host Header Injection
     
@@ -1182,7 +1302,14 @@ async def test_host_header_injection(url: str) -> Dict[str, Any]:
             "evil.com." + original_host,
         ]
         
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+        req_kwargs = {"timeout": 30, "follow_redirects": False, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            # Note: Don't set headers here as we're testing Host header injection
+            if 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get baseline response
             baseline_resp = await client.get(url)
             
@@ -1236,12 +1363,17 @@ async def test_host_header_injection(url: str) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_ssti_comprehensive(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_ssti_comprehensive(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-18: Comprehensive Server-Side Template Injection Testing
 
     Uses tplmap automated tool for comprehensive SSTI testing across all template engines.
     LLM analyzes reconnaissance to determine which parameters to test.
+
+    Args:
+        url: Target URL to test
+        param: Specific parameter to test (optional)
+        auth_session: Authentication session dict with token/cookies
 
     Reference: https://portswigger.net/research/server-side-template-injection
     """
@@ -1274,7 +1406,7 @@ async def test_ssti_comprehensive(url: str, param: Optional[str] = None) -> Dict
         return {"status": "error", "message": str(e)}
 
 
-async def _test_ssti_manual_backup(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def _test_ssti_manual_backup(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     BACKUP: Manual SSTI testing (only used if tplmap fails)
     Kept as fallback for edge cases.
@@ -1318,7 +1450,15 @@ async def _test_ssti_manual_backup(url: str, param: Optional[str] = None) -> Dic
         findings = []
         test_params = [param] if param else list(params.keys())
         
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        req_kwargs = {"timeout": 30, "follow_redirects": True, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for param_name in test_params:
                 for test_case in payloads:
                     payload = test_case["payload"]
@@ -1369,12 +1509,17 @@ async def _test_ssti_manual_backup(url: str, param: Optional[str] = None) -> Dic
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_ssrf_comprehensive(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_ssrf_comprehensive(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-19: Comprehensive Server-Side Request Forgery Testing
 
     Uses SSRFmap automated tool for comprehensive SSRF testing.
     LLM analyzes reconnaissance to determine which parameters to test.
+
+    Args:
+        url: Target URL to test
+        param: Specific parameter to test (optional)
+        auth_session: Authentication session dict with token/cookies
 
     Reference: https://portswigger.net/web-security/ssrf
     """
@@ -1407,7 +1552,7 @@ async def test_ssrf_comprehensive(url: str, param: Optional[str] = None) -> Dict
         return {"status": "error", "message": str(e)}
 
 
-async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     BACKUP: Manual SSRF testing (only used if SSRFmap fails)
     Kept as fallback for edge cases.
@@ -1443,7 +1588,15 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None) -> Dic
         findings = []
         test_params = [param] if param else list(params.keys())
         
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+        req_kwargs = {"timeout": 30, "follow_redirects": False, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for param_name in test_params:
                 for target in test_targets:
                     target_url = target["url"]
@@ -1533,7 +1686,8 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None) -> Dic
 async def test_xml_injection(
     url: str,
     param: Optional[str] = None,
-    xml_endpoint: Optional[str] = None
+    xml_endpoint: Optional[str] = None,
+    auth_session: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     WSTG-INPV-07: Test for XML Injection and XXE (XML External Entity)
@@ -1588,7 +1742,15 @@ async def test_xml_injection(
             (r'Connection timed out|took too long', 'Possible XML bomb', 'MEDIUM'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(30.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             test_url = xml_endpoint if xml_endpoint else url
             logger.info(f"  Testing XML endpoint: {test_url}")
             
@@ -1713,7 +1875,7 @@ async def test_xml_injection(
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_ssi_injection(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_ssi_injection(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-08: Test for Server-Side Includes (SSI) Injection
     
@@ -1742,7 +1904,15 @@ async def test_ssi_injection(url: str, param: Optional[str] = None) -> Dict[str,
             (r'SERVER_NAME=|HTTP_HOST=', 'Environment variable disclosure', 'HIGH'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Discover parameters if not provided
             test_params = []
             if param:
@@ -1813,7 +1983,7 @@ async def test_ssi_injection(url: str, param: Optional[str] = None) -> Dict[str,
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_xpath_injection(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_xpath_injection(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-09: Test for XPath Injection
     
@@ -1843,7 +2013,15 @@ async def test_xpath_injection(url: str, param: Optional[str] = None) -> Dict[st
             (r'(admin|root|user).*logged in', 'Authentication bypass via XPath', 'CRITICAL'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Discover parameters
             test_params = []
             if param:
@@ -1921,7 +2099,8 @@ async def test_xpath_injection(url: str, param: Optional[str] = None) -> Dict[st
 async def test_email_injection(
     url: str,
     email_field: Optional[str] = None,
-    contact_form: Optional[str] = None
+    contact_form: Optional[str] = None,
+    auth_session: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     WSTG-INPV-10: Test for IMAP/SMTP Injection
@@ -1962,7 +2141,15 @@ async def test_email_injection(
             (r'BCC|CC|Subject.*injection', 'Header injection error message', 'MEDIUM'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Discover email fields
             email_fields = []
             if email_field:
@@ -2039,7 +2226,7 @@ async def test_email_injection(
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_rfi(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_rfi(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-11.2: Test for Remote File Inclusion (RFI)
     
@@ -2078,7 +2265,15 @@ async def test_rfi(url: str, param: Optional[str] = None) -> Dict[str, Any]:
             (r'failed to open stream|include.*failed|require.*failed', 'File inclusion attempted (error)', 'HIGH'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Discover parameters
             test_params = []
             if param:
@@ -2142,7 +2337,7 @@ async def test_rfi(url: str, param: Optional[str] = None) -> Dict[str, Any]:
 # ============================================================================
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_format_string(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_format_string(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-13: Test for Format String Injection
     
@@ -2182,7 +2377,15 @@ async def test_format_string(url: str, param: Optional[str] = None) -> Dict[str,
             (r'__builtins__|__globals__|__import__', 'Python internal objects exposed', 'CRITICAL'),
         ]
         
-        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
+        req_kwargs = {"timeout": httpx.Timeout(20.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Discover parameters
             test_params = []
             if param:
@@ -2530,12 +2733,17 @@ async def test_sqli(
 
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_lfi(url: str, param: Optional[str] = None) -> Dict[str, Any]:
+async def test_lfi(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-ATHZ-01: Test for Local File Inclusion (Path Traversal)
     
     Tests if application allows reading arbitrary files from server.
     Relies on ffuf for automated fuzzing rather than manual payloads.
+
+    Args:
+        url: Target URL to test
+        param: Specific parameter to test (optional)
+        auth_session: Authentication session dict with token/cookies
     
     Reference: https://owasp.org/www-community/attacks/Path_Traversal
     """
@@ -2834,7 +3042,7 @@ async def test_xxe(
 
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_http_smuggling(url: str) -> Dict[str, Any]:
+async def test_http_smuggling(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-INPV-15: Test for HTTP Request Smuggling
     
@@ -2872,7 +3080,15 @@ async def test_http_smuggling(url: str) -> Dict[str, Any]:
             b"\r\n",
         ]
         
-        async with httpx.AsyncClient(timeout=30, verify=False) as client:
+        req_kwargs = {"timeout": 30, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Get baseline response
             baseline = await client.get(url)
             
@@ -2924,102 +3140,11 @@ async def test_http_smuggling(url: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def run_nuclei_scan(url: str, templates: List[str] = None) -> Dict[str, Any]:
-    """
-    Run Nuclei vulnerability scanner with specified templates
-    
-    Nuclei is a fast tool for scanning with community templates.
-    
-    Args:
-        url: Target URL
-        templates: List of template tags (e.g., ["cve", "sqli", "xss"])
-    
-    Returns:
-        Dict with scan results
-    """
-    try:
-        if templates is None:
-            templates = ["cve", "vulnerabilities"]
-        
-        # Check if nuclei is installed
-        nuclei_check = subprocess.run(
-            ["nuclei", "-version"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
-        if nuclei_check.returncode != 0:
-            return {
-                "status": "error",
-                "message": "Nuclei not installed. Install with: go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest"
-            }
-        
-        # Build nuclei command
-        cmd = ["nuclei", "-u", url, "-silent", "-json"]
-        for template in templates:
-            cmd.extend(["-tags", template])
-        
-        # Run nuclei
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minutes timeout
-        )
-        
-        findings = []
-        if result.stdout:
-            # Parse JSON output
-            for line in result.stdout.strip().split('\n'):
-                if line:
-                    try:
-                        finding = json.loads(line)
-                        findings.append({
-                            "template": finding.get("template-id"),
-                            "name": finding.get("info", {}).get("name"),
-                            "severity": finding.get("info", {}).get("severity"),
-                            "description": finding.get("info", {}).get("description"),
-                            "matched": finding.get("matched-at")
-                        })
-                    except json.JSONDecodeError:
-                        continue
-        
-        if findings:
-            return {
-                "status": "success",
-                "data": {
-                    "vulnerable": True,
-                    "findings": findings,
-                    "message": f"Nuclei found {len(findings)} vulnerabilities"
-                }
-            }
-        else:
-            return {
-                "status": "success",
-                "data": {
-                    "vulnerable": False,
-                    "message": "Nuclei scan completed, no vulnerabilities found"
-                }
-            }
-    
-    except subprocess.TimeoutExpired:
-        return {"status": "error", "message": "Nuclei scan timed out after 5 minutes"}
-    except FileNotFoundError:
-        return {
-            "status": "error",
-            "message": "Nuclei not found in PATH. Please install nuclei first."
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
 # ============================================================================
 # POST PARAMETER TESTING - For Forms and JSON APIs
 # ============================================================================
 
-async def test_xss_post(url: str, data: Optional[Dict[str, str]] = None, content_type: str = "application/x-www-form-urlencoded") -> Dict[str, Any]:
+async def test_xss_post(url: str, data: Optional[Dict[str, str]] = None, content_type: str = "application/x-www-form-urlencoded", auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Test POST parameters for Reflected XSS
     
@@ -3027,6 +3152,7 @@ async def test_xss_post(url: str, data: Optional[Dict[str, str]] = None, content
         url: Target URL
         data: POST data dictionary (e.g., {"username": "test", "comment": "test"})
         content_type: "application/x-www-form-urlencoded" or "application/json"
+        auth_session: Authentication session dict with token/cookies
     """
     try:
         import httpx
@@ -3041,7 +3167,15 @@ async def test_xss_post(url: str, data: Optional[Dict[str, str]] = None, content
         
         findings = []
         
-        async with httpx.AsyncClient(timeout=15, verify=False, follow_redirects=True) as client:
+        req_kwargs = {"timeout": 15, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test each parameter with XSS payloads
             if data:
                 for param_name, param_value in data.items():
@@ -3100,7 +3234,7 @@ async def test_xss_post(url: str, data: Optional[Dict[str, str]] = None, content
         return {"status": "error", "message": str(e)}
 
 
-async def test_sqli_post(url: str, data: Optional[Dict[str, str]] = None, content_type: str = "application/x-www-form-urlencoded") -> Dict[str, Any]:
+async def test_sqli_post(url: str, data: Optional[Dict[str, str]] = None, content_type: str = "application/x-www-form-urlencoded", auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Test POST parameters for SQL Injection
     
@@ -3108,6 +3242,7 @@ async def test_sqli_post(url: str, data: Optional[Dict[str, str]] = None, conten
         url: Target URL
         data: POST data dictionary
         content_type: Form-encoded or JSON
+        auth_session: Authentication session dict with token/cookies
     """
     try:
         import httpx
@@ -3124,7 +3259,15 @@ async def test_sqli_post(url: str, data: Optional[Dict[str, str]] = None, conten
         
         findings = []
         
-        async with httpx.AsyncClient(timeout=20, verify=False, follow_redirects=True) as client:
+        req_kwargs = {"timeout": 20, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             if data:
                 for param_name, param_value in data.items():
                     for payload, attack_type in sql_payloads:

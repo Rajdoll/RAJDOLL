@@ -97,11 +97,23 @@ class MCPClient:
 
         if server in server_urls:
             url = server_urls[server]
+
+            # Standardize authenticated execution: prefer passing auth via
+            # `config.auth_session` (many tool modules already support this) and
+            # optionally also via top-level `auth_session` when a tool expects it.
+            if auth_session:
+                args = args.copy()  # Don't mutate original
+                config = args.get("config")
+                if not isinstance(config, dict):
+                    config = {}
+                # Only set if absent so explicit caller values win.
+                config.setdefault("auth_session", auth_session)
+                args["config"] = config
+                args.setdefault("auth_session", auth_session)
             
             # Inject authenticated session into tool arguments if provided
             if auth_session:
                 # Pass auth data as special arguments that MCP tools can use
-                args = args.copy()  # Don't mutate original
                 if 'cookies' in auth_session:
                     args['_auth_cookies'] = auth_session['cookies']
                 if 'headers' in auth_session:
@@ -127,7 +139,18 @@ class MCPClient:
                     # Expecting { jsonrpc, id, result } or error
                     if "error" in data:
                         raise RuntimeError(f"MCP server error: {data['error']}")
-                    return data.get("result", data)
+                    result = data.get("result", data)
+
+                    # Normalize result schema lightly (do not restructure):
+                    # - ensure dict results have a `status` field
+                    if isinstance(result, dict) and "status" not in result:
+                        if isinstance(result.get("success"), bool):
+                            result["status"] = "success" if result.get("success") else "error"
+                        elif "error" in result:
+                            result["status"] = "error"
+                        else:
+                            result["status"] = "success"
+                    return result
                 except httpx.HTTPStatusError as e:
                     # 🚦 Handle rate limiting responses (429, 503)
                     if e.response.status_code in [429, 503] and target_url:
@@ -178,6 +201,17 @@ class MCPClient:
         fn = getattr(mod, tool, None)
         if not callable(fn):
             raise RuntimeError(f"Tool '{tool}' not found in server '{server}' module")
+
+        # If running locally (no MCP server URLs), we still try to pass auth in a
+        # compatible way without breaking tool signatures.
+        if auth_session:
+            args = args.copy()
+            config = args.get("config")
+            if not isinstance(config, dict):
+                config = {}
+            config.setdefault("auth_session", auth_session)
+            args["config"] = config
+            args.setdefault("auth_session", auth_session)
 
         async def _runner():
             if inspect.iscoroutinefunction(fn):

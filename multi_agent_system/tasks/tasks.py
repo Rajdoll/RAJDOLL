@@ -12,6 +12,14 @@ from ..models.models import Job, JobAgent, AgentStatus, JobStatus
 from ..orchestrator import Orchestrator
 
 
+def _format_exception_message(exc: BaseException) -> str:
+    """Return a non-empty, human-usable error string for persistence."""
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return "timeout"
+    msg = str(exc).strip()
+    return msg if msg else type(exc).__name__
+
+
 def _now():
     return datetime.utcnow()
 
@@ -43,13 +51,17 @@ def run_agent_task(self, job_id: int, agent_name: str) -> str:
         error = None
     except Exception as e:  # pragma: no cover
         status = AgentStatus.failed
-        error = str(e)
+        error = _format_exception_message(e)
     finally:
         with get_db() as db:
             ja = db.query(JobAgent).filter(JobAgent.job_id == job_id, JobAgent.agent_name == agent_name).one()
             ja.status = status
             ja.finished_at = _now()
-            ja.error = error
+            if status == AgentStatus.failed:
+                current = (error or "").strip()
+                ja.error = current if current else "Agent failed (no error details)"
+            else:
+                ja.error = error
             db.commit()
     return status.value
 
@@ -60,13 +72,33 @@ def run_job_task(self, job_id: int) -> str:
     orch = Orchestrator(job_id=job_id)
     try:
         orch.run()
-        final = JobStatus.completed
-    except Exception as e:  # pragma: no cover
-        final = JobStatus.failed
+    except Exception:  # pragma: no cover
+        # We'll still compute final status from persisted agent states below.
+        pass
+
     with get_db() as db:
         job = db.query(Job).get(job_id)
-        if job:
-            job.status = final
+        if not job:
+            return JobStatus.failed.value
+
+        # Respect explicit cancellation.
+        if job.status == JobStatus.cancelled:
             job.updated_at = _now()
             db.commit()
-    return final.value
+            return job.status.value
+
+        statuses = db.query(JobAgent.status).filter(JobAgent.job_id == job_id).all()
+        flat_statuses = [s[0] for s in statuses]
+
+        any_failed = any(s == AgentStatus.failed for s in flat_statuses)
+        any_incomplete = any(s in (AgentStatus.pending, AgentStatus.running) for s in flat_statuses)
+
+        if any_failed or any_incomplete:
+            final = JobStatus.failed
+        else:
+            final = JobStatus.completed
+
+        job.status = final
+        job.updated_at = _now()
+        db.commit()
+        return final.value

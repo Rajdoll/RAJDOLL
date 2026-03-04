@@ -6,7 +6,7 @@ import base64
 import httpx
 import time
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Logging configuration
 import logging
@@ -169,7 +169,7 @@ async def generate_identity_report(
 # ========== OPSI B: 4 NEW IDENTITY MANAGEMENT TOOLS ==========
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_role_definitions(base_url: str, test_accounts: List[Dict[str, str]] = None) -> Dict[str, Any]:
+async def test_role_definitions(base_url: str, test_accounts: List[Dict[str, str]] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests role definitions and privilege boundaries.
     logger.info(f"🔍 Executing test_role_definitions")
@@ -191,7 +191,17 @@ async def test_role_definitions(base_url: str, test_accounts: List[Dict[str, str
             "/api/admin", "/administration", "/manage", "/dashboard/admin"
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        # Build request kwargs with auth
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for account in test_accounts:
                 # Login
                 login_url = f"{base_url.rstrip('/')}/login"
@@ -238,7 +248,7 @@ async def test_role_definitions(base_url: str, test_accounts: List[Dict[str, str
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_user_registration(register_url: str, validation_checks: Dict[str, Any] = None) -> Dict[str, Any]:
+async def test_user_registration(register_url: str, validation_checks: Dict[str, Any] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests user registration process for weaknesses.
     logger.info(f"🔍 Executing test_user_registration")
@@ -255,7 +265,17 @@ async def test_user_registration(register_url: str, validation_checks: Dict[str,
     try:
         findings = []
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        # Build request kwargs with auth
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Weak password acceptance
             for weak_pass in validation_checks.get("weak_passwords", []):
                 try:
@@ -355,7 +375,7 @@ async def test_user_registration(register_url: str, validation_checks: Dict[str,
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_account_provisioning(base_url: str) -> Dict[str, Any]:
+async def test_account_provisioning(base_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests account provisioning and lifecycle management.
     logger.info(f"🔍 Executing test_account_provisioning")
@@ -365,7 +385,17 @@ async def test_account_provisioning(base_url: str) -> Dict[str, Any]:
     try:
         findings = []
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        # Build request kwargs with auth
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Check if account is immediately active without verification
             test_email = f"provisiontest_{int(time.time())}@test.com"
             register_url = f"{base_url.rstrip('/')}/register"
@@ -449,7 +479,7 @@ async def test_account_provisioning(base_url: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_username_policy(base_url: str, test_usernames: List[str] = None) -> Dict[str, Any]:
+async def test_username_policy(base_url: str, test_usernames: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests username enumeration via registration/forgot password.
     logger.info(f"🔍 Executing test_username_policy")
@@ -462,7 +492,17 @@ async def test_username_policy(base_url: str, test_usernames: List[str] = None) 
     try:
         findings = []
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        # Build request kwargs with auth
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Username enumeration via registration
             register_url = f"{base_url.rstrip('/')}/register"
             registration_responses = {}

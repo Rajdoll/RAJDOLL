@@ -420,7 +420,7 @@ Backend:
 Security Tools (via MCP):
   - Reconnaissance: subfinder, amass, nmap
   - Scanning: nikto, whatweb, wpscan
-  - Vulnerability Detection: SQLmap, Dalfox, XSStrike, Nuclei
+  - Vulnerability Detection: SQLmap, Dalfox, XSStrike
   - Exploitation: Metasploit (controlled scope)
 
 Frontend:

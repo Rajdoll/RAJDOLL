@@ -13,6 +13,7 @@ from .agents.base_agent import AgentRegistry, AGENT_EXECUTION_TIMEOUT  # FIX #2:
 from .utils.llm_planner import LLMPlanner
 from .utils.hitl_manager import HITLManager
 from .utils.shared_context_manager import SharedContextManager
+from .utils.session_service import create_authenticated_session
 from . import agents  # noqa: F401  # ensure agent classes are registered
 
 
@@ -20,15 +21,16 @@ DEFAULT_PLAN: List[Any] = [
 	# ===== PHASE 1: SEQUENTIAL CRITICAL PATH =====
 	# These MUST run sequentially because they build on each other's findings
 	"ReconnaissanceAgent",     # 1. Discover endpoints, tech stack, entry points
-	"InputValidationAgent",    # 2. Test discovered endpoints for SQLi, XSS, etc.
-	"AuthenticationAgent",     # 3. Test auth using discovered vulnerabilities
+	"AuthenticationAgent",     # 2. Obtain authenticated sessions/credentials
+	"SessionManagementAgent",  # 3. Analyze session mechanics (feeds later tests)
+	"InputValidationAgent",    # 4. Test endpoints for injection with auth when possible
 
 	# ===== PHASE 2: PARALLEL INDEPENDENT AGENTS =====
 	# These can run in parallel as they don't depend on each other
 	{
 		"parallel": [
 			"AuthorizationAgent",        # Uses auth results for authz testing
-			"SessionManagementAgent",    # Tests session security
+			# SessionManagementAgent runs in Phase 1 to enable downstream authenticated testing
 			"ConfigDeploymentAgent",     # Tests misconfigurations
 			"ClientSideAgent",           # Tests client-side vulnerabilities
 			"FileUploadAgent",           # Tests file upload security
@@ -65,6 +67,29 @@ AGENT_TO_OWASP_MAP = {
 	"ReportGenerationAgent": "WSTG-REPORT",  # 🆕 Final: Generate OWASP WSTG 4.2 report
 }
 
+# Auto-correction map for common LLM hallucinations
+# FIX: Qwen 2.5-7B Q4 often generates grammatically "better" but incorrect agent names
+AGENT_NAME_CORRECTION_MAP = {
+	# LLM Hallucination → Correct Name
+	"ConfigurationDeploymentAgent": "ConfigDeploymentAgent",
+	"ConfigurationAgent": "ConfigDeploymentAgent",
+	"ConfigAgent": "ConfigDeploymentAgent",
+	"WeakCryptAgent": "WeakCryptographyAgent",
+	"CryptographyAgent": "WeakCryptographyAgent",
+	"IdentityAgent": "IdentityManagementAgent",
+	"ReconAgent": "ReconnaissanceAgent",
+	"ValidationAgent": "InputValidationAgent",
+	"FileUploadTestAgent": "FileUploadAgent",
+	"APIAgent": "APITestingAgent",
+	"ReportAgent": "ReportGenerationAgent",
+	"AuthAgent": "AuthenticationAgent",
+	"AuthzAgent": "AuthorizationAgent",
+	"SessionAgent": "SessionManagementAgent",
+	"ErrorAgent": "ErrorHandlingAgent",
+	"ClientAgent": "ClientSideAgent",
+	"BusinessAgent": "BusinessLogicAgent",
+}
+
 
 class Orchestrator:
 	def __init__(self, job_id: int):
@@ -78,6 +103,14 @@ class Orchestrator:
 		self.hitl_manager = HITLManager(job_id, overrides=options)  # 🆕 HITL support
 		self.full_wstg_coverage = bool(options.get("full_wstg_coverage"))
 		
+		# CRITICAL FIX: Write target URL to shared context at initialization
+		# This ensures all agents have access to the actual target URL
+		target_url = self._get_target()
+		if target_url:
+			self.context_manager.write("target", target_url)
+			self.context_manager.write("target_url", target_url)  # Alias for backward compat
+			print(f"[Orchestrator] Target URL written to shared_context: {target_url}")
+		
 		# Initialize LLM planner if API key is configured (OpenAI/Anthropic unified)
 		if settings.llm_api_key:
 			try:
@@ -86,6 +119,14 @@ class Orchestrator:
 				print(f"Warning: Failed to initialize LLM planner: {e}")
 				print("Falling back to default static plan")
 				self.llm_planner = None
+
+	def _format_exception_message(self, exc: BaseException) -> str:
+		"""Return a non-empty, human-usable error string for persistence."""
+		# asyncio and built-in TimeoutError stringify to empty.
+		if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+			return f"Agent timeout after {AGENT_EXECUTION_TIMEOUT}s"
+		msg = str(exc).strip()
+		return msg if msg else type(exc).__name__
 
 	def _update_job_status(self, status: JobStatus):
 		with get_db() as db:
@@ -156,35 +197,41 @@ class Orchestrator:
 				ja.attempts = (ja.attempts or 0) + 1
 				ja.started_at = datetime.utcnow()
 				db.commit()
+			# FIX PHASE 0: Refresh context cache BEFORE building snapshot
+			# This ensures we get the latest data from previous agents (especially ReconnaissanceAgent)
+			# Without this, InputValidationAgent was reading STALE context with 0 discovered_endpoints
+			self._refresh_shared_context_cache()
 			# Build current shared_context snapshot to pass into agent.execute
 			shared_ctx = self._aggregate_shared_context()
 			target = self._get_target()
 			# FIX #2: Use reduced timeout (5 min) to prevent stuck agents
 			loop.run_until_complete(asyncio.wait_for(agent.execute(target=target, shared_context=shared_ctx), timeout=AGENT_EXECUTION_TIMEOUT))
 			status = AgentStatus.completed
-		except asyncio.TimeoutError:
+		except asyncio.TimeoutError as e:
 			status = AgentStatus.failed
-			error_message = f"Agent timeout after {AGENT_EXECUTION_TIMEOUT}s"
+			error_message = self._format_exception_message(e)
 		except Exception as e:
 			status = AgentStatus.failed
-			error_message = str(e)
-			with get_db() as db:
-				ja = db.query(JobAgent).filter(JobAgent.job_id == self.job_id, JobAgent.agent_name == agent_name).one()
-				ja.error = str(e)
-				db.commit()
+			error_message = self._format_exception_message(e)
 		finally:
 			with get_db() as db:
 				ja = db.query(JobAgent).filter(JobAgent.job_id == self.job_id, JobAgent.agent_name == agent_name).one()
 				ja.status = status
 				ja.finished_at = datetime.utcnow()
-				if error_message and not ja.error:
-					ja.error = error_message
+				# Ensure failed agents always have a non-empty error string.
+				if status == AgentStatus.failed:
+					current = (ja.error or "").strip()
+					if not current:
+						ja.error = error_message or "Agent failed (no error details)"
 				db.commit()
 		self._refresh_shared_context_cache()
 
 	def _run_parallel_sync(self, agent_names: List[str], tools_map: Optional[Dict[str, Dict[str, Any]]] = None):
 		loop = self._ensure_event_loop()
 		tasks = []
+		# FIX PHASE 0: Refresh context cache BEFORE building snapshot for parallel agents
+		# This ensures all parallel agents get the latest context from sequential agents (Recon, Auth, Session, InputVal)
+		self._refresh_shared_context_cache()
 		shared_ctx = self._aggregate_shared_context()
 		target = self._get_target()
 		for name in agent_names:
@@ -212,9 +259,15 @@ class Orchestrator:
 					ja = db.query(JobAgent).filter(JobAgent.job_id == self.job_id, JobAgent.agent_name == name).one()
 					if isinstance(results[idx], Exception):
 						ja.status = AgentStatus.failed
-						ja.error = str(results[idx])
+						exc = results[idx]
+						ja.error = self._format_exception_message(exc)
 					elif ja.status == AgentStatus.running:
 						ja.status = AgentStatus.completed
+					# Ensure failed agents always have a non-empty error string.
+					if ja.status == AgentStatus.failed:
+						current = (ja.error or "").strip()
+						if not current:
+							ja.error = "Agent failed (no error details)"
 					ja.finished_at = datetime.utcnow()
 				db.commit()
 		self._refresh_shared_context_cache()
@@ -364,11 +417,35 @@ class Orchestrator:
 			seen = set(execution_plan)  # Track duplicates
 			for item in seq:
 				if isinstance(item, str):
+					# FIX: Auto-correct common LLM hallucinations before validation
+					original_name = item
+					if item in AGENT_NAME_CORRECTION_MAP:
+						item = AGENT_NAME_CORRECTION_MAP[item]
+						print(f"[Orchestrator] AUTO-CORRECTED: '{original_name}' → '{item}'")
+
+					# Validate agent name against registry (FIX Bug #2)
+					if item not in AgentRegistry._agents:
+						print(f"[Orchestrator] WARNING: LLM generated invalid agent name: '{item}' - skipping")
+						continue
 					if item not in seen:  # Deduplicate
 						execution_plan.append(item)
 						seen.add(item)
 				elif isinstance(item, dict) and "parallel" in item:
-					execution_plan.append({"parallel": list(item["parallel"])})
+					# Validate parallel block agent names
+					valid_parallel = []
+					for agent in item["parallel"]:
+						# FIX: Auto-correct for parallel blocks too
+						original_agent = agent
+						if agent in AGENT_NAME_CORRECTION_MAP:
+							agent = AGENT_NAME_CORRECTION_MAP[agent]
+							print(f"[Orchestrator] AUTO-CORRECTED (parallel): '{original_agent}' → '{agent}'")
+
+						if agent in AgentRegistry._agents:
+							valid_parallel.append(agent)
+						else:
+							print(f"[Orchestrator] WARNING: LLM generated invalid agent name in parallel block: '{agent}' - skipping")
+					if valid_parallel:
+						execution_plan.append({"parallel": valid_parallel})
 			return execution_plan
 
 		# 2) Legacy/category-based sequence
@@ -455,6 +532,32 @@ class Orchestrator:
 		
 		# Populate shared_context from recon results for other agents
 		self._populate_shared_context_from_recon()
+		
+		# PHASE 1.5: Attempt auto-login to enable authenticated testing
+		# This creates an authenticated session that all subsequent agents can use
+		import warnings
+		warnings.warn("[Orchestrator] Phase 1.5: Attempting auto-login for authenticated testing...")
+		try:
+			target_url = self._get_target()
+			if target_url:
+				loop = self._ensure_event_loop()
+				success, auth_session = loop.run_until_complete(
+					create_authenticated_session(target_url)
+				)
+				if success:
+					self.context_manager.write("authenticated_session", auth_session)
+					warnings.warn(f"[Orchestrator] ✓ Auto-login successful as: {auth_session.get('username')}")
+					warnings.warn(f"[Orchestrator]   Auth method: {auth_session.get('auth_method')}")
+					warnings.warn(f"[Orchestrator]   JWT token: {'Present' if auth_session.get('jwt_token') else 'None'}")
+				else:
+					warnings.warn("[Orchestrator] ⚠ Auto-login failed - continuing with unauthenticated testing")
+					# Store empty auth session to indicate login was attempted
+					self.context_manager.write("authenticated_session", {"logged_in": False, "login_attempted": True})
+		except Exception as e:
+			import traceback
+			warnings.warn(f"[Orchestrator] ⚠ Auto-login error: {e} - continuing with unauthenticated testing")
+			warnings.warn(f"[Orchestrator] Traceback: {traceback.format_exc()}")
+		
 		plan = self._remove_recon(plan_with_recon)
 		
 		# PHASE 2: Use LLM to plan testing strategy based on reconnaissance
@@ -484,33 +587,22 @@ class Orchestrator:
 							print("[Orchestrator] Falling back to default plan")
 							raise TimeoutError("LLM planning exceeded 5 minute timeout")
 					
-					# Convert LLM plan to execution plan (supports multiple formats)
-					llm_execution_plan = self._convert_llm_plan_to_execution_plan(self.llm_test_plan)
-					
+					# Save LLM test plan metadata for tool selection
 					print(f"[Orchestrator] LLM test plan keys: {list(self.llm_test_plan.keys())}")
 					print(f"[Orchestrator] owasp_categories count: {len(self.llm_test_plan.get('owasp_categories', []))}")
-					print(f"[Orchestrator] LLM planned execution: {llm_execution_plan}")
 					print(f"[Orchestrator] Testing strategy: {self.llm_test_plan.get('strategy') or self.llm_test_plan.get('testing_strategy', 'N/A')}")
-					
+
 					# Save execution plan metadata for downstream consumers
 					meta = self.plan_metadata if isinstance(self.plan_metadata, dict) else {}
 					meta = dict(meta)
 					meta["llm_test_plan"] = self.llm_test_plan
-					meta["llm_execution_plan"] = llm_execution_plan
 					self._save_plan_metadata(meta)
-					
-					# Update plan to use LLM-generated sequence
-					# Skip ReconnaissanceAgent since it's already done
-					plan = llm_execution_plan[1:]
-					
-					# Validate: If LLM plan too short, merge with missing agents from DEFAULT_PLAN
-					if len(plan) < 13:  # Should have 13 agents after removing ReconnaissanceAgent
-						print(f"[Orchestrator] Warning: LLM plan incomplete ({len(plan)} agents), merging with default plan")
-						default_agents = self._remove_recon(list(DEFAULT_PLAN))
-						for agent in default_agents:
-							if agent not in plan:
-								plan.append(agent)
-						print(f"[Orchestrator] Merged plan now has {len(plan)} agents: {plan}")
+
+					# OPTION B (FIX Bug #1 & #3): Use DEFAULT_PLAN parallel structure for Phase 2
+					# LLM planning is used ONLY for tool selection, NOT execution order
+					print("[Orchestrator] Phase 2: Using DEFAULT_PLAN parallel structure (LLM for tool selection only)")
+					plan = self._remove_recon(list(DEFAULT_PLAN))  # Preserves {"parallel": [...]}
+					print(f"[Orchestrator] Execution plan: {plan}")
 				else:
 					print("[Orchestrator] Warning: No reconnaissance results found, using default plan")
 					plan = self._remove_recon(list(DEFAULT_PLAN))
@@ -554,6 +646,19 @@ class Orchestrator:
 					print(f"[Orchestrator] LLM selected tools: {tool_plan['tools']}")
 			
 			self._run_step_sync(step, tool_plan)
+
+		# Best-effort: ensure report generation runs even if circuit breaker
+		# or early loop exit prevented reaching the final report step.
+		if not self._is_job_cancelled():
+			with get_db() as db:
+				report_ja = db.query(JobAgent).filter(
+					JobAgent.job_id == self.job_id,
+					JobAgent.agent_name == "ReportGenerationAgent",
+				).one_or_none()
+				report_pending = bool(report_ja and report_ja.status in (AgentStatus.pending, AgentStatus.running))
+			if report_pending:
+				print("[Orchestrator] ReportGenerationAgent still pending; running it now...")
+				self._run_step_sync("ReportGenerationAgent", self._get_tool_plan_for_agent("ReportGenerationAgent"))
 
 		# Aggregation/reporting would go here
 		print("[Orchestrator] Testing completed")

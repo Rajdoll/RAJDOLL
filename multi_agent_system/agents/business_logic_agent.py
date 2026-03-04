@@ -178,21 +178,12 @@ Write to shared_context:
     async def run(self) -> None:
         client = MCPClient()
 
-        #  AUTHENTICATED SESSION SUPPORT
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        auth_data = None
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                    'token': first_login.get('token'),  # BUGFIX: Include JWT token for authenticated API calls
-                    'cookies': first_login.get('cookies', {}),  # Include cookies if available
-                }
-                self.log("info", f"✅ Using authenticated session: {first_login.get('username')} (token: {first_login.get('token')[:20] if first_login.get('token') else 'None'}...)")
-
+        # AUTHENTICATED SESSION SUPPORT (using base_agent method)
+        auth_data = self.get_auth_session()
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')} (token: {'Present' if auth_data.get('token') else 'None'})")
+        else:
+            self.log("warning", "⚠ No authenticated session available - some tests may fail with 401")
 
         target = self._get_target()
         if not target:
@@ -283,7 +274,8 @@ Write to shared_context:
                     client.call_tool(
                         server="business-logic-testing",
                         tool="test_shopping_cart_manipulation",
-                        args={"base_url": target, "auth_session": auth_data}
+                        args={"base_url": target},
+                        auth_session=auth_data
                     ), timeout=180
                 )
                 if isinstance(res, dict) and res.get("status") == "success":

@@ -154,18 +154,12 @@ Write to shared_context:
     async def run(self) -> None:
         client = MCPClient()
         
-        # 🔑 AUTHENTICATED SESSION SUPPORT
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        auth_data = None
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                }
-                self.log("info", f"✓ Using authenticated session: {first_login.get('username')}")
+        # 🔑 AUTHENTICATED SESSION SUPPORT (via Orchestrator auto-login)
+        auth_data = self.get_auth_session()
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')}")
+        else:
+            self.log("warning", "⚠ No authenticated session available")
 
         target = self._get_target()
         if not target:
@@ -186,6 +180,7 @@ Write to shared_context:
                         server="authorization-testing",
                         tool="test_vertical_privilege_escalation",
                         args={"admin_urls": admin_urls, "low_priv_session": low_priv_session},
+                        auth_session=auth_data
                     )
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
@@ -205,6 +200,7 @@ Write to shared_context:
                         server="authorization-testing",
                         tool="test_idor_vulnerability",
                         args={"base_url_with_placeholder": base_url, "session": auth_data or {}, "start_id": 1, "count": 5},
+                        auth_session=auth_data
                     )
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
@@ -232,6 +228,7 @@ Write to shared_context:
                             "id_range_start": 1,
                             "id_range_end": 20
                         },
+                        auth_session=auth_data
                     ),
                     timeout=90  # Longer timeout for comprehensive testing
                 )
@@ -267,6 +264,7 @@ Write to shared_context:
                         server="authorization-testing",
                         tool="test_http_method_tampering",
                         args={"url": target, "session": auth_data or {}},
+                        auth_session=auth_data
                     )
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
@@ -286,6 +284,7 @@ Write to shared_context:
                         server="authorization-testing",
                         tool="get_manual_authorization_checklist",
                         args={},
+                        auth_session=auth_data
                     )
                 )
                 if isinstance(res, dict) and res.get("status") == "success":

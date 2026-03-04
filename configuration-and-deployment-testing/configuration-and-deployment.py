@@ -4,7 +4,7 @@ import asyncio
 import os
 import re
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Logging configuration
 import logging
@@ -41,14 +41,24 @@ async def execute_wsl_command(command: str, timeout: int = 180) -> str:
         return f"Error: {e}"
 
 # Helper function to validate ffuf findings by following redirects
-async def _validate_ffuf_findings(domain: str, ffuf_results: List[Dict]) -> List[Dict]:
+async def _validate_ffuf_findings(domain: str, ffuf_results: List[Dict], auth_session: Optional[Dict[str, Any]] = None) -> List[Dict]:
     """
     Validates ffuf findings by following redirects and checking actual content.
     Returns only findings that are actually accessible admin interfaces.
     """
     validated = []
     
-    async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+    # Build request kwargs with auth support
+    req_kwargs = {"verify": False, "follow_redirects": True, "timeout": 10}
+    if auth_session:
+        if 'cookies' in auth_session:
+            req_kwargs['cookies'] = auth_session['cookies']
+        if 'headers' in auth_session:
+            req_kwargs['headers'] = auth_session.get('headers', {})
+        elif 'token' in auth_session:
+            req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+    
+    async with httpx.AsyncClient(**req_kwargs) as client:
         for result in ffuf_results:
             try:
                 url = result.get("url", "")
@@ -148,7 +158,7 @@ You are an expert web application security tester focusing on OWASP WSTG v4.2 'C
 
 Your main objectives are:
 - **Scan Network & Services:** Use Nmap to identify open ports and running services.
-- **Automated Configuration Scan:** Use Nuclei with specific templates to find misconfigurations, exposed panels, and vulnerabilities.
+- **Automated Configuration Scan:** Use targeted checks/scanners to find misconfigurations, exposed panels, and common issues.
 - **Find Sensitive Files:** Use ffuf to discover exposed backup, config, and administrative files or directories.
 - **Check HTTP Security:** Test for insecure HTTP methods and missing security headers.
 
@@ -305,39 +315,7 @@ async def _validate_critical_services(domain: str, critical_services: List[Dict]
     return validated
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def run_nuclei_config_scan(domain: str) -> Dict[str, Any]:
-    """
-    [NEW & REPLACES NIKTO]
-    logger.info(f"🔍 Executing run_nuclei_config_scan")
-    Runs Nuclei with specific templates for configuration issues, exposed panels, and CVEs.
-    """
-    try:
-        output_file = f"nuclei_output_{domain}.json"
-        cmd = (
-            f"nuclei -u https://{domain} -t exposures/,misconfiguration/,technologies/ "
-            f"-json -o {output_file}"
-        )
-        await execute_wsl_command(cmd, timeout=300)
-
-        results = []
-        if os.path.exists(output_file):
-            with open(output_file, 'r') as f:
-                for line in f:
-                    try:
-                        results.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue # Abaikan baris yang bukan JSON valid
-            os.remove(output_file)
-
-        return {
-            "status": "success",
-            "data": {"findings": results} if results else {"message": "Nuclei found no issues with the selected templates."}
-        }
-    except Exception as e:
-        return {"status": "error", "message": f"Nuclei scan failed: {str(e)}"}
-
-# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def find_sensitive_files_and_dirs(domain: str) -> Dict[str, Any]:
+async def find_sensitive_files_and_dirs(domain: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [ENHANCED] Brute-forces for sensitive admin panels and directories using ffuf.
     Validates findings by following redirects to determine actual accessibility.
@@ -354,6 +332,16 @@ async def find_sensitive_files_and_dirs(domain: str) -> Dict[str, Any]:
             f"ffuf -w {login_list} -u https://{domain}/FUZZ "
             f"-mc 200,301,302,401,403 -o {output_file} -of json"
         )
+        # Add auth headers/cookies to ffuf command if auth_session provided
+        if auth_session:
+            if 'token' in auth_session:
+                cmd += f" -H 'Authorization: Bearer {auth_session['token']}'"
+            if 'cookies' in auth_session and isinstance(auth_session['cookies'], dict):
+                cookie_str = "; ".join([f"{k}={v}" for k, v in auth_session['cookies'].items()])
+                cmd += f" -b '{cookie_str}'"
+            if 'headers' in auth_session and isinstance(auth_session['headers'], dict):
+                for header_name, header_value in auth_session['headers'].items():
+                    cmd += f" -H '{header_name}: {header_value}'"
         await execute_wsl_command(cmd, timeout=300)
 
         results = {}
@@ -363,7 +351,7 @@ async def find_sensitive_files_and_dirs(domain: str) -> Dict[str, Any]:
              os.remove(output_file)
 
         # Validate findings by following redirects and checking actual content
-        validated_findings = await _validate_ffuf_findings(domain, results.get("results", []))
+        validated_findings = await _validate_ffuf_findings(domain, results.get("results", []), auth_session)
 
         return {
             "status": "success",
@@ -373,14 +361,24 @@ async def find_sensitive_files_and_dirs(domain: str) -> Dict[str, Any]:
         return {"status": "error", "message": f"ffuf scan failed: {str(e)}"}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_http_methods_and_headers(domain: str) -> Dict[str, Any]:
+async def test_http_methods_and_headers(domain: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [ENHANCED] Checks for enabled HTTP methods and analyzes security headers.
     logger.info(f"🔍 Executing test_http_methods_and_headers")
     Tests multiple dangerous methods and provides detailed security assessment.
     """
     try:
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        # Build request kwargs with auth support
+        req_kwargs = {"verify": False, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test basic GET request for headers
             resp = await client.get(f"https://{domain}")
             headers = {h.lower(): resp.headers[h] for h in resp.headers}
@@ -462,7 +460,7 @@ async def test_http_methods_and_headers(domain: str) -> Dict[str, Any]:
 # ========== OPSI B: 4 NEW CONFIGURATION & DEPLOYMENT TOOLS ==========
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_file_extensions(base_url: str, test_extensions: List[str] = None) -> Dict[str, Any]:
+async def test_file_extensions(base_url: str, test_extensions: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests for dangerous file upload/execution capabilities.
     logger.info(f"🔍 Executing test_file_extensions")
@@ -475,7 +473,17 @@ async def test_file_extensions(base_url: str, test_extensions: List[str] = None)
     try:
         findings = []
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+        # Build request kwargs with auth support
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Check if dangerous extensions are mapped to handlers
             for ext in test_extensions:
                 test_url = f"{base_url.rstrip('/')}/test{ext}"
@@ -529,7 +537,7 @@ async def test_file_extensions(base_url: str, test_extensions: List[str] = None)
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_ria_cross_domain(base_url: str) -> Dict[str, Any]:
+async def test_ria_cross_domain(base_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests for RIA cross-domain policy misconfigurations.
     logger.info(f"🔍 Executing test_ria_cross_domain")
@@ -544,7 +552,17 @@ async def test_ria_cross_domain(base_url: str) -> Dict[str, Any]:
             {"path": "/clientaccesspolicy.xml", "type": "Silverlight"}
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        # Build request kwargs with auth support
+        req_kwargs = {"verify": False, "follow_redirects": True, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for policy in policy_files:
                 url = f"{base_url.rstrip('/')}{policy['path']}"
                 try:
@@ -589,7 +607,7 @@ async def test_ria_cross_domain(base_url: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_file_permissions(base_url: str) -> Dict[str, Any]:
+async def test_file_permissions(base_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests for insecure file permissions and directory traversal.
     logger.info(f"🔍 Executing test_file_permissions")
@@ -619,7 +637,17 @@ async def test_file_permissions(base_url: str) -> Dict[str, Any]:
             "/backup.sql"
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+        # Build request kwargs with auth support
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Path traversal
             for payload in traversal_payloads:
                 test_url = f"{base_url.rstrip('/')}/{payload}"
@@ -668,7 +696,7 @@ async def test_file_permissions(base_url: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_cloud_storage(domain: str) -> Dict[str, Any]:
+async def test_cloud_storage(domain: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests for misconfigured cloud storage (S3, Azure, GCS).
     logger.info(f"🔍 Executing test_cloud_storage")
@@ -686,7 +714,17 @@ async def test_cloud_storage(domain: str) -> Dict[str, Any]:
             {"name": "Google Cloud Storage", "pattern": f"{domain.replace('.', '-')}.storage.googleapis.com"},
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        # Build request kwargs with auth support
+        req_kwargs = {"verify": False, "follow_redirects": True, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for cloud in cloud_patterns:
                 url = f"https://{cloud['pattern']}"
                 try:

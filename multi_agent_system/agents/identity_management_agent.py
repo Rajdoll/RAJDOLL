@@ -43,18 +43,12 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
     async def run(self) -> None:
         client = MCPClient()
 
-        #  AUTHENTICATED SESSION SUPPORT
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        auth_data = None
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                }
-                self.log("info", f" Using authenticated session: {first_login.get('username')}")
+        # 🔑 AUTHENTICATED SESSION SUPPORT (via Orchestrator auto-login)
+        auth_data = self.get_auth_session()
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')}")
+        else:
+            self.log("warning", "⚠ No authenticated session available")
 
 
         target = self._get_target()
@@ -152,7 +146,8 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
                             "submit_button_selector": "button[type='submit']",
                             "error_message_selector": ".error, .alert",
                             "usernames_to_test": ["admin", "test", "user"]
-                        }
+                        },
+                        auth_session=auth_data
                     ),
                     timeout=90
                 )

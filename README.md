@@ -17,7 +17,7 @@
 
 ✨ **14 Specialized Agents** - Each agent is an expert in one OWASP WSTG category  
 🧠 **LLM-Powered Planning** - Claude/GPT-4 generates adaptive test strategies  
-🔗 **MCP Integration** - Unified protocol for 15+ security tools (SQLMap, Nuclei, Dalfox, etc.)  
+🔗 **MCP Integration** - Unified protocol for 15+ security tools (SQLMap, Dalfox, etc.)  
 🎯 **100+ Test Cases** - Comprehensive OWASP WSTG 4.2 coverage  
 📊 **Real-time Monitoring** - WebSocket updates and detailed logging  
 📄 **Professional Reports** - OWASP-compliant Markdown/PDF reports  
@@ -336,7 +336,7 @@ agents:
     tools:
       - sqlmap  # level=3, risk=2
       - dalfox
-      - nuclei
+      - ffuf
 ```
 
 ### Tool Configuration
@@ -557,7 +557,7 @@ If you use RAJDOLL in your research, please cite:
 - **OWASP Foundation** - Web Security Testing Guide 4.2
 - **Anthropic** - Claude AI and Model Context Protocol
 - **OpenAI** - GPT-4 API
-- **Security Community** - Open source tools (SQLMap, Nuclei, Dalfox, etc.)
+- **Security Community** - Open source tools (SQLMap, Dalfox, etc.)
 - **Telkom University** - Research support
 - **BSSN Indonesia** - Security guidance
 

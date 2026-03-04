@@ -54,7 +54,6 @@ Thumbs.db
 
 # Project specific
 *.json.bak
-nuclei_*.json
 testssl_output_*.json
 ffuf_*.json
 /tmp/

@@ -64,23 +64,101 @@ async def test_tls_credentials(login_url: str) -> Dict[str, Any]:
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
 async def test_default_credentials(target: str) -> Dict[str, Any]:
     """
-    [REVISI] Runs Nuclei default-credentials templates and returns JSON output.
-    """
-    try:
-        # Menggunakan output JSON dari Nuclei
-        output_file = f"nuclei_default_creds_{target.replace('://','_')}.json"
-        cmd = f"nuclei -u {target} -t exposures/default-login/ -severity low,medium,high -nc -json -o {output_file}"
-        await run(cmd, timeout=180)
-        
-        results = []
-        if os.path.exists(output_file):
-            with open(output_file, 'r') as f:
-                for line in f:
-                    try: results.append(json.loads(line))
-                    except json.JSONDecodeError: continue
-            os.remove(output_file)
+    [REVISI] Tries common default credentials against common login endpoints.
 
-        return {"status": "success", "data": {"findings": results}}
+    This intentionally avoids external template scanners and keeps the check lightweight.
+    """
+    from urllib.parse import urlparse
+
+    def _base(url: str) -> str:
+        u = url.strip()
+        if not u.startswith("http://") and not u.startswith("https://"):
+            u = "http://" + u
+        p = urlparse(u)
+        scheme = p.scheme or "http"
+        netloc = p.netloc or p.path
+        return f"{scheme}://{netloc}".rstrip("/")
+
+    base = _base(target)
+
+    # Small, high-signal credential list (keep conservative)
+    common_creds = [
+        ("admin", "admin"),
+        ("admin", "password"),
+        ("administrator", "administrator"),
+        ("root", "root"),
+        ("test", "test"),
+        ("user", "user"),
+        ("guest", "guest"),
+        # Juice Shop common defaults
+        ("admin@juice-sh.op", "admin123"),
+    ]
+
+    # Common login endpoints to try
+    endpoints = [
+        ("POST", "/rest/user/login", "json", {"email": "{u}", "password": "{p}"}),  # Juice Shop
+        ("POST", "/api/login", "json", {"username": "{u}", "password": "{p}"}),
+        ("POST", "/auth/login", "json", {"username": "{u}", "password": "{p}"}),
+        ("POST", "/api/auth/login", "json", {"username": "{u}", "password": "{p}"}),
+        ("POST", "/login", "form", {"username": "{u}", "password": "{p}"}),
+        ("POST", "/session", "json", {"username": "{u}", "password": "{p}"}),
+    ]
+
+    findings: List[Dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True, verify=False) as cli:
+            # Prime the base URL (cookies, redirects)
+            try:
+                await cli.get(base)
+            except Exception:
+                pass
+
+            for method, path, kind, template in endpoints:
+                url = f"{base}{path}"
+                for username, password in common_creds:
+                    payload = {k: (v.format(u=username, p=password) if isinstance(v, str) else v) for k, v in template.items()}
+                    try:
+                        if kind == "json":
+                            resp = await cli.request(method, url, json=payload)
+                        else:
+                            resp = await cli.request(method, url, data=payload)
+
+                        ok_status = resp.status_code in (200, 201, 202, 204, 302)
+                        body = resp.text or ""
+
+                        # Heuristics: token in JSON or auth cookie set
+                        token = None
+                        if resp.headers.get("content-type", "").lower().startswith("application/json"):
+                            try:
+                                j = resp.json()
+                                if isinstance(j, dict):
+                                    token = j.get("token") or j.get("authentication") or j.get("access_token")
+                            except Exception:
+                                pass
+
+                        set_cookie = resp.headers.get("set-cookie", "")
+                        looks_successful = ok_status and (
+                            bool(token)
+                            or ("token" in body.lower() and resp.status_code == 200)
+                            or ("session" in set_cookie.lower())
+                            or ("jwt" in set_cookie.lower())
+                        )
+
+                        if looks_successful:
+                            findings.append({
+                                "endpoint": url,
+                                "username": username,
+                                "password": password,
+                                "status_code": resp.status_code,
+                                "token_present": bool(token),
+                                "set_cookie": set_cookie[:200] if set_cookie else "",
+                            })
+                            # Do not brute-force further once a hit is found for this endpoint
+                            break
+                    except Exception:
+                        continue
+
+        return {"status": "success", "data": {"findings": findings, "tested_endpoints": [e[1] for e in endpoints]}}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

@@ -77,8 +77,9 @@ def sanitize_domain(domain: str) -> str:
     """Sanitize domain input to prevent command injection"""
     domain = re.sub(r'^https?://', '', domain)
     domain = domain.split('/')[0]
-    domain = domain.split(':')[0]
-    if not re.match(r'^[a-zA-Z0-9.-]+$', domain):
+    # Allow optional port (e.g., juice-shop:3000) for in-network targets.
+    # Keep validation strict to avoid shell injection.
+    if not re.match(r'^[a-zA-Z0-9.-]+(:\d{1,5})?$', domain):
         raise ValueError(f"Invalid domain format: {domain}")
     return domain.lower()
 
@@ -2431,6 +2432,189 @@ async def dirsearch_scan(
     except Exception as e:
         logger.error(f"dirsearch scan failed: {str(e)}")
         return {"status": "error", "message": f"dirsearch scan failed: {str(e)}"}
+
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def feroxbuster_scan(
+    target_url: str,
+    wordlist: Optional[str] = None,
+    extensions: str = "php,html,json,txt,js,xml,asp,aspx,jsp",
+    depth: int = 3,
+    threads: int = 50,
+    timeout: int = 300
+) -> Dict[str, Any]:
+    """
+    Fast, concurrent directory scanner using Feroxbuster (Rust-based, 8-10x faster than dirsearch).
+
+    PERFORMANCE ADVANTAGE: Feroxbuster uses asynchronous Rust implementation for maximum speed.
+    Typical scan time: 30-60 seconds (vs 5+ minutes with dirsearch).
+
+    Args:
+        target_url: Base URL to scan (e.g., http://juice-shop:3000)
+        wordlist: Path to wordlist (default: auto-select from SecLists)
+        extensions: Comma-separated file extensions to test
+        depth: Maximum recursion depth (default: 3)
+        threads: Number of concurrent threads (default: 50)
+        timeout: Maximum execution time in seconds (default: 300)
+
+    Returns:
+        Dict with discovered endpoints, status codes, sizes, and categories
+    """
+    try:
+        logger.info(f"Starting feroxbuster scan on {target_url} (depth={depth}, threads={threads})")
+
+        # Auto-select best wordlist
+        if not wordlist:
+            import os
+            combined_wordlist = "/opt/combined-web-api.txt"
+            seclists_raft = "/opt/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
+            seclists_common = "/opt/SecLists/Discovery/Web-Content/common.txt"
+
+            if os.path.exists(combined_wordlist):
+                wordlist = combined_wordlist
+                logger.info("Using combined web+API wordlist (62K+ entries)")
+            elif os.path.exists(seclists_raft):
+                wordlist = seclists_raft
+                logger.info("Using SecLists raft-medium-directories.txt (30K entries)")
+            elif os.path.exists(seclists_common):
+                wordlist = seclists_common
+                logger.info("Using SecLists common.txt (4.6K entries)")
+            else:
+                # Feroxbuster will use its built-in wordlist
+                wordlist = None
+                logger.info("Using feroxbuster built-in wordlist")
+
+        # Build feroxbuster command
+        cmd = [
+            "feroxbuster",
+            "-u", target_url,
+            "-d", str(depth),
+            "-t", str(threads),
+            "--json",  # JSON output for easy parsing
+            "--silent",  # Reduce noise
+            "--auto-bail",  # Auto-stop on too many errors
+            "--rate-limit", "150",  # Respect server (150 req/sec)
+        ]
+
+        if wordlist:
+            cmd.extend(["-w", wordlist])
+
+        # Add extensions
+        if extensions:
+            cmd.extend(["-x", extensions])
+
+        # Filter status codes (only show interesting results)
+        cmd.extend(["--filter-status", "404,403"])
+
+        logger.info(f"Running: {' '.join(cmd)}")
+
+        # Execute feroxbuster
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            process.kill()
+            return {"status": "error", "message": f"feroxbuster timed out after {timeout} seconds"}
+
+        if process.returncode not in [0, 1]:  # 0=success, 1=some findings
+            error_msg = stderr.decode() if stderr else "Unknown error"
+            logger.error(f"feroxbuster failed: {error_msg}")
+            return {"status": "error", "message": f"feroxbuster execution failed: {error_msg}"}
+
+        # Parse feroxbuster JSON output (one JSON object per line)
+        try:
+            output_str = stdout.decode()
+            if not output_str.strip():
+                return {
+                    "status": "success",
+                    "data": {
+                        "total_found": 0,
+                        "endpoints": [],
+                        "message": "No endpoints found"
+                    }
+                }
+
+            import json
+            from urllib.parse import urljoin
+
+            endpoints = []
+            api_endpoints = []
+            search_endpoints = []
+            admin_endpoints = []
+
+            for line in output_str.split('\n'):
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    # feroxbuster JSON format: {"type":"response","url":"...","status":200,"content_length":123,...}
+                    if entry.get("type") == "response":
+                        url = entry.get("url", "")
+                        status_code = entry.get("status", 0)
+                        size = entry.get("content_length", 0)
+
+                        # Extract path from URL
+                        from urllib.parse import urlparse
+                        parsed = urlparse(url)
+                        path = parsed.path
+
+                        endpoint_data = {
+                            "path": path.lstrip("/"),
+                            "url": url,
+                            "status": status_code,
+                            "size": f"{size}B",
+                            "redirect": entry.get("redirects", [])
+                        }
+
+                        endpoints.append(endpoint_data)
+
+                        # Categorize endpoints
+                        path_lower = path.lower()
+                        if "/api/" in path_lower or "/rest/" in path_lower or path_lower.endswith(".json"):
+                            api_endpoints.append(endpoint_data)
+                        if "search" in path_lower:
+                            search_endpoints.append(endpoint_data)
+                        if "admin" in path_lower or "dashboard" in path_lower:
+                            admin_endpoints.append(endpoint_data)
+
+                except json.JSONDecodeError:
+                    continue  # Skip non-JSON lines (progress bars, etc.)
+
+            logger.info(f"✓ feroxbuster found {len(endpoints)} endpoints (API: {len(api_endpoints)}, Search: {len(search_endpoints)}, Admin: {len(admin_endpoints)})")
+
+            return {
+                "status": "success",
+                "data": {
+                    "total_found": len(endpoints),
+                    "endpoints": endpoints[:200],  # Limit to 200 most relevant
+                    "api_endpoints": api_endpoints[:50],
+                    "search_endpoints": search_endpoints[:50],
+                    "admin_endpoints": admin_endpoints[:50],
+                    "sample": [ep["url"] for ep in endpoints[:30]],  # Top 30 sample
+                    "stats": {
+                        "total": len(endpoints),
+                        "api_count": len(api_endpoints),
+                        "search_count": len(search_endpoints),
+                        "admin_count": len(admin_endpoints),
+                        "status_200": len([e for e in endpoints if e["status"] == 200]),
+                        "status_301": len([e for e in endpoints if e["status"] == 301]),
+                        "status_302": len([e for e in endpoints if e["status"] == 302]),
+                    }
+                }
+            }
+
+        except Exception as parse_error:
+            logger.error(f"Failed to parse feroxbuster output: {parse_error}")
+            return {"status": "error", "message": f"Failed to parse feroxbuster output: {str(parse_error)}"}
+
+    except Exception as e:
+        logger.error(f"feroxbuster scan failed: {str(e)}")
+        return {"status": "error", "message": f"feroxbuster scan failed: {str(e)}"}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
 async def generate_reconnaissance_report(domain: str) -> Dict[str, Any]:

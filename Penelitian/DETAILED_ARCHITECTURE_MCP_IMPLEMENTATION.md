@@ -64,7 +64,7 @@
 │  │          │  │          │  │          │  │          │       │
 │  │ subfinder│  │ nikto    │  │ sqlmap   │  │ metasploit│      │
 │  │ amass    │  │ whatweb  │  │ dalfox   │  │ (limited) │      │
-│  │ nmap     │  │ wpscan   │  │ nuclei   │  │          │       │
+│  │ nmap     │  │ wpscan   │  │ tplscan  │  │          │       │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
 └─────────────────────────────────────────────────────────────────┘
                         │
@@ -349,7 +349,7 @@ class InputValidationAgent(BaseAgent):
         "xsstrike",       # XSS detection
         "commix",         # Command injection
         "tplmap",         # Template injection
-        "nuclei"          # Multi-purpose scanner
+        "tplscan"         # Multi-purpose template-based scan
     ]
 
     dependencies = ["reconnaissance"]
@@ -678,7 +678,7 @@ class SupervisorAgent:
 │  │                  │  │                  │                │
 │  │  - subfinder     │  │  - nikto         │                │
 │  │  - amass         │  │  - testssl       │                │
-│  │  - nmap          │  │  - nuclei        │                │
+│  │  - nmap          │  │  - tplscan       │                │
 │  └──────────────────┘  └──────────────────┘                │
 │                                                             │
 │  ┌──────────────────┐  ┌──────────────────┐                │
@@ -1147,7 +1147,7 @@ mcp_servers:
     tools:
       - nikto
       - testssl
-      - nuclei
+            - tplscan
       - wpscan
 
   # SQL Injection

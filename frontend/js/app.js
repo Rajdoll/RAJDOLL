@@ -361,17 +361,29 @@ function connectWebSocket() {
     addLog(`[SYSTEM] Connecting to real-time log stream (Job ${currentJobId})...`, 'info');
     
     try {
+        let suppressServerConnectedMessage = false;
         websocket = new WebSocket(wsUrl);
         
         websocket.onopen = () => {
             console.log('[WebSocket] Connection OPENED');
             addLog('[SYSTEM] ✅ Connected to log stream', 'success');
+            suppressServerConnectedMessage = true;
         };
         
         websocket.onmessage = (event) => {
             console.log('[WebSocket] Message received:', event.data);
             try {
                 const data = JSON.parse(event.data);
+
+                // Avoid duplicate "Connected" lines: UI logs on open, server also sends a handshake log.
+                if (
+                    suppressServerConnectedMessage &&
+                    data.type === 'log' &&
+                    data.agent === 'SYSTEM' &&
+                    data.message === 'Connected to log stream'
+                ) {
+                    return;
+                }
                 
                 if (data.type === 'log') {
                     addLog(`[${data.agent || 'SYSTEM'}] ${data.message}`, data.level || 'info');

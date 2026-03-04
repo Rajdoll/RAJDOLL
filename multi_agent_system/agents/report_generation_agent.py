@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 
 from ..agents.base_agent import BaseAgent, AgentRegistry
 from ..core.db import get_db
-from ..models.models import Finding, JobAgent, Job
+from ..models.models import Finding, Job
 # 🆕 Sensitive data redaction integration
 from ..core.security_guards import data_redactor
 
@@ -65,7 +65,7 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 		}
 		
 		# Store report in shared context
-		self.shared_context_manager.save(f"final_report_{job_id}", report)
+		self.context_manager.write(f"final_report_{job_id}", report)
 		
 		self.log("info", "Report generation completed", {
 			"total_findings": len(findings),
@@ -82,29 +82,38 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 		findings = []
 		
 		with get_db() as db:
-			db_findings = db.query(Finding).join(JobAgent).filter(
-				JobAgent.job_id == job_id
-			).all()
+			db_findings = db.query(Finding).filter(Finding.job_id == job_id).all()
 			
 			for f in db_findings:
+				evidence_str = ""
+				if f.evidence is not None:
+					try:
+						evidence_str = json.dumps(f.evidence, ensure_ascii=False)
+					except Exception:
+						evidence_str = str(f.evidence)
+
 				# 🔒 REDACT SENSITIVE DATA: Remove passwords, API keys, PII before export
 				redacted_title = data_redactor.redact(f.title or "")
-				redacted_description = data_redactor.redact(f.description or "")
-				redacted_evidence = data_redactor.redact(f.evidence or "")
-				redacted_location = data_redactor.redact(f.location or "")
+				redacted_description = data_redactor.redact(f.details or "")
+				redacted_evidence = data_redactor.redact(evidence_str)
+				redacted_location = None
 				
 				findings.append({
 					"id": f.id,
 					"title": redacted_title,
 					"description": redacted_description,
-					"severity": f.severity,
+					"severity": (
+						"INFORMATIONAL"
+						if (getattr(f.severity, "value", str(f.severity)) in ("info", "INFORMATIONAL", "informational"))
+						else str(getattr(f.severity, "value", f.severity)).upper()
+					),
 					"category": f.category,
 					"location": redacted_location,
 					"evidence": redacted_evidence,
-					"remediation": f.remediation,
-					"references": f.references,
-					"cvss_score": f.cvss_score,
-					"agent_name": db.query(JobAgent).get(f.job_agent_id).agent_name if f.job_agent_id else None
+					"remediation": None,
+					"references": None,
+					"cvss_score": None,
+					"agent_name": f.agent_name,
 				})
 		
 		return findings
@@ -118,7 +127,7 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 			
 			return {
 				"target": job.target,
-				"name": job.name,
+				"name": None,
 				"created_at": job.created_at.isoformat() if job.created_at else None,
 				"completed_at": job.updated_at.isoformat() if job.updated_at else None,
 				"status": job.status.value if hasattr(job.status, 'value') else str(job.status)
@@ -336,7 +345,6 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 				"tools_used": [
 					"Custom MCP-based security testing tools",
 					"OWASP ZAP integration",
-					"Nuclei vulnerability scanner",
 					"SQLMap for SQL injection testing",
 					"Dalfox for XSS detection",
 					"Custom reconnaissance tools"

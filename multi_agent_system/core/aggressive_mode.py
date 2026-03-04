@@ -96,14 +96,6 @@ class AggressiveConfig:
     FUZZING_DEPTH = 5  # dari 2 → 5 levels deep
     FUZZING_MUTATIONS = 500  # dari 100 → 500 mutations per endpoint
     
-    # Nuclei templates (comprehensive scan)
-    NUCLEI_SEVERITY = ["info", "low", "medium", "high", "critical"]
-    NUCLEI_TAGS = [
-        "cve", "owasp", "xss", "sqli", "rce", "lfi", "ssrf",
-        "xxe", "ssti", "idor", "traversal", "disclosure",
-        "misconfig", "exposure", "default-login", "panel"
-    ]
-    
     # API testing
     API_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD", "TRACE"]
     API_CONTENT_TYPES = [
@@ -187,8 +179,6 @@ class AggressiveConfig:
                 "subdomain_wordlist_size": cls.SUBDOMAIN_WORDLIST_SIZE,
                 "fuzzing_depth": cls.FUZZING_DEPTH,
                 "fuzzing_mutations": cls.FUZZING_MUTATIONS,
-                "nuclei_severity": cls.NUCLEI_SEVERITY,
-                "nuclei_tags": cls.NUCLEI_TAGS,
                 "api_methods": cls.API_METHODS,
                 "default_creds": cls.DEFAULT_CREDS,
                 "file_upload_extensions": cls.FILE_UPLOAD_EXTENSIONS,
@@ -204,8 +194,6 @@ class AggressiveConfig:
                 "subdomain_wordlist_size": 100,
                 "fuzzing_depth": 2,
                 "fuzzing_mutations": 100,
-                "nuclei_severity": ["critical", "high"],
-                "nuclei_tags": ["cve", "owasp"],
                 "api_methods": ["GET", "POST"],
                 "default_creds": cls.DEFAULT_CREDS[:10],
                 "file_upload_extensions": cls.FILE_UPLOAD_EXTENSIONS[:10],

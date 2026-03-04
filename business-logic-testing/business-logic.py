@@ -25,17 +25,31 @@ from urllib.parse import urlparse, parse_qs, urlunparse
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"business-logic-testing")
 
 # --- Helpers ---
-async def req(method: str, url: str, **kwargs) -> Optional[httpx.Response]:
+def build_request_kwargs(auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Build request kwargs with authentication if provided."""
+    kwargs = {"timeout": 8, "follow_redirects": False, "verify": False}
+    if auth_session:
+        if 'cookies' in auth_session:
+            kwargs['cookies'] = auth_session['cookies']
+        if 'headers' in auth_session:
+            kwargs['headers'] = auth_session.get('headers', {})
+        elif 'token' in auth_session:
+            kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+    return kwargs
+
+async def req(method: str, url: str, auth_session: Optional[Dict[str, Any]] = None, **kwargs) -> Optional[httpx.Response]:
     try:
-        async with httpx.AsyncClient(timeout=8, follow_redirects=False, verify=False) as cli:
-            return await cli.request(method, url, **kwargs)
+        req_kwargs = build_request_kwargs(auth_session)
+        req_kwargs.update(kwargs)
+        async with httpx.AsyncClient(**req_kwargs) as cli:
+            return await cli.request(method, url, **{k: v for k, v in kwargs.items() if k not in ['timeout', 'follow_redirects', 'verify', 'cookies', 'headers']})
     except Exception:
         return None
 
 # --- Tools (Revisi, Peningkatan & Baru) ---
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_data_validation_extremes(url_with_fuzz: str) -> Dict[str, Any]:
+async def test_data_validation_extremes(url_with_fuzz: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [REVISI] Sends boundary and bogus values to a parameter to test data validation.
     logger.info(f"🔍 Executing test_data_validation_extremes")
@@ -63,7 +77,7 @@ async def test_data_validation_extremes(url_with_fuzz: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_parameter_tampering(url: str, param_to_remove: str) -> Dict[str, Any]:
+async def test_parameter_tampering(url: str, param_to_remove: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [PENINGKATAN] Removes a specified parameter from a URL to see if the server-side logic is affected.
     logger.info(f"🔍 Executing test_parameter_tampering")
@@ -78,8 +92,8 @@ async def test_parameter_tampering(url: str, param_to_remove: str) -> Dict[str, 
         new_query = urlencode(params, doseq=True)
         stripped_url = urlunparse(parsed_url._replace(query=new_query))
 
-        original_resp = await req("GET", url)
-        stripped_resp = await req("GET", stripped_url)
+        original_resp = await req("GET", url, auth_session=auth_session)
+        stripped_resp = await req("GET", stripped_url, auth_session=auth_session)
 
         if not original_resp or not stripped_resp:
             return {"status": "error", "message": "One or more requests failed."}
@@ -97,7 +111,7 @@ async def test_parameter_tampering(url: str, param_to_remove: str) -> Dict[str, 
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_mass_assignment(url: str, method: str, valid_data: Dict[str, Any], evil_params: Dict[str, Any]) -> Dict[str, Any]:
+async def test_mass_assignment(url: str, method: str, valid_data: Dict[str, Any], evil_params: Dict[str, Any], auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [BARU] Tests for Mass Assignment by submitting extra, unauthorized parameters.
     logger.info(f"🔍 Executing test_mass_assignment")
@@ -107,7 +121,7 @@ async def test_mass_assignment(url: str, method: str, valid_data: Dict[str, Any]
         # Gabungkan data valid dengan parameter jahat
         payload = {**valid_data, **evil_params}
         
-        resp = await req(method.upper(), url, json=payload if method.upper() in ["POST", "PUT"] else None, data=payload if method.upper() == "POST" else None)
+        resp = await req(method.upper(), url, auth_session=auth_session, json=payload if method.upper() in ["POST", "PUT"] else None, data=payload if method.upper() == "POST" else None)
 
         if not resp:
             return {"status": "error", "message": "Request failed."}
@@ -124,7 +138,7 @@ async def test_mass_assignment(url: str, method: str, valid_data: Dict[str, Any]
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_process_timing_race_condition(url: str, method: str, runs: int = 10) -> Dict[str, Any]:
+async def test_process_timing_race_condition(url: str, method: str, runs: int = 10, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [REVISI] Fires N concurrent requests to test for race conditions (e.g., double-spend).
     logger.info(f"🔍 Executing test_process_timing_race_condition")
@@ -132,7 +146,7 @@ async def test_process_timing_race_condition(url: str, method: str, runs: int = 
     try:
         async def fire():
             # Menambahkan data acak untuk memastikan setiap request unik jika diperlukan
-            return await req(method.upper(), url, json={"item_id": 1, "nonce": random.randint(10000, 99999)})
+            return await req(method.upper(), url, auth_session=auth_session, json={"item_id": 1, "nonce": random.randint(10000, 99999)})
 
         tasks = [fire() for _ in range(runs)]
         responses = await asyncio.gather(*tasks)
@@ -152,14 +166,14 @@ async def test_process_timing_race_condition(url: str, method: str, runs: int = 
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_usage_limits_burst(url: str, method: str, burst_count: int = 20) -> Dict[str, Any]:
+async def test_usage_limits_burst(url: str, method: str, burst_count: int = 20, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [PENINGKATAN] Hits an endpoint with a rapid burst of concurrent requests to test rate-limiting.
     logger.info(f"🔍 Executing test_usage_limits_burst")
     """
     try:
         async def fire():
-            return await req(method.upper(), url)
+            return await req(method.upper(), url, auth_session=auth_session)
 
         tasks = [fire() for _ in range(burst_count)]
         responses = await asyncio.gather(*tasks)
@@ -176,7 +190,7 @@ async def test_usage_limits_burst(url: str, method: str, burst_count: int = 20) 
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_file_upload_logic(upload_url: str, filename: str, content: bytes, content_type: str) -> Dict[str, Any]:
+async def test_file_upload_logic(upload_url: str, filename: str, content: bytes, content_type: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [KONSOLIDASI] A generic tool to test file upload logic with various file types.
     logger.info(f"🔍 Executing test_file_upload_logic")
@@ -184,7 +198,7 @@ async def test_file_upload_logic(upload_url: str, filename: str, content: bytes,
     """
     try:
         files = {'file': (filename, content, content_type)}
-        resp = await req("POST", upload_url, files=files)
+        resp = await req("POST", upload_url, auth_session=auth_session, files=files)
         if not resp:
             return {"status": "error", "message": "Upload request failed."}
             
@@ -228,7 +242,7 @@ async def get_manual_checklist(topic: str) -> Dict[str, Any]:
 # ========== OPSI C: 7 COMPREHENSIVE BUSINESS LOGIC TOOLS ==========
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_business_data_validation(base_url: str, test_endpoints: List[str] = None) -> Dict[str, Any]:
+async def test_business_data_validation(base_url: str, test_endpoints: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests business data validation for price/quantity manipulation.
     logger.info(f"🔍 Executing test_business_data_validation")
@@ -250,7 +264,15 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
             {"name": "fractional_abuse", "price": 0.01, "quantity": 1000},
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for endpoint in test_endpoints:
                 url = f"{base_url.rstrip('/')}{endpoint}"
                 
@@ -290,7 +312,7 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_forge_requests(payment_url: str, legitimate_order: Dict[str, Any] = None) -> Dict[str, Any]:
+async def test_forge_requests(payment_url: str, legitimate_order: Dict[str, Any] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests for payment/order forging vulnerabilities.
     logger.info(f"🔍 Executing test_forge_requests")
@@ -318,7 +340,15 @@ async def test_forge_requests(payment_url: str, legitimate_order: Dict[str, Any]
             {"name": "add_discount_100", "modifications": {"discount": 100}},
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for test in forgery_tests:
                 forged_order = {**legitimate_order, **test["modifications"]}
                 
@@ -349,7 +379,7 @@ async def test_forge_requests(payment_url: str, legitimate_order: Dict[str, Any]
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_race_conditions(target_url: str, concurrent_requests: int = 10) -> Dict[str, Any]:
+async def test_race_conditions(target_url: str, concurrent_requests: int = 10, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests for race condition vulnerabilities (TOCTOU).
     logger.info(f"🔍 Executing test_race_conditions")
@@ -360,7 +390,15 @@ async def test_race_conditions(target_url: str, concurrent_requests: int = 10) -
         results = []
         start_time = time.time()
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=15) as client:
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 15}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Send concurrent requests
             tasks = []
             for i in range(concurrent_requests):
@@ -407,7 +445,7 @@ async def test_race_conditions(target_url: str, concurrent_requests: int = 10) -
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_function_limits(target_url: str, burst_count: int = 50) -> Dict[str, Any]:
+async def test_function_limits(target_url: str, burst_count: int = 50, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests for missing rate limiting and resource exhaustion.
     logger.info(f"🔍 Executing test_function_limits")
@@ -418,7 +456,15 @@ async def test_function_limits(target_url: str, burst_count: int = 50) -> Dict[s
         results = []
         rate_limit_detected = False
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for i in range(burst_count):
                 try:
                     start = time.time()
@@ -456,7 +502,7 @@ async def test_function_limits(target_url: str, burst_count: int = 50) -> Dict[s
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None) -> Dict[str, Any]:
+async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests for workflow circumvention vulnerabilities.
     logger.info(f"🔍 Executing test_workflow_bypass")
@@ -474,7 +520,15 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None) 
     try:
         findings = []
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
+        req_kwargs = {"verify": False, "follow_redirects": True, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Direct access to final step without completing previous steps
             final_step = workflow_steps[-1]
             final_url = f"{base_url.rstrip('/')}{final_step}"
@@ -538,7 +592,7 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None) 
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_unexpected_file_upload(upload_url: str) -> Dict[str, Any]:
+async def test_unexpected_file_upload(upload_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests file upload logic for unexpected file types.
     logger.info(f"🔍 Executing test_unexpected_file_upload")
@@ -558,7 +612,15 @@ async def test_unexpected_file_upload(upload_url: str) -> Dict[str, Any]:
             {"name": "../../etc/passwd", "content": "path traversal test", "type": "text/plain"},
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=10) as client:
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 10}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for test_file in test_files:
                 try:
                     files = {"file": (test_file["name"], test_file["content"], test_file["type"])}
@@ -587,7 +649,7 @@ async def test_unexpected_file_upload(upload_url: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_malicious_file_upload(upload_url: str) -> Dict[str, Any]:
+async def test_malicious_file_upload(upload_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests for malicious file upload processing.
     logger.info(f"🔍 Executing test_malicious_file_upload")
@@ -625,7 +687,15 @@ async def test_malicious_file_upload(upload_url: str) -> Dict[str, Any]:
             },
         ]
         
-        async with httpx.AsyncClient(verify=False, follow_redirects=False, timeout=15) as client:
+        req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 15}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for test in malicious_tests:
                 try:
                     files = {"file": (test["name"], test["content"], test["type"])}

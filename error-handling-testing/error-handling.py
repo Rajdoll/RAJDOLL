@@ -6,7 +6,7 @@ import json
 import httpx
 import random
 import string
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Logging configuration
 import logging
@@ -51,38 +51,33 @@ ERROR_PATTERNS = re.compile(
 # --- Tools (Revisi, Konsolidasi & Baru) ---
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def probe_for_error_leaks(base_url: str) -> Dict[str, Any]:
+async def probe_for_error_leaks(base_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [KONSOLIDASI & PENINGKATAN] Probes for verbose errors and stack traces.
-    1. Runs Nuclei with relevant templates.
-    2. Fuzzes the URL with various error-inducing payloads.
+    Fuzzes the URL with various error-inducing payloads.
+    
+    Args:
+        base_url: Target URL to probe for error leaks
+        auth_session: Optional authentication session with cookies/headers/token
     """
     findings = {}
 
-    # 1. Menjalankan Nuclei
-    try:
-        output_file = f"nuclei_errors_{urlparse(base_url).hostname}.json"
-        # Menggabungkan beberapa tag relevan untuk efisiensi
-        cmd = f"nuclei -u {base_url} -tags debug-errors,stack-trace,exposure -json -o {output_file}"
-        await sh(cmd, 120)
-        
-        nuclei_results = []
-        if os.path.exists(output_file):
-            with open(output_file, 'r') as f:
-                for line in f:
-                    try: nuclei_results.append(json.loads(line))
-                    except json.JSONDecodeError: continue
-            os.remove(output_file)
-        findings["nuclei_scan"] = nuclei_results
-    except Exception as e:
-        findings["nuclei_scan"] = {"error": str(e)}
-
-    # 2. Melakukan Fuzzing manual
+    # Manual fuzzing
     fuzz_payloads = ["'", "\"", "\\", "%27", "<", ">", "[", "]", "{", "}", "a" * 2048]
     fuzz_results = []
     
+    # Build request kwargs with auth support
+    req_kwargs = {"timeout": 10, "verify": False}
+    if auth_session:
+        if 'cookies' in auth_session:
+            req_kwargs['cookies'] = auth_session['cookies']
+        if 'headers' in auth_session:
+            req_kwargs['headers'] = auth_session.get('headers', {})
+        elif 'token' in auth_session:
+            req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+    
     try:
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        async with httpx.AsyncClient(**req_kwargs) as client:
             for payload in fuzz_payloads:
                 # Menambahkan payload ke path
                 fuzzed_url = f"{base_url.rstrip('/')}/{payload}"
@@ -108,17 +103,31 @@ async def probe_for_error_leaks(base_url: str) -> Dict[str, Any]:
 
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def check_generic_error_pages(base_url: str) -> Dict[str, Any]:
+async def check_generic_error_pages(base_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [BARU] Checks default server responses for 404 and 403 errors to find info leaks.
-    logger.info(f"🔍 Executing check_generic_error_pages")
+    
+    Args:
+        base_url: Target URL to check for generic error pages
+        auth_session: Optional authentication session with cookies/headers/token
     """
+    logger.info(f"🔍 Executing check_generic_error_pages")
     try:
         # Meminta path yang pasti tidak ada
         random_path = f"/{''.join(random.choices(string.ascii_lowercase, k=12))}.html"
         test_url = f"{base_url.rstrip('/')}{random_path}"
         
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+        # Build request kwargs with auth support
+        req_kwargs = {"timeout": 10, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        
+        async with httpx.AsyncClient(**req_kwargs) as client:
             resp = await client.get(test_url)
         
         # Pola untuk banner server umum
@@ -143,7 +152,7 @@ You are an expert penetration tester focusing on **error-handling weaknesses**.
 Your mission is to evaluate **{domainname}** in line with OWASP WSTG 4.8.
 
 **Primary Objectives:**
-1.  **Probe for Error Leaks:** Use the `probe_for_error_leaks` tool to run a comprehensive scan. This tool combines automated `nuclei` scans with manual fuzzing to trigger and detect verbose error messages, debug information, and stack traces.
+1.  **Probe for Error Leaks:** Use the `probe_for_error_leaks` tool to run a comprehensive scan. This tool uses manual fuzzing to trigger and detect verbose error messages, debug information, and stack traces.
 2.  **Analyze Generic Error Pages:** Use the `check_generic_error_pages` tool to test how the server responds to requests for non-existent pages. Look for server version banners or other sensitive information leaks in default 404/403 pages.
 
 **Your Workflow:**

@@ -37,6 +37,30 @@ Operate autonomously without human guidance.
     MAX_ENDPOINTS: ClassVar[int] = 120
     MAX_JS_FILES: ClassVar[int] = 15
 
+    def _brief_tool_result(self, result: Any) -> str:
+        """Summarize a tool result for human-readable logs (safe for None/odd types)."""
+        if result is None:
+            return "type=None"
+        if isinstance(result, dict):
+            status = result.get("status")
+            error = result.get("error") or result.get("message") or result.get("detail")
+            keys = list(result.keys())
+            key_preview = keys[:10]
+            error_str = ""
+            if isinstance(error, str) and error.strip():
+                error_str = error.strip()[:160]
+            return (
+                f"type=dict status={status!r}"
+                + (f" error={error_str!r}" if error_str else "")
+                + f" keys={key_preview!r}"
+            )
+        if isinstance(result, str):
+            sample = result.strip().replace("\n", " ")
+            return f"type=str len={len(result)} sample={sample[:160]!r}"
+        if isinstance(result, list):
+            return f"type=list len={len(result)}"
+        return f"type={type(result).__name__}"
+
     BASELINE_TOOL_MATRIX: ClassVar[Dict[str, Dict[str, Any]]] = {
         "advanced_technology_fingerprinting": {
             "server": "information-gathering",
@@ -131,19 +155,48 @@ Operate autonomously without human guidance.
             "handler": "_handle_directory_scan",
             "timeout": 180,
         },
-        "dirsearch_scan": {
+        "feroxbuster_scan": {
+            "server": "information-gathering",
+            "tool": "feroxbuster_scan",
+            "priority": "CRITICAL",  # CRITICAL: 8-10x faster than dirsearch (Rust-based async)
+            "arg_builder": lambda target, domain: {
+                "target_url": target,
+                "depth": 3,  # Recursive depth
+                "extensions": "php,html,json,txt,js,xml,asp,aspx,jsp",
+                "threads": 50,
+                "timeout": 300  # 5 minutes (vs 10 min for dirsearch)
+            },
+            "handler": "_handle_feroxbuster_scan",
+            "timeout": 360,  # 6 minutes total timeout
+        },
+        "ffuf_directory_scan": {
+            "server": "information-gathering",
+            "tool": "ffuf_directory_scan",
+            "priority": "HIGH",  # HIGH: Parameter fuzzing & hidden file discovery
+            "arg_builder": lambda target, domain: {
+                "target_url": target,
+                "wordlist": None,  # Auto-select
+                "extensions": "php,html,json,txt,js,xml,bak,old,zip",
+                "filter_status": "404,403",
+                "threads": 40,
+                "timeout": 180
+            },
+            "handler": "_handle_ffuf_scan",
+            "timeout": 240,
+        },
+        "dirsearch_scan_legacy": {
             "server": "information-gathering",
             "tool": "dirsearch_scan",
-            "priority": "CRITICAL",  # CRITICAL: Recursive directory scanning - superior to ffuf
+            "priority": "LOW",  # LEGACY: Replaced by feroxbuster (kept as backup)
             "arg_builder": lambda target, domain: {
                 "target_url": target,
                 "recursive": True,
-                "recursion_depth": 3,  # Deep recursive scanning
+                "recursion_depth": 3,
                 "extensions": "php,html,json,txt,js,xml,asp,aspx,jsp",
                 "threads": 50
             },
             "handler": "_handle_dirsearch_scan",
-            "timeout": 600,  # 10 minutes for comprehensive recursive scan
+            "timeout": 600,
         },
         "discover_endpoints": {
             "server": "local",  # Runs locally using _discover_endpoints
@@ -152,6 +205,20 @@ Operate autonomously without human guidance.
             "arg_builder": lambda target, domain: {"target": target},
             "handler": "_handle_endpoint_discovery",
             "timeout": 240,
+        },
+        "katana_js_crawl": {
+            "server": "katana-crawler",
+            "tool": "crawl_with_js_parsing",
+            "priority": "CRITICAL",  # CRITICAL: Advanced JS parsing for modern SPAs
+            "arg_builder": lambda target, domain: {
+                "url": target,
+                "depth": 3,
+                "js_parsing": True,
+                "headless": True,  # FIX: Enable headless for comprehensive SPA endpoint discovery (189 vs 6 endpoints)
+                "config": {"timeout": 300, "concurrency": 5, "rate_limit": 100}  # Adjusted for headless mode
+            },
+            "handler": "_handle_katana_crawl",
+            "timeout": 320,  # Increased timeout for headless execution (300s + 20s buffer)
         },
     }
 
@@ -185,7 +252,13 @@ Operate autonomously without human guidance.
     def _get_tool_info(self) -> Dict[str, Dict[str, Any]]:
         return {name: {"priority": cfg.get("priority", "MEDIUM")} for name, cfg in self.BASELINE_TOOL_MATRIX.items()}
     
-    async def _execute_local_tool(self, tool_name: str, config: Dict[str, Any], args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_local_tool(
+        self,
+        tool_name: str,
+        config: Dict[str, Any],
+        args: Dict[str, Any],
+        baseline_snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """Execute local (non-MCP) tools like directory scanner"""
         self.log("info", f"Executing local tool: {tool_name}")
         
@@ -207,6 +280,14 @@ Operate autonomously without human guidance.
                     "status": "error",
                     "error": str(exc)
                 }
+
+        if tool_name == "discover_endpoints":
+            target = args.get("target") or args.get("target_url") or args.get("url")
+            if not target:
+                return {"status": "error", "error": "Missing target for endpoint discovery"}
+            await self._perform_endpoint_discovery(target, baseline_snapshot)
+            payload = self.shared_context.get("discovered_endpoints")
+            return {"status": "success", "data": payload or {"endpoints": [], "count": 0}}
         else:
             self.log("warning", f"Unknown local tool: {tool_name}")
             return {
@@ -272,7 +353,20 @@ Operate autonomously without human guidance.
         else:
             baseline_snapshot["tech_stack"] = {}
 
-        for tool_name, config in self.BASELINE_TOOL_MATRIX.items():
+        # Use a stable, optimized execution order (dict order, with a small override)
+        tool_order = list(self.BASELINE_TOOL_MATRIX.keys())
+        # Run JS/endpoint discovery earlier so long-running legacy scanners don't block it.
+        promote_after = "map_execution_paths" if "map_execution_paths" in tool_order else None
+        if promote_after:
+            insert_at = tool_order.index(promote_after) + 1
+            for promoted in ["discover_endpoints", "katana_js_crawl"]:
+                if promoted in tool_order:
+                    tool_order.remove(promoted)
+                    tool_order.insert(insert_at, promoted)
+                    insert_at += 1
+
+        for tool_name in tool_order:
+            config = self.BASELINE_TOOL_MATRIX[tool_name]
             if not self.should_run_tool(tool_name):
                 self.log("debug", f"Skipping {tool_name} (not in plan or circuit breaker)")
                 continue
@@ -287,29 +381,36 @@ Operate autonomously without human guidance.
             # Handle local tools (non-MCP)
             if config["server"] == "local":
                 try:
-                    result = await self._execute_local_tool(tool_name, config, args)
+                    result = await self._execute_local_tool(tool_name, config, args, baseline_snapshot)
                 except Exception as exc:
                     self.log("warning", f"{tool_name} (local) failed: {exc}")
                     self.record_tool_failure(tool_name, str(exc))
                     continue
             else:
                 # Execute via MCP
-                try:
-                    result = await self.run_tool_with_timeout(
-                        client.call_tool(
-                            server=config["server"],
-                            tool=config.get("tool", tool_name),
-                            args=args,
-                        ),
-                        timeout=config.get("timeout"),
-                    )
-                except Exception as exc:
-                    self.log("warning", f"{tool_name} failed: {exc}")
-                    self.record_tool_failure(tool_name, str(exc))
-                    continue
+                if tool_name == "katana_js_crawl":
+                    result = await self._execute_katana_with_fallback(client, config, args)
+                else:
+                    try:
+                        result = await self.run_tool_with_timeout(
+                            client.call_tool(
+                                server=config["server"],
+                                tool=config.get("tool", tool_name),
+                                args=args,
+                            ),
+                            timeout=config.get("timeout"),
+                        )
+                    except Exception as exc:
+                        self.log("warning", f"{tool_name} failed: {exc}")
+                        self.record_tool_failure(tool_name, str(exc))
+                        continue
 
             if not isinstance(result, dict) or result.get("status") != "success":
-                self.log("warning", f"{tool_name} returned non-success", {"result": result})
+                self.log(
+                    "warning",
+                    f"{tool_name} returned non-success: {self._brief_tool_result(result)}",
+                    {"result": result},
+                )
                 continue
 
             data = result.get("data", result)
@@ -325,6 +426,108 @@ Operate autonomously without human guidance.
                         self.log("warning", f"Handler {handler_name} failed", {"error": str(handler_err)})
 
             self.log("info", f"✓ {tool_name} completed")
+
+    async def _execute_katana_with_fallback(
+        self,
+        client: MCPClient,
+        config: Dict[str, Any],
+        args: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run Katana crawl with a fallback profile when headless JS crawl times out/fails."""
+
+        def _extract_katana_payload(result: Any) -> Optional[Dict[str, Any]]:
+            """Best-effort extraction of the Katana payload across wrapper shapes."""
+            if not isinstance(result, dict):
+                return None
+
+            # Shape A (Katana server): {status: success, data: {...}}
+            if result.get("status") == "success" and isinstance(result.get("data"), dict):
+                return result["data"]
+
+            # Shape B (MCP wrapper): {status: success, data: {status: success, data: {...}}}
+            nested = result.get("data")
+            if isinstance(nested, dict) and nested.get("status") == "success" and isinstance(nested.get("data"), dict):
+                return nested["data"]
+
+            # Shape C (already-unwrapped payload): {endpoints: [...], total_found: N, ...}
+            if "endpoints" in result or "total_found" in result:
+                return result
+
+            return None
+
+        def _katana_payload_is_useful(payload: Optional[Dict[str, Any]]) -> bool:
+            if not isinstance(payload, dict):
+                return False
+            endpoints = payload.get("endpoints")
+            total_found = payload.get("total_found")
+            if isinstance(total_found, int) and total_found > 0:
+                return True
+            if isinstance(endpoints, list) and len(endpoints) > 0:
+                return True
+            return False
+
+        async def _run_katana(run_args: Dict[str, Any], timeout: Optional[int]) -> Dict[str, Any]:
+            return await self.run_tool_with_timeout(
+                client.call_tool(
+                    server=config["server"],
+                    tool=config.get("tool", "crawl_with_js_parsing"),
+                    args=run_args,
+                ),
+                timeout=timeout,
+            )
+
+        # Primary attempt (as configured)
+        try:
+            primary_result = await _run_katana(args, config.get("timeout"))
+        except Exception as exc:
+            err = str(exc).strip() or exc.__class__.__name__
+            primary_result = {"status": "error", "error": err}
+            self.log("warning", f"katana_js_crawl primary attempt failed: {err}")
+            self.record_tool_failure("katana_js_crawl", err)
+
+        if isinstance(primary_result, dict) and primary_result.get("status") == "success":
+            payload = _extract_katana_payload(primary_result)
+            # If headless returns an "OK" status but no meaningful endpoints, try a safer fallback.
+            if _katana_payload_is_useful(payload):
+                return primary_result
+            self.log(
+                "warning",
+                "katana_js_crawl primary returned empty/invalid payload; attempting fallback",
+                {"headless": bool(args.get("headless")), "has_payload": bool(payload)},
+            )
+
+        # Fallback: disable headless, reduce depth, shorten server-side timeout to avoid long stalls.
+        fallback_args = dict(args)
+        fallback_args["headless"] = False
+        fallback_args["depth"] = min(int(fallback_args.get("depth") or 3), 2)
+        fallback_config = dict((fallback_args.get("config") or {}))
+        fallback_config.setdefault("timeout", 120)
+        fallback_config.setdefault("concurrency", 10)
+        fallback_config.setdefault("rate_limit", 150)
+        fallback_args["config"] = fallback_config
+
+        try:
+            fallback_result = await _run_katana(fallback_args, min(int(config.get("timeout") or 320), 160))
+        except Exception as exc:
+            err = str(exc).strip() or exc.__class__.__name__
+            self.log("warning", f"katana_js_crawl fallback attempt failed: {err}")
+            self.record_tool_failure("katana_js_crawl", err)
+            return primary_result
+
+        if isinstance(fallback_result, dict) and fallback_result.get("status") == "success":
+            self.log("info", "katana_js_crawl fallback succeeded")
+            return fallback_result
+
+        self.log("warning", "katana_js_crawl fallback returned non-success", {"result": fallback_result})
+        return primary_result
+
+        self.log("info", "Retrying Katana crawl without headless JS execution")
+        try:
+            return await _run_katana(fallback_args, timeout=min(int(config.get("timeout") or 320), 160))
+        except Exception as exc:
+            self.log("warning", f"katana_js_crawl fallback attempt failed: {exc}")
+            self.record_tool_failure("katana_js_crawl_fallback", str(exc))
+            return {"status": "error", "error": str(exc), "fallback": True}
 
     def _handle_technology_fingerprint(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         if not isinstance(data, dict):
@@ -578,11 +781,17 @@ Operate autonomously without human guidance.
 
     def _handle_ffuf_scan(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         """Process ffuf scan results and add discovered endpoints to shared context"""
-        if not isinstance(data, dict) or data.get("status") != "success":
-            self.log("warning", "ffuf scan did not return valid data")
+        if not isinstance(data, dict):
+            self.log("warning", f"ffuf scan did not return valid data: {self._brief_tool_result(data)}")
             return
 
-        ffuf_data = data.get("data", {})
+        # Accept both shapes:
+        # - Wrapper: {status: success, data: {...}}
+        # - Payload: {...}
+        if data.get("status") == "success" and isinstance(data.get("data"), dict):
+            ffuf_data = data["data"]
+        else:
+            ffuf_data = data
         snapshot["ffuf_scan"] = ffuf_data
         self.write_context("ffuf_scan", ffuf_data)
 
@@ -658,11 +867,17 @@ Operate autonomously without human guidance.
 
     def _handle_dirsearch_scan(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         """Process dirsearch scan results with recursive endpoint discovery"""
-        if not isinstance(data, dict) or data.get("status") != "success":
-            self.log("warning", "dirsearch scan did not return valid data")
+        if not isinstance(data, dict):
+            self.log("warning", f"dirsearch scan did not return valid data: {self._brief_tool_result(data)}")
             return
 
-        dirsearch_data = data.get("data", {})
+        # Accept both shapes:
+        # - Wrapper: {status: success, data: {...}}
+        # - Payload: {...}
+        if data.get("status") == "success" and isinstance(data.get("data"), dict):
+            dirsearch_data = data["data"]
+        else:
+            dirsearch_data = data
         snapshot["dirsearch_scan"] = dirsearch_data
         self.write_context("dirsearch_scan", dirsearch_data)
 
@@ -751,6 +966,230 @@ Operate autonomously without human guidance.
         )
 
         self.log("info", f"✓ dirsearch recursively found {total_found} endpoints (API: {len(payload['api_endpoints'])}, search: {len(payload['search_endpoints'])}, admin: {len(payload['admin_endpoints'])})")
+
+    def _handle_feroxbuster_scan(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+        """Process feroxbuster scan results (8-10x faster than dirsearch)"""
+        if not isinstance(data, dict):
+            self.log("warning", f"feroxbuster scan did not return valid data: {self._brief_tool_result(data)}")
+            return
+
+        # Accept both shapes:
+        # - Wrapper: {status: success, data: {...}}
+        # - Payload: {...}
+        if data.get("status") == "success" and isinstance(data.get("data"), dict):
+            ferox_data = data["data"]
+        else:
+            ferox_data = data
+        snapshot["feroxbuster_scan"] = ferox_data
+        self.write_context("feroxbuster_scan", ferox_data)
+
+        total_found = ferox_data.get("total_found", 0)
+
+        if total_found == 0:
+            self.log("info", "feroxbuster found no endpoints")
+            return
+
+        # Extract pre-categorized endpoints from feroxbuster output
+        endpoints = ferox_data.get("endpoints", [])
+        api_endpoints_raw = ferox_data.get("api_endpoints", [])
+        search_endpoints_raw = ferox_data.get("search_endpoints", [])
+        admin_endpoints_raw = ferox_data.get("admin_endpoints", [])
+
+        # Convert feroxbuster results to discovered_endpoints format
+        discovered_endpoints = []
+        for ep in endpoints:
+            url = ep.get("url", "")
+            path = ep.get("path", "")
+            status = ep.get("status", 0)
+
+            # Determine endpoint type
+            endpoint_type = "other"
+            path_lower = path.lower()
+            if "/api/" in path_lower or "/rest/" in path_lower or path.endswith(".json"):
+                endpoint_type = "api"
+            elif "admin" in path_lower or "dashboard" in path_lower:
+                endpoint_type = "admin"
+            elif "search" in path_lower:
+                endpoint_type = "search"
+            elif "upload" in path_lower or "file" in path_lower:
+                endpoint_type = "upload"
+
+            discovered_endpoints.append({
+                "endpoint": path,
+                "url": url,
+                "method": "GET",
+                "status_code": status,
+                "type": endpoint_type,
+                "source": "feroxbuster",
+                "size": ep.get("size", 0),
+                "redirect": ep.get("redirect")
+            })
+
+        # Merge with existing discovered_endpoints
+        existing_endpoints = self.shared_context.get("discovered_endpoints", {})
+        if isinstance(existing_endpoints, dict):
+            existing_list = existing_endpoints.get("endpoints", [])
+        else:
+            existing_list = []
+
+        # Combine and deduplicate by endpoint path
+        all_endpoints = existing_list + discovered_endpoints
+        unique_endpoints = {ep["endpoint"]: ep for ep in all_endpoints}.values()
+        unique_endpoints = list(unique_endpoints)
+
+        # Update shared context with combined endpoints
+        payload = {
+            "endpoints": unique_endpoints,
+            "count": len(unique_endpoints),
+            "api_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "api"],
+            "admin_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "admin"],
+            "search_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "search"],
+            "upload_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "upload"],
+            "stats": ferox_data.get("stats", {})
+        }
+        self.write_context("discovered_endpoints", payload)
+        snapshot["discovered_endpoints"] = payload
+
+        # Add finding with detailed stats
+        stats = ferox_data.get("stats", {})
+        self.add_finding(
+            "WSTG-INFO",
+            f"feroxbuster (FAST) discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload['search_endpoints'])} search, {len(payload['admin_endpoints'])} admin)",
+            severity="info",
+            evidence={
+                "total_found": total_found,
+                "api_count": len(payload["api_endpoints"]),
+                "search_count": len(payload["search_endpoints"]),
+                "admin_count": len(payload["admin_endpoints"]),
+                "upload_count": len(payload.get("upload_endpoints", [])),
+                "sample": ferox_data.get("sample", [])[:15],
+                "stats": stats,
+                "performance": "8-10x faster than dirsearch"
+            }
+        )
+
+        self.log("info", f"✓ feroxbuster found {total_found} endpoints in ~60s (API: {len(payload['api_endpoints'])}, search: {len(payload['search_endpoints'])}, admin: {len(payload['admin_endpoints'])})")
+
+    def _handle_katana_crawl(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+        """Process Katana JavaScript parsing results and extract endpoints"""
+        if not isinstance(data, dict):
+            self.log("warning", f"Katana crawl did not return valid data: {self._brief_tool_result(data)}")
+            return
+
+        # Accept multiple shapes:
+        # - {status: success, data: {...}} (Katana server)
+        # - {...} already-unwrapped payload (some MCP client paths)
+        # - {status: success, data: {status: success, data: {...}}} (double wrapped)
+        # Normalize to the actual payload dict with keys like endpoints/total_found.
+        candidate: Any = data
+        if data.get("status") == "success" and isinstance(data.get("data"), dict):
+            candidate = data["data"]
+
+        # Unwrap nested tool result: {status: success, data: {endpoints...}}
+        if (
+            isinstance(candidate, dict)
+            and candidate.get("status") == "success"
+            and isinstance(candidate.get("data"), dict)
+        ):
+            katana_data = candidate["data"]
+        elif isinstance(candidate, dict) and ("endpoints" in candidate or "total_found" in candidate):
+            katana_data = candidate
+        else:
+            self.log("warning", f"Katana crawl did not return valid data: {self._brief_tool_result(candidate)}")
+            return
+
+        snapshot["katana_crawl"] = katana_data
+        self.write_context("katana_crawl", katana_data)
+
+        total_found = katana_data.get("total_found", 0)
+
+        if total_found == 0:
+            self.log("info", "Katana found no additional endpoints")
+            return
+
+        # Extract categorized endpoints from Katana output
+        endpoints = katana_data.get("endpoints", [])
+        api_endpoints_raw = katana_data.get("api_endpoints", [])
+        js_files_raw = katana_data.get("js_files", [])
+        forms_raw = katana_data.get("forms", [])
+        xhr_endpoints_raw = katana_data.get("xhr_endpoints", [])
+        admin_endpoints_raw = katana_data.get("admin_endpoints", [])
+
+        # Convert Katana results to discovered_endpoints format
+        discovered_endpoints = []
+        for ep in endpoints:
+            url = ep.get("url", "")
+            endpoint_path = ep.get("endpoint", url)
+
+            # Determine endpoint type
+            endpoint_type = "other"
+            url_lower = url.lower()
+
+            if "/api/" in url_lower or "/rest/" in url_lower or url.endswith(".json"):
+                endpoint_type = "api"
+            elif url.endswith(".js"):
+                endpoint_type = "js_file"
+            elif "admin" in url_lower or "dashboard" in url_lower:
+                endpoint_type = "admin"
+            elif "search" in url_lower:
+                endpoint_type = "search"
+            elif "xhr" in ep.get("type", "").lower() or "ajax" in url_lower:
+                endpoint_type = "xhr"
+            elif "form" in ep.get("type", "").lower():
+                endpoint_type = "form"
+
+            discovered_endpoints.append({
+                "endpoint": endpoint_path,
+                "url": url,
+                "method": ep.get("method", "GET"),
+                "status_code": ep.get("status_code", 0),
+                "type": endpoint_type,
+                "source": "katana",
+            })
+
+        # Merge with existing discovered_endpoints from other sources
+        existing_endpoints = self.shared_context.get("discovered_endpoints", {})
+        if isinstance(existing_endpoints, dict):
+            existing_list = existing_endpoints.get("endpoints", [])
+        else:
+            existing_list = []
+
+        # Combine and deduplicate by URL
+        all_endpoints = existing_list + discovered_endpoints
+        unique_endpoints = {ep["url"]: ep for ep in all_endpoints}.values()
+        unique_endpoints = list(unique_endpoints)
+
+        # Update shared context with combined endpoints
+        payload = {
+            "endpoints": unique_endpoints,
+            "count": len(unique_endpoints),
+            "api_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "api"],
+            "js_files": [ep for ep in unique_endpoints if ep.get("type") == "js_file"],
+            "forms": [ep for ep in unique_endpoints if ep.get("type") == "form"],
+            "xhr_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "xhr"],
+            "admin_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "admin"],
+            "search_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "search"],
+        }
+        self.write_context("discovered_endpoints", payload)
+        snapshot["discovered_endpoints"] = payload
+
+        # Add finding with detailed stats
+        self.add_finding(
+            "WSTG-INFO",
+            f"Katana JS parsing discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload['js_files'])} JS files, {len(payload['xhr_endpoints'])} XHR)",
+            severity="info",
+            evidence={
+                "total_found": total_found,
+                "api_count": len(payload["api_endpoints"]),
+                "js_count": len(payload.get("js_files", [])),
+                "xhr_count": len(payload.get("xhr_endpoints", [])),
+                "forms_count": len(payload.get("forms", [])),
+                "admin_count": len(payload.get("admin_endpoints", [])),
+                "sample": [ep["url"] for ep in endpoints[:10]]
+            }
+        )
+
+        self.log("info", f"✓ Katana crawl found {total_found} endpoints via JS parsing (API: {len(payload['api_endpoints'])}, JS: {len(payload.get('js_files', []))}, XHR: {len(payload.get('xhr_endpoints', []))})")
 
     async def _perform_endpoint_discovery(self, target: str, baseline_snapshot: Dict[str, Any]) -> None:
         self.log("info", "🔎 Executing custom endpoint discovery crawl")

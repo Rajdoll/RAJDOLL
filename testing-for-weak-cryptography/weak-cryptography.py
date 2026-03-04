@@ -6,7 +6,7 @@ import json
 import httpx
 import math
 from collections import Counter
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Logging configuration
 import logging
@@ -78,38 +78,26 @@ async def test_tls_configuration(host: str, port: int = 443) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def run_nuclei_crypto_scan(url: str, tags: List[str]) -> Dict[str, Any]:
-    """
-    [KONSOLIDASI] Runs Nuclei with crypto-related tags (e.g., 'padding-oracle', 'weak-crypto').
-    logger.info(f"🔍 Executing run_nuclei_crypto_scan")
-    """
-    try:
-        tag_str = ",".join(tags)
-        output_file = f"nuclei_crypto_{urlparse(url).hostname}.json"
-        cmd = f"nuclei -u {url} -tags {tag_str} -json -o {output_file}"
-        await sh(cmd, 120)
-
-        results = []
-        if os.path.exists(output_file):
-            with open(output_file, 'r') as f:
-                for line in f:
-                    try: results.append(json.loads(line))
-                    except json.JSONDecodeError: continue
-            os.remove(output_file)
-
-        return {"status": "success", "data": {"findings": results}}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_cleartext_info(domain: str) -> Dict[str, Any]:
+async def test_cleartext_info(domain: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [REVISI] Checks for sensitive data transmission over plain HTTP.
     logger.info(f"🔍 Executing test_cleartext_info")
+    
+    Args:
+        domain: Target domain to check
+        auth_session: Optional authentication session with cookies/headers/token
     """
     try:
         url = f"http://{domain}"
-        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+        req_kwargs = {"timeout": 8, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        async with httpx.AsyncClient(**req_kwargs) as client:
             resp = await client.get(url)
         
         if resp.status_code >= 400:
@@ -404,7 +392,7 @@ Your mission is to evaluate **{domainname}** in accordance with OWASP WSTG 4.9.
 
 **Primary Objectives:**
 1.  **Analyze TLS Configuration:** Use `test_tls_configuration` to perform a deep scan of the server's SSL/TLS settings, identifying weak protocols, ciphers, and certificate issues.
-2.  **Scan for Application-Layer Flaws:** Use `run_nuclei_crypto_scan` with tags like `padding-oracle` and `weak-crypto` to find vulnerabilities like POODLE, weak JWTs, or hard-coded keys.
+2.  **Scan for Application-Layer Flaws:** Focus on JWT weaknesses, TLS misconfigurations, and weak crypto patterns via the available tools.
 3.  **Verify Data in Transit:** Use `test_cleartext_info` to ensure no sensitive information is handled over unencrypted HTTP.
 4.  **Assess Token Strength:** If you discover any application-generated tokens (e.g., from password resets, API keys), use `analyze_token_randomness` to check for weak entropy or predictability.
 

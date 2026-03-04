@@ -45,6 +45,15 @@ class FindingSeverity(str, enum.Enum):
     critical = "critical"
 
 
+class ConfidenceLevel(str, enum.Enum):
+    """Confidence levels for vulnerability findings."""
+    speculative = "speculative"  # 0.0 - 0.3
+    low = "low"                  # 0.3 - 0.5
+    medium = "medium"            # 0.5 - 0.7
+    high = "high"                # 0.7 - 0.9
+    confirmed = "confirmed"      # 0.9 - 1.0
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
@@ -104,6 +113,10 @@ class Finding(Base):
     evidence: Mapped[Optional[dict]] = Column(JSON, nullable=True)
     details: Mapped[Optional[str]] = Column(Text, nullable=True)
     created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # PHASE 2: Confidence scoring fields
+    confidence_score: Mapped[Optional[float]] = Column(Float, nullable=True)  # 0.0 - 1.0
+    confidence_level: Mapped[Optional[ConfidenceLevel]] = Column(Enum(ConfidenceLevel), nullable=True)
+    attack_chain_id: Mapped[Optional[str]] = Column(String(64), nullable=True)  # Links findings in same attack chain
 
     job: Mapped[Job] = relationship("Job", back_populates="findings")
 
@@ -139,4 +152,40 @@ class ScanCost(Base):
     prompt_tokens: Mapped[int] = Column(Integer, default=0, nullable=False)
     completion_tokens: Mapped[int] = Column(Integer, default=0, nullable=False)
     estimated_cost_usd: Mapped[float] = Column(Float, default=0.0, nullable=False)
+    created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AttackChain(Base):
+    """
+    Track detected vulnerability chains that amplify attack impact.
+    Example: SQL Injection → Admin Access → Data Exfiltration
+    """
+
+    __tablename__ = "attack_chains"
+
+    id: Mapped[int] = Column(Integer, primary_key=True)
+    job_id: Mapped[int] = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    chain_id: Mapped[str] = Column(String(64), nullable=False)  # UUID for grouping
+    name: Mapped[str] = Column(String(256), nullable=False)  # "SQL Injection to Admin Access"
+    category: Mapped[str] = Column(String(64), nullable=False)  # AUTHENTICATION_BYPASS, DATA_EXFILTRATION, etc.
+    impact_multiplier: Mapped[float] = Column(Float, default=1.0, nullable=False)  # Chain increases impact
+    steps: Mapped[dict] = Column(JSON, nullable=False)  # List of vulnerability steps in order
+    confidence: Mapped[float] = Column(Float, default=0.0, nullable=False)  # Combined chain confidence
+    created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class KnowledgeGraphSnapshot(Base):
+    """
+    Store knowledge graph state for job analysis and debugging.
+    Enables graph-based analysis of vulnerability relationships.
+    """
+
+    __tablename__ = "knowledge_graph_snapshots"
+
+    id: Mapped[int] = Column(Integer, primary_key=True)
+    job_id: Mapped[int] = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+    entities: Mapped[dict] = Column(JSON, nullable=False)  # Serialized entities
+    relationships: Mapped[dict] = Column(JSON, nullable=False)  # Serialized relationships
+    agent_name: Mapped[Optional[str]] = Column(String(128), nullable=True)  # Agent that created snapshot
+    snapshot_type: Mapped[str] = Column(String(32), nullable=False)  # 'incremental', 'final', 'checkpoint'
     created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, nullable=False)

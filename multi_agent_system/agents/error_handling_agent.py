@@ -156,7 +156,7 @@ You are ErrorHandlingAgent, an OWASP WSTG-ERRH expert specializing in error-base
 
 🛠️ MCP TOOL USAGE:
 - check_generic_error_pages(base_url): Test 404, 403 error pages
-- probe_for_error_leaks(base_url): Nuclei + fuzzing for verbose errors
+- probe_for_error_leaks(base_url): Automated checks + manual fuzzing for verbose errors
 - test_sqli(url, data, dbms): Error-based SQL injection
 - test_lfi(url_with_fuzz): File system error exploitation
 
@@ -188,17 +188,12 @@ Write to shared_context:
         client = MCPClient()
 
         #  AUTHENTICATED SESSION SUPPORT
-        auth_sessions = self.shared_context.get("authenticated_sessions", {})
-        auth_data = None
-        if auth_sessions and auth_sessions.get('sessions', {}).get('logged_in'):
-            successful_logins = auth_sessions.get('successful_logins', [])
-            if successful_logins:
-                first_login = successful_logins[0]
-                auth_data = {
-                    'username': first_login.get('username'),
-                    'session_type': first_login.get('session_type'),
-                }
-                self.log("info", f"✓ Using authenticated session: {first_login.get('username')}")
+        # Use authenticated session from Orchestrator auto-login
+        auth_data = self.get_auth_session()
+        if auth_data:
+            self.log("info", f"✅ Using authenticated session: {auth_data.get('username')}")
+        else:
+            self.log("warning", "⚠ No authenticated session available")
 
         target = self._get_target()
         if not target:
@@ -236,10 +231,9 @@ Write to shared_context:
                     )
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    nuclei = res.get("data", {}).get("nuclei_scan", [])
                     fuzz = res.get("data", {}).get("manual_fuzzing", [])
-                    if nuclei or fuzz:
-                        self.add_finding("WSTG-ERRH", "Verbose errors or stack traces discovered", severity="medium", evidence={"nuclei": nuclei[:2], "fuzz": fuzz[:2]})
+                    if fuzz:
+                        self.add_finding("WSTG-ERRH", "Verbose errors or stack traces discovered", severity="medium", evidence={"fuzz": fuzz[:2]})
             except Exception as e:
                 self.log("warning", f"probe_for_error_leaks failed: {e}")
 

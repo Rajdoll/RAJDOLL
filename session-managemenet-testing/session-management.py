@@ -7,7 +7,7 @@ import httpx
 import random
 import string
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Logging configuration
 import logging
@@ -25,10 +25,20 @@ logger = logging.getLogger(__name__)
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"session-management-testing")
 
 # --- Helpers (Tidak ada perubahan signifikan) ---
-async def quick_req(method: str, url: str, **kwargs) -> httpx.Response | None:
+async def quick_req(method: str, url: str, auth_session: Optional[Dict[str, Any]] = None, **kwargs) -> httpx.Response | None:
     try:
-        # Menambahkan verify=False untuk menangani sertifikat self-signed saat pengujian
-        async with httpx.AsyncClient(timeout=8, follow_redirects=False, verify=False) as cli:
+        # Build request kwargs with auth support
+        req_kwargs = {"timeout": 8, "follow_redirects": False, "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        # Merge any additional kwargs (they take precedence)
+        req_kwargs.update(kwargs)
+        async with httpx.AsyncClient(**req_kwargs) as cli:
             return await cli.request(method, url, **kwargs)
     except Exception:
         return None
@@ -39,14 +49,14 @@ def rand_id(n: int = 32) -> str: # Panjang default ditingkatkan untuk keamanan
 # --- Tools (Revisi & Peningkatan) ---
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def analyze_cookies(url: str) -> Dict[str, Any]:
+async def analyze_cookies(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [PENINGKATAN & KONSOLIDASI] Fetches a page and provides a comprehensive analysis of all set cookies,
     including their attributes (Secure, HttpOnly, SameSite) and entropy heuristics.
     Replaces test_session_schema and test_cookie_attributes.
     """
     try:
-        resp = await quick_req("GET", url)
+        resp = await quick_req("GET", url, auth_session=auth_session)
         if not resp:
             return {"status": "error", "message": f"Cannot reach {url}"}
         
@@ -186,7 +196,7 @@ async def test_session_timeout(url: str, session: Dict[str, Any], wait_seconds: 
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_cors_misconfiguration(url: str) -> Dict[str, Any]:
+async def test_cors_misconfiguration(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [BARU] Checks for CORS misconfigurations that could leak session data to malicious origins.
     logger.info(f"🔍 Executing test_cors_misconfiguration")
@@ -194,7 +204,7 @@ async def test_cors_misconfiguration(url: str) -> Dict[str, Any]:
     try:
         malicious_origin = "https://evil-domain.com"
         headers = {"Origin": malicious_origin}
-        resp = await quick_req("GET", url, headers=headers)
+        resp = await quick_req("GET", url, auth_session=auth_session, headers=headers)
         
         if not resp:
             return {"status": "error", "message": "Request failed."}
@@ -216,7 +226,7 @@ async def test_cors_misconfiguration(url: str) -> Dict[str, Any]:
 # ========== OPSI B: 3 NEW SESSION MANAGEMENT TOOLS ==========
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_csrf_protection(url: str, form_data: Dict[str, str]) -> Dict[str, Any]:
+async def test_csrf_protection(url: str, form_data: Dict[str, str], auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests CSRF protection on state-changing operations.
     logger.info(f"🔍 Executing test_csrf_protection")
@@ -225,7 +235,7 @@ async def test_csrf_protection(url: str, form_data: Dict[str, str]) -> Dict[str,
     """
     try:
         # 1. GET page to check for CSRF token in form
-        resp = await quick_req("GET", url)
+        resp = await quick_req("GET", url, auth_session=auth_session)
         if not resp:
             return {"status": "error", "message": f"Cannot reach {url}"}
         
@@ -251,7 +261,7 @@ async def test_csrf_protection(url: str, form_data: Dict[str, str]) -> Dict[str,
         # 3. Attempt POST without CSRF token (if form_data provided)
         csrf_vulnerable = False
         if form_data:
-            post_resp = await quick_req("POST", url, data=form_data)
+            post_resp = await quick_req("POST", url, auth_session=auth_session, data=form_data)
             # If POST succeeds (200-299) without token, it's vulnerable
             csrf_vulnerable = post_resp and 200 <= post_resp.status_code < 300
         
@@ -265,7 +275,7 @@ async def test_csrf_protection(url: str, form_data: Dict[str, str]) -> Dict[str,
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_session_puzzling(url: str, test_params: Dict[str, str]) -> Dict[str, Any]:
+async def test_session_puzzling(url: str, test_params: Dict[str, str], auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests for session variable overwriting/puzzling attacks.
     logger.info(f"🔍 Executing test_session_puzzling")
@@ -280,7 +290,7 @@ async def test_session_puzzling(url: str, test_params: Dict[str, str]) -> Dict[s
         for var in critical_vars:
             # Try to inject via GET parameter
             test_url = f"{url}?{var}=attacker_value&{var}=1&session[{var}]=malicious"
-            resp = await quick_req("GET", test_url)
+            resp = await quick_req("GET", test_url, auth_session=auth_session)
             
             if resp:
                 # Check if the injected value appears reflected
@@ -293,7 +303,7 @@ async def test_session_puzzling(url: str, test_params: Dict[str, str]) -> Dict[s
         
         # Test 2: Try session array injection (PHP-style)
         array_injection_url = f"{url}?_SESSION[user]=attacker&_SESSION[role]=admin"
-        array_resp = await quick_req("GET", array_injection_url)
+        array_resp = await quick_req("GET", array_injection_url, auth_session=auth_session)
         array_vulnerable = array_resp and "attacker" in array_resp.text
         
         # Test 3: Custom test params if provided
@@ -301,7 +311,7 @@ async def test_session_puzzling(url: str, test_params: Dict[str, str]) -> Dict[s
         if test_params:
             for key, value in test_params.items():
                 custom_url = f"{url}?{key}={value}"
-                custom_resp = await quick_req("GET", custom_url)
+                custom_resp = await quick_req("GET", custom_url, auth_session=auth_session)
                 custom_results[key] = {
                     "injected_value": value,
                     "reflected": custom_resp and value in custom_resp.text
@@ -317,7 +327,7 @@ async def test_session_puzzling(url: str, test_params: Dict[str, str]) -> Dict[s
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_session_hijacking(url: str, session_cookies: Dict[str, str]) -> Dict[str, Any]:
+async def test_session_hijacking(url: str, session_cookies: Dict[str, str], auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests for session hijacking vulnerabilities.
     logger.info(f"🔍 Executing test_session_hijacking")
@@ -352,7 +362,7 @@ async def test_session_hijacking(url: str, session_cookies: Dict[str, str]) -> D
                 })
         
         # Test 2: Check if session cookie is HTTPOnly (prevents XSS hijacking)
-        resp = await quick_req("GET", url)
+        resp = await quick_req("GET", url, auth_session=auth_session)
         httponly_protected = False
         if resp:
             for header in resp.headers.getlist('set-cookie'):
@@ -364,8 +374,8 @@ async def test_session_hijacking(url: str, session_cookies: Dict[str, str]) -> D
         logout_url = url.replace('/profile', '/logout').replace('/dashboard', '/logout')
         if logout_url != url:
             # Try to use session after logout
-            await quick_req("GET", logout_url, cookies=session_cookies)
-            reuse_resp = await quick_req("GET", url, cookies=session_cookies)
+            await quick_req("GET", logout_url, auth_session=auth_session, cookies=session_cookies)
+            reuse_resp = await quick_req("GET", url, auth_session=auth_session, cookies=session_cookies)
             session_reusable = reuse_resp and reuse_resp.status_code == 200
         else:
             session_reusable = None

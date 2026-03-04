@@ -15,7 +15,7 @@ Sistem multi-agent berbasis LLM yang mengotomatisasi penetration testing untuk a
 ### Core Innovation
 - **LLM Planning**: LLM generates adaptive tool arguments berdasarkan reconnaissance context
 - **Multi-Agent Architecture**: 14 specialized agents dengan domain expertise
-- **MCP Integration**: Unified protocol untuk 15+ security tools (SQLmap, Nuclei, Dalfox, etc)
+- **MCP Integration**: Unified protocol untuk 15+ security tools (SQLmap, Dalfox, etc)
 - **Autonomous Testing**: Minimal human intervention, self-correcting execution
 
 ### Research Contribution
@@ -427,7 +427,7 @@ docker-compose logs rajdoll-api | grep "Using LLM arguments"
 ### Research Criteria
 - [ ] Novel contribution validated (MCP + WSTG 4.2)
 - [ ] Comprehensive evaluation completed
-- [ ] Comparison with baseline (ZAP, Nuclei)
+- [ ] Comparison with baseline (ZAP)
 - [ ] UAT with practitioners (SUS ≥ 68)
 - [ ] Thesis draft complete
 - [ ] Paper submitted to conference

@@ -235,16 +235,90 @@ class SimpleLLMClient:
 
         # Build planning prompt
         context_summary = self._summarize_context(shared_context)
+
+        # ENHANCED: Few-shot examples for intelligent tool selection
+        few_shot_examples = self._get_few_shot_examples(agent_name)
+
+        # Dynamic tool count based on agent tool surface
+        if len(available_tools) > 15:
+            tool_count_guidance = f"Select 8-15 tools for comprehensive coverage (total available: {len(available_tools)})"
+        elif len(available_tools) > 8:
+            tool_count_guidance = f"Select 5-10 tools for thorough testing (total available: {len(available_tools)})"
+        else:
+            tool_count_guidance = f"Select ALL relevant tools from {len(available_tools)} available"
+
+        # CRITICAL FIX: Extract actual target URL from shared_context
+        target_url = shared_context.get("target", "") or shared_context.get("target_url", "") or shared_context.get("base_url", "")
+        if not target_url:
+            # Fallback: try to get from entry_points
+            eps = shared_context.get("entry_points", [])
+            if eps and isinstance(eps, list) and len(eps) > 0:
+                ep = eps[0]
+                if isinstance(ep, dict):
+                    target_url = ep.get("url", "") or ep.get("base_url", "")
+                elif isinstance(ep, str):
+                    from urllib.parse import urlparse, urlunparse
+                    parsed = urlparse(ep)
+                    target_url = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
         
-        # SIMPLIFIED: Short prompt for qwen3-4b (slow model)
+        print(f"[SimpleLLMClient] Target URL from context: {target_url}")
+        
+        # Extract endpoints for specific test case generation
+        endpoints = shared_context.get("entry_points", [])
+        if endpoints and isinstance(endpoints, list):
+            # FIX: Safely extract URLs (handle dict/string mixed types)
+            endpoint_urls = []
+            for ep in endpoints[:5]:
+                if isinstance(ep, dict):
+                    url = ep.get("url") or ep.get("endpoint") or ""
+                else:
+                    url = str(ep) if ep else ""
+                if url:
+                    endpoint_urls.append(url)
+            endpoints_str = ", ".join(endpoint_urls) if endpoint_urls else "No specific endpoints yet"
+        else:
+            endpoints_str = "No endpoints discovered yet"
+
+        # Build example URLs using actual target (not placeholder!)
+        example_base = target_url if target_url else "http://ACTUAL_TARGET_URL"
+        
         prompt = (
-            f"Select security testing tools for {agent_name}.\n\n"
-            f"Available: {', '.join(available_tools)}\n\n"
-            f"Context: {context_summary[:500]}\n\n"
-            "Return JSON only:\n"
+            f"You are a security testing expert selecting tools for {agent_name}.\n\n"
+            f"**IMPORTANT: The target URL is: {target_url}**\n"
+            f"You MUST use this exact target URL in all your test cases. Do NOT use placeholder URLs like 'http://target:3000'.\n\n"
+            f"Available tools: {', '.join(available_tools)}\n\n"
+            f"Discovered endpoints: {endpoints_str}\n\n"
+            f"Reconnaissance context:\n{context_summary[:800]}\n\n"
+            f"Few-shot examples:\n{few_shot_examples}\n\n"
+            f"{tool_count_guidance}\n\n"
+            "CRITICAL REQUIREMENT: Generate COMPREHENSIVE test cases with SPECIFIC URLs, parameters, and MULTIPLE payloads!\n\n"
+            "For SQL Injection: Provide endpoint URLs + SQL payloads (UNION, blind, time-based)\n"
+            "For XSS: Provide form endpoints + XSS payloads (reflected, stored, DOM-based)\n"
+            "For IDOR: Provide resource endpoints with ID parameters + sequential ID tests\n\n"
+            "Return ONLY valid JSON (no markdown, no code fences):\n"
             "{\n"
-            '  "tools": [{"tool": "tool_name", "reason": "why", "arguments": {}}],\n'
-            '  "reasoning": "brief explanation"\n'
+            '  "tools": [\n'
+            '    {\n'
+            '      "tool": "test_sqli",\n'
+            '      "reason": "Search endpoint accepts user input",\n'
+            '      "arguments": {\n'
+            f'        "url": "{example_base}/rest/products/search?q=test",\n'
+            '        "parameter": "q",\n'
+            '        "payloads": ["\' OR \'1\'=\'1--", "1\' UNION SELECT NULL--"],\n'
+            '        "injection_types": ["union", "blind"]\n'
+            '      }\n'
+            '    },\n'
+            '    {\n'
+            '      "tool": "test_xss_reflected",\n'
+            '      "reason": "Form inputs reflect user data",\n'
+            '      "arguments": {\n'
+            f'        "url": "{example_base}/search",\n'
+            '        "parameters": ["q", "query"],\n'
+            '        "payloads": ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>"]\n'
+            '      }\n'
+            '    }\n'
+            '  ],\n'
+            '  "reasoning": "overall strategy"\n'
             "}"
         )
 
@@ -284,7 +358,8 @@ class SimpleLLMClient:
             }
 
             # CRITICAL: Increase max_tokens for comprehensive test cases with URLs and payloads
-            response = await self.chat_completion(messages, max_tokens=4000, response_schema=schema)
+            # LOW TEMPERATURE: 0.2 for deterministic, consistent tool selection
+            response = await self.chat_completion(messages, max_tokens=4000, temperature=0.5, response_schema=schema)
             # Parse JSON from response (robust)
             import json
             import re
@@ -392,9 +467,58 @@ class SimpleLLMClient:
         
         # Also remove orphaned opening/closing tags
         text = re.sub(r'</?think>\s*', '', text, flags=re.IGNORECASE)
-        
+
         return text.strip()
-    
+
+    def _get_few_shot_examples(self, agent_name: str) -> str:
+        """
+        Provide few-shot examples for intelligent tool selection based on agent type.
+
+        These examples teach the LLM to select appropriate tools based on reconnaissance context.
+        """
+        # Common examples for all agents
+        common_examples = """
+Example 1 (Node.js app with REST API):
+Context: "50 endpoints, Technologies: Node.js, Express, MongoDB"
+Selected: ["test_sql_injection", "test_nosql_injection", "test_api_auth"]
+Reasoning: "Node.js + MongoDB indicates NoSQL backend, Express exposes REST endpoints"
+
+Example 2 (PHP app with forms):
+Context: "12 endpoints, Technologies: PHP, MySQL, Apache, /login, /search endpoints"
+Selected: ["test_sql_injection", "test_xss", "test_auth_bypass"]
+Reasoning: "PHP + MySQL suggests SQLi risk, /search indicates XSS targets"
+"""
+
+        # Agent-specific examples
+        agent_examples = {
+            "InputValidationAgent": """
+Example 3 (Juice Shop SPA):
+Context: "85 endpoints, Technologies: Angular, Node.js, SQLite, /api/Products, /api/Users"
+Selected: ["test_sql_injection", "test_xss", "test_xxe", "test_command_injection"]
+Reasoning: "SQLite backend = SQLi risk, Angular SPA = XSS DOM targets, API endpoints = XXE/injection"
+
+Example 4 (Admin panel detected):
+Context: "30 endpoints, /admin/users, /admin/config endpoints found"
+Selected: ["test_idor", "test_privilege_escalation", "test_forced_browsing"]
+Reasoning: "Admin endpoints = IDOR/AuthZ risks, config files = sensitive data exposure"
+""",
+            "AuthenticationAgent": """
+Example 3 (JWT detected):
+Context: "Login endpoint /api/auth/login, JWT token in response headers"
+Selected: ["test_jwt_alg_none", "test_jwt_weak_secret", "test_session_fixation"]
+Reasoning: "JWT usage = algorithm confusion & weak secret risks"
+
+Example 4 (Session cookies):
+Context: "Set-Cookie: sessionid=abc123; HttpOnly"
+Selected: ["test_session_fixation", "test_credential_stuffing", "test_brute_force"]
+Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force target"
+""",
+        }
+
+        # Return common + agent-specific examples
+        agent_specific = agent_examples.get(agent_name, "")
+        return common_examples + agent_specific
+
     def _summarize_context(self, context: Dict[str, Any]) -> str:
         """Create a concise summary of shared context with ACTUAL discovered endpoints"""
         summary_parts = []
@@ -424,7 +548,14 @@ class SimpleLLMClient:
             entry_points = context["entry_points"]
             if isinstance(entry_points, list) and entry_points:
                 summary_parts.append(f"- {len(entry_points)} entry points with parameters:")
-                entry_urls = [ep.get("url") or str(ep) for ep in entry_points[:10]]
+                # FIX: Safely extract URLs from entry points (handle dict/string mixed types)
+                entry_urls = []
+                for ep in entry_points[:10]:
+                    if isinstance(ep, dict):
+                        url = ep.get("url") or ep.get("endpoint") or str(ep)
+                    else:
+                        url = str(ep)
+                    entry_urls.append(url)
                 summary_parts.append(f"  {', '.join(entry_urls)}")
         
         if context.get("findings_count"):

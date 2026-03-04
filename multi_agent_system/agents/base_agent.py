@@ -4,7 +4,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Type, ClassVar, Optional
+from typing import Any, Dict, Type, ClassVar, Optional, List
 from sqlalchemy.exc import IntegrityError
 
 from ..core.config import settings
@@ -15,13 +15,20 @@ from ..utils.hitl_manager import HITLManager
 from ..utils.agent_runtime import CURRENT_AGENT
 from ..utils.mcp_client import MCPClient
 from ..utils.shared_context_manager import SharedContextManager
+# PHASE 2: New architectural components
+from ..utils.knowledge_graph import KnowledgeGraph, Entity, EntityType, RelationType
+from ..utils.confidence_scorer import ConfidenceScorer, ConfidenceScore, Evidence, EvidenceType
 
-# PHASE 1 IMPROVEMENT: Increased timeouts for comprehensive testing
-AGENT_EXECUTION_TIMEOUT = 7200  # 120 minutes (2 hours) for thorough testing (was 3600/60min) - InputValidationAgent needs time for all endpoints!
+# Timeouts aligned with job_total_timeout (3600s) to prevent cascading delays
+AGENT_EXECUTION_TIMEOUT = 2700  # 45 minutes per agent (leaves room for other phases within 1hr job timeout)
 LLM_PLANNING_TIMEOUT = 300      # 5 minutes for LLM planning
-TOOL_EXECUTION_TIMEOUT = 1800   # 30 minutes per tool (was 900/15min) - SQLMap time-based blind SQLi can take 20-30 min!
+TOOL_EXECUTION_TIMEOUT = 600    # 10 minutes per tool (sufficient for SQLMap; was 1800s which let stuck tools block everything)
 MAX_LLM_RETRIES = 3             # Maximum LLM retry attempts
 MAX_TOOLS_PER_AGENT = 50        # Allow comprehensive testing (was 5)
+
+# Global concurrency limit for LLM planning across agents.
+# Prevents parallel agent execution from overwhelming a single LLM endpoint (e.g., LM Studio).
+_LLM_PLANNING_SEMAPHORE = asyncio.Semaphore(int(os.getenv("LLM_PLANNING_CONCURRENCY", "2")))
 
 # FIX #3: Circuit breaker settings
 CIRCUIT_BREAKER_FAILURES = 3    # Max failures before circuit opens
@@ -70,6 +77,12 @@ class BaseAgent:
 		self._mcp_client: Optional[MCPClient] = None
 		self.context_manager = SharedContextManager(self.job_id, log_hook=self._context_log_hook)
 		self._load_hitl_overrides()
+		
+		# PHASE 2: Initialize Knowledge Graph and Confidence Scorer
+		self._knowledge_graph: Optional[KnowledgeGraph] = None
+		self._confidence_scorer = ConfidenceScorer()
+		self._current_tool_evidences: List[Evidence] = []  # Track evidence during tool execution
+		
 		# Independent LLM client per agent - using simple HTTP-based client
 		try:
 			self._llm_client = SimpleLLMClient()
@@ -82,6 +95,27 @@ class BaseAgent:
 	def shared_context(self) -> Dict[str, Any]:
 		"""Access shared context snapshot for this agent"""
 		return self._shared_context_snapshot
+	
+	def get_auth_session(self) -> Optional[Dict[str, Any]]:
+		"""
+		Get authenticated session from shared_context for use with MCP tools.
+		
+		The AuthenticationAgent performs login and stores session data in shared_context.
+		Other agents can use this method to retrieve auth headers/cookies for their requests.
+		
+		Returns:
+			Dict with cookies, headers, token if available, else None
+		"""
+		auth_data = self._shared_context_snapshot.get("authenticated_session")
+		if not auth_data or not auth_data.get("logged_in"):
+			return None
+		
+		return {
+			"cookies": auth_data.get("cookies", {}),
+			"headers": auth_data.get("headers", {}),
+			"token": auth_data.get("jwt_token"),
+			"username": auth_data.get("username"),
+		}
 	
 	def set_tool_plan(self, plan: Dict[str, Any]) -> None:
 		"""Set the LLM-generated tool plan for this agent
@@ -180,70 +214,51 @@ class BaseAgent:
 		else:
 			# Fallback: use LLM-selected tools
 			normalized["tools"] = comprehensive_tools
-			self.log("warning", f"⚠️ No available_tools list, using {len(comprehensive_tools)} LLM-selected tools", {
-				"tools": comprehensive_tools,
-				"agent": self.agent_name
-			})
-		
-		# Preserve LLM-generated arguments for tool execution
-		self._tool_arguments_map.update(llm_arguments)
-		self.log("info", f"📦 Stored {len([a for a in llm_arguments.values() if a])} LLM argument sets for tools")
 
+		# Persist canonical plan and merge any LLM-provided args.
+		for tool_name, args in llm_arguments.items():
+			if isinstance(args, dict) and args:
+				self._tool_arguments_map[tool_name] = args
 		self.tool_plan = normalized
-		self.log("info", f"LLM tool plan received (with intelligent coverage)", {
-			"category": normalized.get("category"),
-			"tools": normalized.get("tools", []),
-			"llm_original_count": len(tools),
-			"final_count": len(normalized.get("tools", [])),
-			"reasoning": normalized.get("reasoning", ""),
-			"priority": normalized.get("priority", "medium")
-		})
+		return
 
-	async def execute(self, target: Optional[str] = None, shared_context: Optional[Dict[str, Any]] = None, job_id: Optional[int] = None) -> None:
-		"""Standardized execution entrypoint used by the Orchestrator.
-
-		Steps:
-		- snapshot shared_context for context-aware planning
-		- ensure target is available (from param or DB)
-		- if no tool_plan, ask LLM for adaptive tool selection
-		- call self.run() which uses run_tool_with_timeout and should_run_tool
-		- on completion, log finish
-		"""
-		# DEBUG: Log entry to execute
+	async def execute(self, target: str = None, shared_context: Dict[str, Any] = None):
+		"""Execute this agent with shared context from the orchestrator."""
 		import sys
-		print(f"🚀🚀🚀 DEBUG: {self.agent_name}.execute() CALLED - target={target}, has_tool_plan={bool(self.tool_plan)}, DISABLE_LLM_PLANNING={os.getenv('DISABLE_LLM_PLANNING')}", file=sys.stderr, flush=True)
-		self.log("info", f"🚀 {self.agent_name}.execute() CALLED - target={target}, has_tool_plan={bool(self.tool_plan)}, DISABLE_LLM_PLANNING={os.getenv('DISABLE_LLM_PLANNING')}")
-		
-		if job_id and job_id != self.job_id:
-			# Should not happen in normal flow, but align internal id if provided
-			self.log("warning", f"execute() called with different job_id={job_id}, keeping self.job_id={self.job_id}")
-
-		# Snapshot shared context
-		self._shared_context_snapshot = shared_context or self._aggregate_shared_context()
-		self.log("debug", "Shared context snapshot loaded", {"keys": list(self._shared_context_snapshot.keys())})
-
-		# Target resolution
 		self._target = target or self._get_target_from_db()
-		if not self._target:
-			self.log("error", "No target available for agent execution")
-			return
+		self._shared_context_snapshot = shared_context or {}
 
 		# If no tool plan OR empty tool plan, create one via per-agent LLM planning
 		# CRITICAL: Orchestrator Phase 2 may inject empty tool_plan (no owasp_categories),
 		# so we MUST check if tools list is empty and trigger per-agent LLM planning
-		import sys
-		print(f"🔍 {self.agent_name}: Checking tool_plan - exists={bool(self.tool_plan)}, value={self.tool_plan}", file=sys.stderr, flush=True)
+		print(
+			f"🔍 {self.agent_name}: Checking tool_plan - exists={bool(self.tool_plan)}, value={self.tool_plan}",
+			file=sys.stderr,
+			flush=True,
+		)
 		self.log("info", f"🔍 Tool plan check: exists={bool(self.tool_plan)}, type={type(self.tool_plan)}")
-		
+
 		if not self.tool_plan or not self.tool_plan.get("tools"):
-			print(f"▶▶▶ {self.agent_name}: Entering tool plan creation block (no tool_plan from Orchestrator)", file=sys.stderr, flush=True)
-			self.log("info", f"▶▶▶ Entering tool plan creation - tool_plan is empty")
+			print(
+				f"▶▶▶ {self.agent_name}: Entering tool plan creation block (no tool_plan from Orchestrator)",
+				file=sys.stderr,
+				flush=True,
+			)
+			self.log("info", "▶▶▶ Entering tool plan creation - tool_plan is empty")
 			available_tools = self._get_available_tools()
-			print(f"▶▶▶ {self.agent_name}: Got {len(available_tools)} available tools: {available_tools[:5]}", file=sys.stderr, flush=True)
-			
+			print(
+				f"▶▶▶ {self.agent_name}: Got {len(available_tools)} available tools: {available_tools[:5]}",
+				file=sys.stderr,
+				flush=True,
+			)
+
 			# Check if LLM planning disabled via env var or class attribute
 			disable_planning = os.getenv('DISABLE_LLM_PLANNING', 'false').lower() == 'true' or getattr(self, "disable_llm_planning", False)
-			print(f"▶▶▶ {self.agent_name}: disable_planning={disable_planning}, has_llm_client={bool(self._llm_client)}", file=sys.stderr, flush=True)
+			print(
+				f"▶▶▶ {self.agent_name}: disable_planning={disable_planning}, has_llm_client={bool(self._llm_client)}",
+				file=sys.stderr,
+				flush=True,
+			)
 
 			if disable_planning or not self._llm_client:
 				# No LLM planning: Execute ALL available tools for comprehensive coverage
@@ -252,59 +267,65 @@ class BaseAgent:
 				self.tool_plan = {
 					"tools": available_tools,
 					"reasoning": "Comprehensive coverage - all tools executed",
-					"priority": "high"
+					"priority": "high",
 				}
-			elif self._llm_client:
+			else:
 				print(f"🔀 {self.agent_name}: BRANCH 2 - LLM planning enabled path", file=sys.stderr, flush=True)
 				# LLM planning enabled: Ask LLM for adaptive tool selection
-				try:
-					# FIX #2: Wrap LLM planning in timeout
-					# FIXED: Use print instead of self.log (async deadlock issue)
-					print(f"📋 {self.agent_name}: Available tools for LLM planning: {available_tools}", file=sys.stderr, flush=True)
+				# FIX: Do retries in-place; do not re-raise (orchestrator treats it as agent failure).
+				print(f"📋 {self.agent_name}: Available tools for LLM planning: {available_tools}", file=sys.stderr, flush=True)
+				selected = None
+				last_error: Exception | None = None
+				for attempt in range(1, MAX_LLM_RETRIES + 1):
+					try:
+						await _LLM_PLANNING_SEMAPHORE.acquire()
+						try:
+							selected = await asyncio.wait_for(
+								self._llm_client.select_tools_for_agent(
+									agent_name=self.agent_name,
+									shared_context=self._shared_context_snapshot,
+									available_tools=available_tools,
+									system_prompt=getattr(self, "system_prompt", None),
+								),
+								timeout=LLM_PLANNING_TIMEOUT,
+							)
+						finally:
+							_LLM_PLANNING_SEMAPHORE.release()
 
-					# Apply LLM planning timeout
-					selected = await asyncio.wait_for(
-						self._llm_client.select_tools_for_agent(
-							agent_name=self.agent_name,
-							shared_context=self._shared_context_snapshot,
-							available_tools=available_tools,
-							system_prompt=getattr(self, "system_prompt", None)
-						),
-						timeout=LLM_PLANNING_TIMEOUT
-					)
+						print(f"🧠 {self.agent_name}: LLM selected tools (raw): {selected}", file=sys.stderr, flush=True)
+						self.set_tool_plan({
+							"category": "",
+							"tools": selected,
+							"reasoning": "; ".join([t.get("reason", "") for t in selected if isinstance(t, dict)]),
+							"priority": "medium",
+						})
+						print(f"✅ {self.agent_name}: Adaptive tool plan created, {len(selected)} tools selected", file=sys.stderr, flush=True)
+						self._llm_retry_count = 0
+						last_error = None
+						break
+					except asyncio.TimeoutError as e:
+						last_error = e
+						self._llm_retry_count += 1
+						print(
+							f"❌ {self.agent_name}: LLM planning timeout after {LLM_PLANNING_TIMEOUT}s (attempt {attempt}/{MAX_LLM_RETRIES})",
+							file=sys.stderr,
+							flush=True,
+						)
+					except Exception as e:
+						last_error = e
+						self._llm_retry_count += 1
+						print(
+							f"⚠️ {self.agent_name}: LLM tool selection failed (attempt {attempt}/{MAX_LLM_RETRIES}): {type(e).__name__}: {e}",
+							file=sys.stderr,
+							flush=True,
+						)
 
-					print(f"🧠 {self.agent_name}: LLM selected tools (raw): {selected}", file=sys.stderr, flush=True)
-					
-					# NEW PARADIGM: Pass LLM response with arguments, let set_tool_plan() handle ALL tools execution
-					# LLM provides: tool arguments/commands (HOW to run)
-					# set_tool_plan() ensures: ALL available tools executed (WHAT to run)
-					self.set_tool_plan({
-						"category": "",
-						"tools": selected,  # Pass full LLM response with arguments
-						"reasoning": "; ".join([t.get("reason", "") for t in selected if isinstance(t, dict)]),
-						"priority": "medium",
-					})
-					print(f"✅ {self.agent_name}: Adaptive tool plan created, {len(selected)} tools selected", file=sys.stderr, flush=True)
-					self._llm_retry_count = 0  # Reset on success
-
-				except asyncio.TimeoutError:
-					self._llm_retry_count += 1
-					print(f"❌ {self.agent_name}: LLM planning timeout after {LLM_PLANNING_TIMEOUT}s (retry {self._llm_retry_count}/{MAX_LLM_RETRIES})", file=sys.stderr, flush=True)
-					if self._llm_retry_count >= MAX_LLM_RETRIES:
-						print(f"❌ {self.agent_name}: LLM planning failed after max retries, using ALL available tools", file=sys.stderr, flush=True)
-						# ENHANCED: Use ALL tools, not just first 3, for maximum coverage
-						self.tool_plan = {"tools": available_tools, "reasoning": "Comprehensive fallback - all tools", "priority": "high"}
-					else:
-						raise  # Retry
-				except Exception as e:
-					self._llm_retry_count += 1
-					print(f"⚠️ {self.agent_name}: LLM tool selection failed (retry {self._llm_retry_count}/{MAX_LLM_RETRIES}): {e}", file=sys.stderr, flush=True)
-					if self._llm_retry_count >= MAX_LLM_RETRIES:
-						print(f"❌ {self.agent_name}: LLM planning failed after max retries, using ALL available tools", file=sys.stderr, flush=True)
-						# ENHANCED: Use ALL tools, not skip, for maximum coverage
-						self.tool_plan = {" tools": available_tools, "reasoning": "Comprehensive fallback - all tools", "priority": "high"}
-					else:
-						raise  # Retry
+				if selected is None:
+					reason = "Comprehensive fallback - all tools"
+					if last_error is not None:
+						reason = f"LLM planning unavailable ({type(last_error).__name__}); {reason}"
+					print(f"❌ {self.agent_name}: Using ALL available tools. Reason: {reason}", file=sys.stderr, flush=True)
+					self.tool_plan = {"tools": available_tools, "reasoning": reason, "priority": "high"}
 
 		# Run agent logic with exception handling
 		print(f"🚀 {self.agent_name}: About to call run() method", file=sys.stderr, flush=True)
@@ -316,7 +337,7 @@ class BaseAgent:
 			self.log("error", f"Agent execution failed: {type(e).__name__}: {e}")
 			import traceback
 			self.log("error", f"Traceback: {traceback.format_exc()}")
-			raise  # Re-raise to let orchestrator handle
+			raise
 		finally:
 			CURRENT_AGENT.reset(token)
 	
@@ -398,6 +419,181 @@ class BaseAgent:
 				db.rollback()
 				import sys
 				print(f"⚠️  {self.agent_name}: Duplicate finding skipped: {title}", file=sys.stderr, flush=True)
+
+	def add_finding_with_confidence(
+		self, 
+		category: str, 
+		title: str, 
+		severity: str = "info", 
+		evidence: dict | None = None, 
+		details: str | None = None,
+		tool_name: str | None = None,
+		evidences: List[Evidence] | None = None
+	) -> ConfidenceScore:
+		"""Add finding with confidence scoring based on evidence.
+		
+		This enhanced method calculates confidence scores based on:
+		- Tool verification success (exploit tools vs scanners)
+		- Evidence types (data extracted, error-based, time-based, etc.)
+		- Multiple confirmation sources
+		
+		Args:
+			category: OWASP category (e.g., "WSTG-INPV-05")
+			title: Finding title
+			severity: Severity level (critical/high/medium/low/info)
+			evidence: Evidence dictionary
+			details: Additional details
+			tool_name: Tool that found this vulnerability
+			evidences: List of Evidence objects for confidence calculation
+			
+		Returns:
+			ConfidenceScore object with calculated confidence
+		"""
+		# Calculate confidence score from evidences
+		vuln_type = self._infer_vuln_type(category, title)
+		
+		# Use provided evidences or try to infer from tool results
+		evidence_list = evidences or self._current_tool_evidences.copy()
+		
+		# Add tool-based evidence if tool_name provided
+		if tool_name and not evidence_list:
+			tool_evidence = self._confidence_scorer.create_tool_evidence(tool_name, evidence or {})
+			if tool_evidence:
+				evidence_list.append(tool_evidence)
+		
+		# Calculate confidence
+		confidence = self._confidence_scorer.calculate_confidence(vuln_type, evidence_list)
+		
+		# Enhance evidence dict with confidence metadata
+		enhanced_evidence = evidence.copy() if evidence else {}
+		enhanced_evidence["_confidence"] = {
+			"score": confidence.score,
+			"level": confidence.level.value,
+			"factors": confidence.contributing_factors,
+			"evidence_count": len(confidence.evidences)
+		}
+		
+		# Log confidence calculation
+		self.log("info", f"📊 Confidence calculated: {confidence.level.value} ({confidence.score:.2f})", {
+			"vuln_type": vuln_type,
+			"factors": confidence.contributing_factors[:3]  # Top 3 factors
+		})
+		
+		# Add finding with enhanced evidence
+		self.add_finding(category, title, severity, enhanced_evidence, details)
+		
+		# Clear current tool evidences after use
+		self._current_tool_evidences.clear()
+		
+		# Write to knowledge graph if available
+		if self._knowledge_graph:
+			self._write_finding_to_knowledge_graph(category, title, severity, confidence)
+		
+		return confidence
+
+	def _infer_vuln_type(self, category: str, title: str) -> str:
+		"""Infer vulnerability type from category and title."""
+		title_lower = title.lower()
+		category_lower = category.lower()
+		
+		# Map common patterns to vulnerability types
+		mappings = {
+			"sql": "sql_injection",
+			"sqli": "sql_injection",
+			"xss": "xss",
+			"cross-site scripting": "xss",
+			"csrf": "csrf",
+			"cross-site request forgery": "csrf",
+			"idor": "idor",
+			"insecure direct object": "idor",
+			"auth": "authentication_bypass",
+			"session": "session_fixation",
+			"upload": "file_upload",
+			"path traversal": "path_traversal",
+			"lfi": "path_traversal",
+			"rfi": "path_traversal",
+			"command injection": "command_injection",
+			"rce": "command_injection",
+			"xxe": "xxe",
+			"ssrf": "ssrf",
+			"information disclosure": "information_disclosure",
+			"sensitive data": "information_disclosure",
+		}
+		
+		for pattern, vuln_type in mappings.items():
+			if pattern in title_lower or pattern in category_lower:
+				return vuln_type
+		
+		return "unknown"
+
+	def add_evidence_from_tool_result(self, tool_name: str, result: Dict[str, Any]) -> None:
+		"""Extract and add evidence from tool execution result.
+		
+		Call this after each tool execution to accumulate evidence
+		for confidence scoring.
+		"""
+		evidence = self._confidence_scorer.create_tool_evidence(tool_name, result)
+		if evidence:
+			self._current_tool_evidences.append(evidence)
+			self.log("debug", f"📝 Evidence collected from {tool_name}: {evidence.evidence_type.value}")
+
+	def _write_finding_to_knowledge_graph(
+		self, 
+		category: str, 
+		title: str, 
+		severity: str,
+		confidence: ConfidenceScore
+	) -> None:
+		"""Write finding to knowledge graph as entity with relationships."""
+		if not self._knowledge_graph:
+			return
+			
+		# Create vulnerability entity
+		vuln_entity = Entity(
+			entity_type=EntityType.VULNERABILITY,
+			name=title,
+			properties={
+				"category": category,
+				"severity": severity,
+				"confidence_score": confidence.score,
+				"confidence_level": confidence.level.value,
+				"agent": self.agent_name,
+				"job_id": self.job_id
+			}
+		)
+		self._knowledge_graph.add_entity(vuln_entity)
+		
+		# Create FINDING entity for detailed tracking
+		finding_entity = Entity(
+			entity_type=EntityType.FINDING,
+			name=f"{self.agent_name}:{title}",
+			properties={
+				"evidence_count": len(confidence.evidences),
+				"contributing_factors": confidence.contributing_factors,
+				"timestamp": time.time()
+			}
+		)
+		self._knowledge_graph.add_entity(finding_entity)
+		
+		# Link finding to vulnerability
+		self._knowledge_graph.add_relationship(
+			finding_entity.entity_id,
+			vuln_entity.entity_id,
+			RelationType.CONFIRMS
+		)
+		
+		self.log("debug", f"📊 Knowledge graph updated with finding: {title}")
+
+	def set_knowledge_graph(self, kg: KnowledgeGraph) -> None:
+		"""Set the knowledge graph instance for this agent.
+		
+		Called by orchestrator to share the same KnowledgeGraph across agents.
+		"""
+		self._knowledge_graph = kg
+
+	def get_knowledge_graph(self) -> Optional[KnowledgeGraph]:
+		"""Get the knowledge graph instance."""
+		return self._knowledge_graph
 
 	def log(self, level: str, message: str, data: dict | None = None) -> None:
 		with get_db() as db:
@@ -514,15 +710,23 @@ class BaseAgent:
 						# Format: {"username": "...", "token": "...", "cookies": {...}, "type": "jwt/cookie"}
 						session = successful_logins[0]
 
-						# Inject auth_session into config parameter (MCP tool convention)
+						# Also pass it down as the explicit auth_session argument so MCPClient
+						# can standardize auth propagation when appropriate.
+						auth_session = session
+
+						# Inject auth_session into both:
+						# - config.auth_session (most MCP tool modules)
+						# - auth_session (some tools accept it top-level)
 						if 'config' not in args:
 							args['config'] = {}
 						if 'auth_session' not in args.get('config', {}):
 							args['config']['auth_session'] = session
+						if 'auth_session' not in args:
+							args['auth_session'] = session
 							self.log("info", f"🔑 Auto-injected auth session for {tool}", {
 								"tool": tool,
 								"username": session.get('username', 'unknown'),
-								"auth_type": session.get('type', 'unknown'),
+								"auth_type": session.get('type', session.get('session_type', 'unknown')),
 								"has_token": bool(session.get('token')),
 								"has_cookies": bool(session.get('cookies'))
 							})
@@ -546,6 +750,20 @@ class BaseAgent:
 			self.reset_tool_failure(tool)
 			duration = round(time.perf_counter() - start, 2)
 			status = result.get("status") if isinstance(result, dict) else "unknown"
+
+			# Surface non-success tool results (common root cause for "tools ran but 0 findings")
+			if isinstance(result, dict) and status not in ("success", "skipped"):
+				self.log(
+					"warning",
+					"Tool returned non-success result",
+					{
+						"tool": tool,
+						"server": server,
+						"status": status,
+						"message": result.get("message") or result.get("error"),
+						"result_keys": list(result.keys()),
+					},
+				)
 
 			# 🔍 PHASE 3: DETECT AUTHENTICATION ERRORS (401/403/500)
 			# Help diagnose why tools aren't finding vulnerabilities
@@ -641,11 +859,16 @@ class BaseAgent:
 			self._tool_failures.pop(tool_name, None)
 
 	def _merge_planned_arguments(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-		"""Merge LLM-generated arguments with base arguments for comprehensive testing"""
+		"""Merge LLM-generated arguments with base arguments for comprehensive testing
+
+		WORKAROUND: LLM (Qwen 2.5-7B Q4) generates empty '{}' arguments.
+		Auto-generate comprehensive arguments from discovered endpoints.
+		"""
 		base = dict(args or {})
 		planned = self._tool_arguments_map.get(tool_name)
-		
-		if isinstance(planned, dict) and planned:
+
+		# Check if LLM provided non-empty arguments
+		if isinstance(planned, dict) and planned and any(v for v in planned.values()):
 			merged = dict(base)
 			merged.update(planned)
 			self.log("info", f"✓ Using LLM arguments for {tool_name}", {
@@ -654,13 +877,112 @@ class BaseAgent:
 				"merged_args": merged
 			})
 			return merged
-		else:
-			if self._tool_arguments_map:
-				self.log("debug", f"⚠ No LLM arguments for {tool_name}, using base only", {
-					"available_llm_args": list(self._tool_arguments_map.keys()),
-					"base_args": base
-				})
+
+		# WORKAROUND: Auto-generate comprehensive arguments for common vulnerability tests
+		enhanced_args = self._auto_generate_test_arguments(tool_name, base)
+		if enhanced_args and enhanced_args != base:
+			self.log("info", f"🔧 Auto-generated comprehensive arguments for {tool_name}", {
+				"base_args": base,
+				"auto_args": enhanced_args
+			})
+			return enhanced_args
+
+		# Fallback: use base arguments only
+		if self._tool_arguments_map:
+			self.log("debug", f"⚠ No LLM arguments for {tool_name}, using base only", {
+				"available_llm_args": list(self._tool_arguments_map.keys()),
+				"base_args": base
+			})
 		return base
+
+	def _auto_generate_test_arguments(self, tool_name: str, base_args: Dict[str, Any]) -> Dict[str, Any]:
+		"""Auto-generate comprehensive test arguments from discovered endpoints
+
+		Bypasses LLM limitation (Qwen 2.5-7B too small for complex JSON generation)
+		"""
+		# Get discovered endpoints from shared context (from Katana JS crawling)
+		context = self._shared_context_snapshot or {}
+		endpoints = context.get("entry_points", [])
+		target_base = self._target or "http://juice-shop:3000"
+
+		# Comprehensive payload sets for each vulnerability type
+		sql_payloads = [
+			"' OR '1'='1--",
+			"1' UNION SELECT NULL--",
+			"1' AND SLEEP(5)--",
+			"admin'--",
+			"' OR 1=1--",
+		]
+
+		xss_payloads = [
+			"<script>alert(1)</script>",
+			"<img src=x onerror=alert(1)>",
+			"javascript:alert(1)",
+			"<svg onload=alert(1)>",
+		]
+
+		# Tool-specific argument generation
+		args = dict(base_args)
+
+		if tool_name == "test_sqli":
+			# Auto-detect search/query/api endpoints from Katana discovery
+			api_endpoints = [ep for ep in endpoints if any(pattern in str(ep).lower() for pattern in ['/api/', '/rest/', 'search', 'query', '?q=', '?id='])]
+			if api_endpoints and len(api_endpoints) > 0:
+				ep = api_endpoints[0]
+				url = ep.get("url") if isinstance(ep, dict) else str(ep)
+				# Ensure URL has query parameter
+				if '?' not in url:
+					url = f"{url}?q=test"
+				args.update({
+					"url": url,
+					"payloads": sql_payloads,
+					"injection_types": ["union", "blind", "time-based"],
+				})
+			else:
+				# Fallback: scan base target
+				args.update({
+					"url": f"{target_base}/?q=test",
+					"payloads": sql_payloads,
+				})
+
+		elif tool_name == "test_xss_reflected":
+			# Auto-detect form/search endpoints from Katana discovery
+			form_endpoints = [ep for ep in endpoints if any(param in str(ep).lower() for param in ['search', 'comment', 'feedback', 'form', '?q='])]
+			if form_endpoints and len(form_endpoints) > 0:
+				ep = form_endpoints[0]
+				url = ep.get("url") if isinstance(ep, dict) else str(ep)
+				args.update({
+					"url": url,
+					"payloads": xss_payloads,
+					"parameters": ["q", "query", "search", "comment"],
+				})
+			else:
+				args.update({
+					"url": f"{target_base}/",
+					"payloads": xss_payloads,
+				})
+
+		elif tool_name == "test_idor_vulnerability" or tool_name == "test_idor_comprehensive":
+			# Auto-detect resource endpoints with IDs from Katana discovery
+			id_endpoints = [ep for ep in endpoints if any(param in str(ep).lower() for param in ['/api/', '/rest/', '/id/', 'user/', 'profile/', 'basket', 'item'])]
+			if id_endpoints and len(id_endpoints) > 0:
+				ep = id_endpoints[0]
+				url = ep.get("url") if isinstance(ep, dict) else str(ep)
+				# Add /1 if not present
+				if not any(char.isdigit() for char in url):
+					url = f"{url}/1"
+				args.update({
+					"url": url,
+					"id_range": list(range(1, 21)),  # Test IDs 1-20
+					"test_modes": ["sequential", "predictable"],
+				})
+			else:
+				args.update({
+					"url": f"{target_base}/api/items/1",
+					"id_range": list(range(1, 21)),
+				})
+
+		return args if args != base_args else base_args
 
 	async def _before_tool_execution(self, server: str, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
 		"""Hook invoked by MCPClient prior to executing a tool.

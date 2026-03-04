@@ -523,7 +523,7 @@ This assessment utilized **70+ open-source security tools** integrated via Model
 - Subfinder, Nmap, WhatWeb, theHarvester, crt.sh
 
 **Vulnerability Scanning:**
-- Nuclei (CVE templates), SQLMap, Dalfox (XSS)
+- SQLMap, Dalfox (XSS)
 
 **Web Testing:**
 - ffuf (fuzzing), feroxbuster (directory enumeration), Nikto

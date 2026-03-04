@@ -395,7 +395,7 @@ class OWASPReportGenerator:
         md.append("## Appendix\n")
         md.append("### Testing Tools Used\n")
         md.append("- **Information Gathering:** Subfinder, Nmap, WhatWeb, theHarvester")
-        md.append("- **Vulnerability Scanning:** Nuclei, SQLMap, Dalfox, ffuf")
+        md.append("- **Vulnerability Scanning:** SQLMap, Dalfox, ffuf")
         md.append("- **Authentication Testing:** Hydra, custom credential stuffing")
         md.append("- **Cryptography Testing:** testssl.sh, sslyze")
         md.append("- **Configuration Testing:** Nikto, dirb, feroxbuster\n")

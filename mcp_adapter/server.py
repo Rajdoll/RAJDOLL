@@ -105,6 +105,19 @@ def _monkeypatch_module(mod: Any, module_path: str) -> None:
         # Non-fatal; best-effort adjustments only
         pass
 
+def _filter_args_for_callable(fn: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter args to only those accepted by fn unless it accepts **kwargs."""
+    try:
+        sig = inspect.signature(fn)
+    except Exception:
+        # Best-effort: if signature can't be determined, pass through.
+        return args
+
+    params = sig.parameters
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return args
+    return {k: v for k, v in args.items() if k in params}
+
 
 @app.post("/jsonrpc")
 async def jsonrpc_endpoint(req: JsonRpcRequest):
@@ -130,23 +143,40 @@ async def jsonrpc_endpoint(req: JsonRpcRequest):
         if not callable(fn):
             return {"jsonrpc": "2.0", "id": req.id, "error": {"code": -32601, "message": f"Tool not found: {params.name}"}}
 
-        # 🔑 STRIP AUTH PARAMETERS: Remove _auth_* parameters before calling tool functions
-        # These are metadata from MCPClient for authenticated testing, not tool parameters
+        # 🔑 EXTRACT AUTH PARAMETERS: Get auth data from MCPClient
+        auth_cookies = params.arguments.get('_auth_cookies')
+        auth_headers = params.arguments.get('_auth_headers')
+        auth_token = params.arguments.get('_auth_token')
+        auth_session = params.arguments.get('auth_session')
+        config_arg = params.arguments.get('config')
+        
+        # Build auth_session from individual auth params if not already provided
+        if not auth_session and (auth_cookies or auth_headers or auth_token):
+            auth_session = {}
+            if auth_cookies:
+                auth_session['cookies'] = auth_cookies
+            if auth_headers:
+                auth_session['headers'] = auth_headers
+            if auth_token:
+                auth_session['token'] = auth_token
+        
+        # Remove internal _auth_* params, keep auth_session and config
         filtered_args = {
             k: v for k, v in params.arguments.items()
             if not k.startswith('_auth_')
         }
         
-        # Extract auth data for potential future use (tools can access via closure if needed)
-        auth_cookies = params.arguments.get('_auth_cookies')
-        auth_headers = params.arguments.get('_auth_headers')
-        auth_token = params.arguments.get('_auth_token')
+        # Ensure auth_session is included in filtered_args for tools that accept it
+        if auth_session:
+            filtered_args['auth_session'] = auth_session
+
+        call_args = _filter_args_for_callable(fn, filtered_args)
 
         async def _runner():
             if inspect.iscoroutinefunction(fn):
-                return await fn(**filtered_args)
+                return await fn(**call_args)
             # Run sync function off the main loop
-            return await asyncio.to_thread(fn, **filtered_args)
+            return await asyncio.to_thread(fn, **call_args)
 
         result = await _runner()
         # Ensure result is JSON-serializable; fallback to string
