@@ -575,6 +575,117 @@ async def test_alternative_channel_auth(base_url: str, mobile_endpoints: List[st
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_auth_bypass_schema(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-ATHN-06: Test for Authentication Bypass via Direct Request / Schema Manipulation.
+    Attempts to access protected resources without authentication or by
+    manipulating URL paths (forced browsing, path traversal, parameter removal).
+    """
+    try:
+        findings = []
+
+        # Two clients: one authenticated, one unauthenticated
+        auth_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        unauth_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+
+        if auth_session:
+            if 'cookies' in auth_session:
+                auth_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                auth_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                auth_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        base = url.rstrip('/')
+
+        # Protected endpoints that should require auth
+        protected_paths = [
+            "/api/Users", "/api/Feedbacks", "/api/Products",
+            "/api/Quantitys", "/api/Complaints", "/api/Recycles",
+            "/administration", "/accounting", "/profile",
+            "/api/SecurityAnswers", "/api/PrivacyRequests",
+            "/rest/user/whoami", "/rest/basket/",
+        ]
+
+        # Schema manipulation / forced browsing patterns
+        bypass_patterns = [
+            ("direct_access", lambda p: p),
+            ("double_encode", lambda p: p.replace("/", "%252f")),
+            ("path_traversal", lambda p: f"/public/../{p.lstrip('/')}"),
+            ("case_change", lambda p: p.upper()),
+            ("trailing_dot", lambda p: f"{p}."),
+            ("null_byte", lambda p: f"{p}%00"),
+            ("json_ext", lambda p: f"{p}.json"),
+        ]
+
+        async with httpx.AsyncClient(**unauth_kwargs) as unauth_client:
+            for path in protected_paths:
+                full_url = f"{base}{path}"
+                for bypass_name, transform in bypass_patterns:
+                    try:
+                        test_path = transform(path)
+                        test_url = f"{base}{test_path}"
+                        resp = await unauth_client.get(test_url)
+
+                        # Check if we got actual data (not redirect to login)
+                        if resp.status_code == 200:
+                            body = resp.text
+                            # Heuristic: if response has JSON data or significant content
+                            if len(body) > 50 and ('login' not in body.lower()[:200]):
+                                try:
+                                    data = resp.json()
+                                    if isinstance(data, (list, dict)) and data:
+                                        findings.append({
+                                            "type": "auth_bypass",
+                                            "method": bypass_name,
+                                            "path": test_path,
+                                            "original_path": path,
+                                            "status_code": resp.status_code,
+                                            "severity": "Critical",
+                                            "description": f"Protected resource accessible without auth via {bypass_name}",
+                                            "evidence": str(body[:200])
+                                        })
+                                except Exception:
+                                    pass
+                    except Exception:
+                        continue
+
+        # Test HTTP method override
+        method_override_headers = [
+            ("X-HTTP-Method-Override", "GET"),
+            ("X-Method-Override", "GET"),
+            ("X-HTTP-Method", "GET"),
+        ]
+        async with httpx.AsyncClient(**unauth_kwargs) as client:
+            for path in protected_paths[:5]:
+                for header_name, method in method_override_headers:
+                    try:
+                        resp = await client.post(
+                            f"{base}{path}",
+                            headers={header_name: method}
+                        )
+                        if resp.status_code == 200 and len(resp.text) > 50:
+                            findings.append({
+                                "type": "method_override_bypass",
+                                "header": header_name,
+                                "path": path,
+                                "severity": "High",
+                                "description": f"Auth bypass via {header_name} header"
+                            })
+                    except Exception:
+                        continue
+
+        return {"status": "success", "data": {
+            "paths_tested": len(protected_paths),
+            "bypass_techniques": len(bypass_patterns),
+            "vulnerabilities_found": len(findings),
+            "findings": findings,
+            "description": "Authentication bypass allows unauthorized access to protected resources"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # --- Prompt (tidak ada perubahan signifikan) ---
 # @mcp.prompt()  # REMOVED: Using JSON-RPC adapter
 def setup_prompt(domainname: str) -> str:

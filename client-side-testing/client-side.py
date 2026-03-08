@@ -1520,7 +1520,237 @@ async def test_client_side_template_injection(url: str, auth_session: Optional[D
 
 
 # ============================================================================
-# MODULE COMPLETE: 12 client-side testing tools implemented
-# Coverage: WSTG 4.11.1-4.11.15 (DOM XSS, Prototype Pollution, postMessage, CSTI, and more)
+# WSTG-CLNT-06: Test for Resource Manipulation
+# ============================================================================
+
+async def test_resource_manipulation(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-CLNT-06: Test for Client-Side Resource Manipulation.
+    Checks if resources loaded by the page (scripts, iframes, links) can be
+    controlled via URL parameters or fragment, enabling open redirect or XSS.
+    """
+    try:
+        findings = []
+
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            resp = await client.get(url)
+            html = resp.text
+
+            # Check for URL-controlled resource loading patterns in JS
+            dangerous_patterns = [
+                (r'\.src\s*=\s*[^;]*(?:location\.hash|location\.search|document\.URL|window\.name)',
+                 'Dynamic src from URL', 'HIGH'),
+                (r'\.href\s*=\s*[^;]*(?:location\.hash|location\.search|document\.URL)',
+                 'Dynamic href from URL', 'HIGH'),
+                (r'\.action\s*=\s*[^;]*(?:location\.hash|location\.search)',
+                 'Dynamic form action from URL', 'HIGH'),
+                (r'window\.open\s*\([^)]*(?:location\.hash|location\.search)',
+                 'window.open with URL parameter', 'MEDIUM'),
+                (r'document\.write\s*\([^)]*(?:location\.hash|location\.search)',
+                 'document.write with URL parameter', 'CRITICAL'),
+                (r'innerHTML\s*=\s*[^;]*(?:location\.hash|location\.search|\.getParameter)',
+                 'innerHTML from URL', 'CRITICAL'),
+            ]
+
+            scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.DOTALL | re.IGNORECASE)
+            all_js = "\n".join(scripts)
+
+            for pattern, description, severity in dangerous_patterns:
+                matches = re.findall(pattern, all_js, re.IGNORECASE)
+                if matches:
+                    findings.append({
+                        "type": "resource_manipulation",
+                        "pattern": description,
+                        "severity": severity,
+                        "description": f"Client-side resource manipulation: {description}",
+                        "evidence": matches[0][:200] if matches else "",
+                        "recommendation": "Validate and sanitize URL parameters before using them to load resources"
+                    })
+
+            # Test for open redirect via common parameters
+            redirect_params = ["url", "redirect", "next", "return", "returnTo", "goto", "target", "ref"]
+            evil_url = "https://evil.example.com"
+            for param in redirect_params:
+                try:
+                    test_url = f"{url}?{param}={evil_url}"
+                    test_resp = await client.get(test_url)
+                    if test_resp.status_code in (301, 302, 307, 308):
+                        location = test_resp.headers.get("location", "")
+                        if evil_url in location:
+                            findings.append({
+                                "type": "open_redirect",
+                                "parameter": param,
+                                "severity": "MEDIUM",
+                                "description": f"Open redirect via '{param}' parameter",
+                                "evidence": f"Redirects to: {location}"
+                            })
+                except Exception:
+                    continue
+
+            # Check for externally-controlled iframe sources
+            iframes = re.findall(r'<iframe[^>]*src\s*=\s*["\']([^"\']*)["\']', html, re.IGNORECASE)
+            for src in iframes:
+                if any(p in src for p in ['{{', '${', 'javascript:', 'data:']):
+                    findings.append({
+                        "type": "iframe_manipulation",
+                        "severity": "HIGH",
+                        "description": "Iframe with potentially controllable source",
+                        "evidence": src[:200]
+                    })
+
+        return {"status": "success", "data": {
+            "vulnerable": any(f.get('severity') in ['HIGH', 'CRITICAL'] for f in findings),
+            "findings": findings,
+            "message": f"Found {len(findings)} resource manipulation issues"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# WSTG-CLNT-11: Test for Web Messaging
+# ============================================================================
+
+async def test_web_messaging(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-CLNT-11: Test for Web Messaging (postMessage) Security.
+    Analyzes JavaScript for insecure postMessage usage:
+    - Missing origin validation in message event listeners
+    - Sensitive data sent via postMessage without target origin
+    - Use of wildcard '*' as target origin
+    """
+    try:
+        findings = []
+
+        req_kwargs = {"timeout": httpx.Timeout(15.0), "verify": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            resp = await client.get(url)
+            html = resp.text
+
+            scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.DOTALL | re.IGNORECASE)
+            all_js = "\n".join(scripts)
+
+            # Check for postMessage senders with wildcard origin
+            wildcard_sends = re.findall(
+                r'\.postMessage\s*\([^)]+,\s*["\']?\*["\']?\s*\)',
+                all_js, re.IGNORECASE
+            )
+            if wildcard_sends:
+                findings.append({
+                    "type": "postmessage_wildcard_origin",
+                    "severity": "HIGH",
+                    "description": "postMessage uses wildcard '*' as target origin",
+                    "evidence": wildcard_sends[0][:200],
+                    "count": len(wildcard_sends),
+                    "recommendation": "Specify exact target origin instead of '*'"
+                })
+
+            # Check for message event listeners without origin check
+            listeners = re.findall(
+                r'addEventListener\s*\(\s*["\']message["\'].*?\}',
+                all_js, re.DOTALL | re.IGNORECASE
+            )
+            for listener in listeners:
+                has_origin_check = bool(re.search(
+                    r'(?:event|e|msg)\.origin\s*[!=]=',
+                    listener, re.IGNORECASE
+                ))
+                if not has_origin_check:
+                    # Check what the handler does with the data
+                    dangerous_ops = []
+                    if re.search(r'innerHTML|outerHTML', listener):
+                        dangerous_ops.append("DOM manipulation")
+                    if re.search(r'eval\(|Function\(|setTimeout\(.*data', listener):
+                        dangerous_ops.append("code execution")
+                    if re.search(r'location\s*[=.]|window\.open', listener):
+                        dangerous_ops.append("navigation")
+
+                    findings.append({
+                        "type": "postmessage_no_origin_check",
+                        "severity": "CRITICAL" if dangerous_ops else "HIGH",
+                        "description": "Message event listener without origin validation",
+                        "dangerous_operations": dangerous_ops or ["unknown"],
+                        "evidence": listener[:300],
+                        "recommendation": "Always validate event.origin before processing messages"
+                    })
+
+            # Check for sensitive data in postMessage calls
+            sensitive_patterns = [
+                (r'postMessage\s*\([^)]*(?:token|password|secret|key|session|cookie)', 'Sensitive data in postMessage'),
+                (r'postMessage\s*\([^)]*(?:localStorage|sessionStorage)', 'Storage data in postMessage'),
+            ]
+            for pattern, description in sensitive_patterns:
+                matches = re.findall(pattern, all_js, re.IGNORECASE)
+                if matches:
+                    findings.append({
+                        "type": "sensitive_postmessage",
+                        "severity": "HIGH",
+                        "description": description,
+                        "evidence": matches[0][:200],
+                        "recommendation": "Avoid sending sensitive data via postMessage"
+                    })
+
+            # Also check external JS files referenced in page
+            ext_scripts = re.findall(r'<script[^>]*src\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
+            js_checked = 0
+            for src in ext_scripts[:5]:  # Limit to 5 external scripts
+                if src.startswith("//"):
+                    src = "https:" + src
+                elif src.startswith("/"):
+                    from urllib.parse import urljoin
+                    src = urljoin(url, src)
+                elif not src.startswith("http"):
+                    from urllib.parse import urljoin
+                    src = urljoin(url, src)
+
+                try:
+                    js_resp = await client.get(src)
+                    if js_resp.status_code == 200:
+                        js_content = js_resp.text
+                        js_checked += 1
+                        # Quick check for postMessage patterns in external JS
+                        if 'postMessage' in js_content:
+                            wildcards = re.findall(r'\.postMessage\s*\([^)]+,\s*["\']?\*["\']?\)', js_content)
+                            if wildcards:
+                                findings.append({
+                                    "type": "external_js_wildcard_postmessage",
+                                    "severity": "HIGH",
+                                    "source": src,
+                                    "description": f"External script uses postMessage with wildcard origin",
+                                    "count": len(wildcards)
+                                })
+                except Exception:
+                    continue
+
+        return {"status": "success", "data": {
+            "vulnerable": any(f.get('severity') in ['HIGH', 'CRITICAL'] for f in findings),
+            "findings": findings,
+            "external_scripts_checked": js_checked if 'js_checked' in dir() else 0,
+            "message": f"Found {len(findings)} web messaging security issues"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# MODULE COMPLETE: 14 client-side testing tools implemented
+# Coverage: WSTG 4.11.1-4.11.15 (DOM XSS, Prototype Pollution, postMessage, CSTI, Resource Manipulation, Web Messaging)
 # ============================================================================
 

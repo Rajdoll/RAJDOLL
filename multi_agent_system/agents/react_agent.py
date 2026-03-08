@@ -356,16 +356,16 @@ Respond in JSON format:
 """
         
         try:
-            response = await self._llm_client.chat(
+            response = await self._llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
             )
-            
-            # Parse response
-            response_text = response.get("content", "") if isinstance(response, dict) else str(response)
+
+            # chat_completion returns str directly
+            response_text = str(response)
             
             # Try to extract JSON
             try:
@@ -421,15 +421,16 @@ If no more actions needed, respond with {{"tool": null}}
 """
         
         try:
-            response = await self._llm_client.chat(
+            response = await self._llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
             )
-            
-            response_text = response.get("content", "") if isinstance(response, dict) else str(response)
+
+            # chat_completion returns str directly
+            response_text = str(response)
             
             # Parse action
             import re

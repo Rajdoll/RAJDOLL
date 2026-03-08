@@ -42,6 +42,11 @@ class InjectionType(Enum):
     CRLF = "crlf"
     LFI = "lfi"
     SSRF = "ssrf"
+    JWT = "jwt"
+    IDOR = "idor"
+    HPP = "hpp"
+    FILE_UPLOAD = "file_upload"
+    RACE_CONDITION = "race_condition"
 
 
 @dataclass
@@ -1099,6 +1104,80 @@ def get_all_techniques() -> Dict[str, Dict[str, InjectionTechnique]]:
         InjectionType.LFI.value: LFI_TECHNIQUES,
     }
     
+    # Import enhanced NoSQL payloads if available
+    try:
+        from .nosql_enhanced_payloads import (
+            MONGODB_OPERATOR_PAYLOADS, MONGODB_WHERE_PAYLOADS,
+            MONGODB_AUTH_BYPASS_STRINGS, MONGODB_AGGREGATION_PAYLOADS,
+            COUCHDB_PAYLOADS, REDIS_PAYLOADS, CASSANDRA_PAYLOADS,
+            NOSQL_URL_PARAMS, get_nosql_detection_patterns
+        )
+        nosql_patterns = get_nosql_detection_patterns()
+        
+        # Create enhanced NoSQL techniques
+        enhanced_nosql = {
+            "mongodb_operators": InjectionTechnique(
+                name="MongoDB Operator Injection",
+                description="$ne, $gt, $regex, $or, $exists operator abuse",
+                payloads=MONGODB_OPERATOR_PAYLOADS,
+                indicators=nosql_patterns[:8],
+                severity="critical"
+            ),
+            "mongodb_where": InjectionTechnique(
+                name="MongoDB $where Injection",
+                description="JavaScript injection via $where operator",
+                payloads=MONGODB_WHERE_PAYLOADS,
+                indicators=nosql_patterns[:8],
+                severity="critical"
+            ),
+            "mongodb_auth_bypass": InjectionTechnique(
+                name="MongoDB Authentication Bypass",
+                description="NoSQL auth bypass with operator injection",
+                payloads=MONGODB_AUTH_BYPASS_STRINGS,
+                indicators=nosql_patterns[:8],
+                severity="critical"
+            ),
+            "mongodb_aggregation": InjectionTechnique(
+                name="MongoDB Aggregation Injection",
+                description="$lookup, $out, $merge pipeline injection",
+                payloads=MONGODB_AGGREGATION_PAYLOADS,
+                indicators=nosql_patterns[:8],
+                severity="high"
+            ),
+            "couchdb": InjectionTechnique(
+                name="CouchDB Injection",
+                description="CouchDB endpoint enumeration and Mango query injection",
+                payloads=COUCHDB_PAYLOADS,
+                indicators=nosql_patterns[:8],
+                severity="high"
+            ),
+            "redis": InjectionTechnique(
+                name="Redis Command Injection",
+                description="Redis protocol command injection",
+                payloads=REDIS_PAYLOADS,
+                indicators=nosql_patterns[:8],
+                severity="critical"
+            ),
+            "cassandra": InjectionTechnique(
+                name="Cassandra CQL Injection",
+                description="Cassandra Query Language injection",
+                payloads=CASSANDRA_PAYLOADS,
+                indicators=nosql_patterns[:8],
+                severity="high"
+            ),
+            "nosql_url_params": InjectionTechnique(
+                name="NoSQL URL Parameter Injection",
+                description="Bracket notation and encoded NoSQL operators in URLs",
+                payloads=NOSQL_URL_PARAMS,
+                indicators=nosql_patterns[:8],
+                severity="high"
+            ),
+        }
+        # Merge with existing NoSQL techniques
+        techniques[InjectionType.NOSQL.value].update(enhanced_nosql)
+    except ImportError:
+        pass  # Enhanced NoSQL payloads not available
+    
     # Import SSRF payloads if available
     try:
         from .ssrf_payloads import get_ssrf_payloads_by_category, get_ssrf_detection_patterns
@@ -1118,6 +1197,276 @@ def get_all_techniques() -> Dict[str, Dict[str, InjectionTechnique]]:
         techniques[InjectionType.SSRF.value] = ssrf_techniques
     except ImportError:
         pass  # SSRF payloads not available
+    
+    # Import JWT payloads if available
+    try:
+        from .jwt_payloads import (
+            WEAK_SECRETS, ALG_NONE_HEADERS, PRIVILEGE_ESCALATION_CLAIMS,
+            KID_INJECTION_PAYLOADS, get_jwt_vulnerability_indicators
+        )
+        jwt_indicators = get_jwt_vulnerability_indicators()
+        
+        jwt_techniques = {
+            "alg_none": InjectionTechnique(
+                name="JWT Algorithm None",
+                description="JWT algorithm confusion - bypass signature verification",
+                payloads=[str(h) for h in ALG_NONE_HEADERS],
+                indicators=jwt_indicators[:5],
+                severity="critical"
+            ),
+            "weak_secrets": InjectionTechnique(
+                name="JWT Weak Secrets",
+                description="JWT signed with common/weak secrets",
+                payloads=WEAK_SECRETS[:50],
+                indicators=jwt_indicators[:5],
+                severity="high"
+            ),
+            "privilege_escalation": InjectionTechnique(
+                name="JWT Privilege Escalation",
+                description="JWT claim manipulation for privilege escalation",
+                payloads=[str(c) for c in PRIVILEGE_ESCALATION_CLAIMS],
+                indicators=jwt_indicators[:5],
+                severity="critical"
+            ),
+            "kid_injection": InjectionTechnique(
+                name="JWT KID Injection",
+                description="JWT Key ID header injection attacks",
+                payloads=[str(k.get("kid", "")) for k in KID_INJECTION_PAYLOADS],
+                indicators=jwt_indicators[:5],
+                severity="high"
+            ),
+        }
+        techniques[InjectionType.JWT.value] = jwt_techniques
+    except ImportError:
+        pass  # JWT payloads not available
+    
+    # Import IDOR payloads if available
+    try:
+        from .idor_payloads import (
+            SEQUENTIAL_ID_PAYLOADS, UUID_MANIPULATION_PAYLOADS,
+            ENCODED_ID_PAYLOADS, ROLE_ESCALATION_PAYLOADS,
+            ADMIN_ENDPOINTS, get_idor_detection_patterns
+        )
+        idor_patterns = get_idor_detection_patterns()
+        
+        idor_techniques = {
+            "sequential_ids": InjectionTechnique(
+                name="IDOR Sequential ID",
+                description="Sequential/numeric ID manipulation for IDOR",
+                payloads=SEQUENTIAL_ID_PAYLOADS,
+                indicators=idor_patterns[:5],
+                severity="high"
+            ),
+            "uuid_manipulation": InjectionTechnique(
+                name="IDOR UUID Manipulation",
+                description="UUID/GUID manipulation for object access",
+                payloads=UUID_MANIPULATION_PAYLOADS,
+                indicators=idor_patterns[:5],
+                severity="high"
+            ),
+            "encoded_ids": InjectionTechnique(
+                name="IDOR Encoded IDs",
+                description="Base64/hex encoded ID bypass attempts",
+                payloads=ENCODED_ID_PAYLOADS,
+                indicators=idor_patterns[:5],
+                severity="medium"
+            ),
+            "privilege_escalation": InjectionTechnique(
+                name="IDOR Privilege Escalation",
+                description="Role/permission manipulation for vertical escalation",
+                payloads=[str(p) for p in ROLE_ESCALATION_PAYLOADS],
+                indicators=idor_patterns[:5],
+                severity="critical"
+            ),
+            "admin_endpoints": InjectionTechnique(
+                name="IDOR Admin Endpoints",
+                description="Unauthorized admin endpoint access",
+                payloads=ADMIN_ENDPOINTS,
+                indicators=idor_patterns[:5],
+                severity="critical"
+            ),
+        }
+        techniques[InjectionType.IDOR.value] = idor_techniques
+    except ImportError:
+        pass  # IDOR payloads not available
+    
+    # Import HPP payloads if available
+    try:
+        from .hpp_payloads import (
+            DUPLICATE_PARAM_PAYLOADS, ARRAY_PARAM_PAYLOADS,
+            PROTOTYPE_POLLUTION_PAYLOADS, OVERRIDE_PARAM_PAYLOADS,
+            SERVER_SIDE_HPP, CLIENT_SIDE_HPP, get_hpp_detection_patterns
+        )
+        hpp_patterns = get_hpp_detection_patterns()
+        
+        # Extract payloads from structured dicts
+        duplicate_payloads = [str(p.get("params", p)) for p in DUPLICATE_PARAM_PAYLOADS]
+        array_payloads = [str(p.get("params", p)) for p in ARRAY_PARAM_PAYLOADS]
+        server_hpp = [str(p.get("params", p)) for p in SERVER_SIDE_HPP]
+        client_hpp = [str(p.get("params", p)) for p in CLIENT_SIDE_HPP]
+        override_payloads = [str(p) for p in OVERRIDE_PARAM_PAYLOADS]
+        
+        hpp_techniques = {
+            "duplicate_params": InjectionTechnique(
+                name="HPP Duplicate Parameters",
+                description="Duplicate parameter injection to manipulate server behavior",
+                payloads=duplicate_payloads,
+                indicators=hpp_patterns[:5],
+                severity="high"
+            ),
+            "array_injection": InjectionTechnique(
+                name="HPP Array Injection",
+                description="Array-style parameter injection (PHP/Node.js)",
+                payloads=array_payloads,
+                indicators=hpp_patterns[:5],
+                severity="medium"
+            ),
+            "prototype_pollution": InjectionTechnique(
+                name="Prototype Pollution",
+                description="JavaScript prototype chain manipulation",
+                payloads=PROTOTYPE_POLLUTION_PAYLOADS,
+                indicators=hpp_patterns[:5],
+                severity="critical"
+            ),
+            "parameter_override": InjectionTechnique(
+                name="Parameter Override",
+                description="Method/action override via hidden parameters",
+                payloads=override_payloads,
+                indicators=hpp_patterns[:5],
+                severity="high"
+            ),
+            "server_side_hpp": InjectionTechnique(
+                name="Server-Side HPP",
+                description="Backend API and SQL manipulation via HPP",
+                payloads=server_hpp,
+                indicators=hpp_patterns[:5],
+                severity="critical"
+            ),
+            "client_side_hpp": InjectionTechnique(
+                name="Client-Side HPP",
+                description="DOM-based HPP for XSS and redirect attacks",
+                payloads=client_hpp,
+                indicators=hpp_patterns[:5],
+                severity="high"
+            ),
+        }
+        techniques[InjectionType.HPP.value] = hpp_techniques
+    except ImportError:
+        pass  # HPP payloads not available
+    
+    # Import File Upload payloads if available
+    try:
+        from .file_upload_payloads import (
+            DOUBLE_EXTENSION_PAYLOADS, NULL_BYTE_PAYLOADS,
+            CASE_VARIATION_PAYLOADS, SPECIAL_CHAR_PAYLOADS,
+            ZIP_SLIP_PAYLOADS, SVG_XSS_PAYLOADS, XML_XXE_PAYLOADS,
+            FILENAME_TRAVERSAL_PAYLOADS, get_upload_detection_patterns
+        )
+        upload_patterns = get_upload_detection_patterns()
+        
+        file_upload_techniques = {
+            "extension_bypass": InjectionTechnique(
+                name="File Upload Extension Bypass",
+                description="Double extension and case variation bypass",
+                payloads=DOUBLE_EXTENSION_PAYLOADS + CASE_VARIATION_PAYLOADS,
+                indicators=upload_patterns[:5],
+                severity="critical"
+            ),
+            "null_byte_bypass": InjectionTechnique(
+                name="File Upload Null Byte",
+                description="Null byte injection to bypass extension checks",
+                payloads=NULL_BYTE_PAYLOADS + SPECIAL_CHAR_PAYLOADS,
+                indicators=upload_patterns[:5],
+                severity="high"
+            ),
+            "zip_slip": InjectionTechnique(
+                name="Zip Slip Path Traversal",
+                description="Path traversal in archive extraction",
+                payloads=ZIP_SLIP_PAYLOADS,
+                indicators=upload_patterns[:5],
+                severity="critical"
+            ),
+            "svg_xss": InjectionTechnique(
+                name="SVG XSS Upload",
+                description="XSS via malicious SVG files",
+                payloads=SVG_XSS_PAYLOADS,
+                indicators=upload_patterns[:5],
+                severity="high"
+            ),
+            "xml_xxe_upload": InjectionTechnique(
+                name="XML XXE Upload",
+                description="XXE via malicious XML files",
+                payloads=XML_XXE_PAYLOADS,
+                indicators=upload_patterns[:5],
+                severity="critical"
+            ),
+            "filename_traversal": InjectionTechnique(
+                name="Filename Path Traversal",
+                description="Path traversal in uploaded filename",
+                payloads=FILENAME_TRAVERSAL_PAYLOADS,
+                indicators=upload_patterns[:5],
+                severity="high"
+            ),
+        }
+        techniques[InjectionType.FILE_UPLOAD.value] = file_upload_techniques
+    except ImportError:
+        pass  # File upload payloads not available
+    
+    # Import Race Condition scenarios if available
+    try:
+        from .race_condition_payloads import (
+            FINANCIAL_RACE_SCENARIOS, AUTHENTICATION_RACE_SCENARIOS,
+            RESOURCE_RACE_SCENARIOS, RACE_PRONE_ENDPOINTS,
+            get_race_condition_indicators
+        )
+        race_patterns = get_race_condition_indicators()
+        
+        # Extract endpoint patterns as "payloads"
+        financial_endpoints = []
+        for s in FINANCIAL_RACE_SCENARIOS:
+            financial_endpoints.extend(s.get("endpoint_patterns", []))
+        
+        auth_endpoints = []
+        for s in AUTHENTICATION_RACE_SCENARIOS:
+            auth_endpoints.extend(s.get("endpoint_patterns", []))
+        
+        resource_endpoints = []
+        for s in RESOURCE_RACE_SCENARIOS:
+            resource_endpoints.extend(s.get("endpoint_patterns", []))
+        
+        race_techniques = {
+            "financial_race": InjectionTechnique(
+                name="Financial Race Condition",
+                description="Double-spend, balance manipulation, discount stacking",
+                payloads=financial_endpoints,
+                indicators=race_patterns[:5],
+                severity="critical"
+            ),
+            "auth_race": InjectionTechnique(
+                name="Authentication Race Condition",
+                description="Session fixation, OTP bypass, token refresh race",
+                payloads=auth_endpoints,
+                indicators=race_patterns[:5],
+                severity="critical"
+            ),
+            "resource_race": InjectionTechnique(
+                name="Resource Race Condition",
+                description="Like spam, coupon reuse, inventory oversell",
+                payloads=resource_endpoints,
+                indicators=race_patterns[:5],
+                severity="high"
+            ),
+            "general_race": InjectionTechnique(
+                name="General Race Prone Endpoints",
+                description="Endpoints commonly vulnerable to race conditions",
+                payloads=RACE_PRONE_ENDPOINTS,
+                indicators=race_patterns[:5],
+                severity="high"
+            ),
+        }
+        techniques[InjectionType.RACE_CONDITION.value] = race_techniques
+    except ImportError:
+        pass  # Race condition payloads not available
     
     return techniques
 

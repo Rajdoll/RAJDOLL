@@ -470,6 +470,112 @@ class SimpleLLMClient:
 
         return text.strip()
 
+    async def summarize_agent_findings(
+        self,
+        agent_name: str,
+        raw_outputs: str,
+        task_tree: str = "",
+    ) -> str:
+        """Summarize an agent's raw tool outputs into a concise finding summary.
+
+        Inspired by HackSynth's Summarizer module — compresses verbose tool
+        output so subsequent agents receive dense, high-signal context.
+
+        Args:
+            agent_name: Name of the agent that produced the outputs
+            raw_outputs: Concatenated raw outputs from the agent's tools (truncated)
+            task_tree: Current task tree string for context
+
+        Returns:
+            Concise summary string (target ~200-400 words)
+        """
+        # Truncate raw outputs to avoid exceeding context window
+        max_input = 6000
+        if len(raw_outputs) > max_input:
+            raw_outputs = raw_outputs[:max_input] + "\n... [truncated]"
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a penetration testing report summarizer. "
+                    "Given raw tool outputs from a security testing agent, produce a CONCISE summary. "
+                    "Focus on:\n"
+                    "1. Vulnerabilities found (with severity and affected endpoint)\n"
+                    "2. Important observations for subsequent testing agents\n"
+                    "3. Endpoints or parameters that need further investigation\n"
+                    "Do NOT include raw tool output. Keep the summary under 300 words. "
+                    "Use bullet points. Be factual — do not speculate."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Agent: {agent_name}\n\n"
+                    f"Current Testing Status:\n{task_tree}\n\n"
+                    f"Raw Tool Outputs:\n{raw_outputs}\n\n"
+                    "Produce a concise summary of findings and observations."
+                ),
+            },
+        ]
+        try:
+            response = await self.chat_completion(messages, max_tokens=600, temperature=0.3)
+            return self._strip_thinking_tags(response)
+        except Exception as e:
+            print(f"[SimpleLLMClient] summarize_agent_findings failed: {e}")
+            # Fallback: return truncated raw output
+            return raw_outputs[:1000]
+
+    async def analyze_all_findings(
+        self,
+        cumulative_summary: str,
+        task_tree: str,
+        target: str = "",
+    ) -> str:
+        """Final analysis: correlate findings across all agents, identify attack
+        chains, and flag likely false positives.
+
+        Called once at the end of the scan, before report generation.
+
+        Returns:
+            Analysis string with attack chains, confidence adjustments, and
+            prioritized remediation recommendations.
+        """
+        max_input = 8000
+        if len(cumulative_summary) > max_input:
+            cumulative_summary = cumulative_summary[:max_input] + "\n... [truncated]"
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a senior penetration tester reviewing findings from a multi-agent "
+                    "security assessment. Your tasks:\n"
+                    "1. ATTACK CHAINS: Identify how individual vulnerabilities combine into "
+                    "   multi-step attack paths (e.g., SQLi + Auth Bypass = Account Takeover)\n"
+                    "2. FALSE POSITIVES: Flag findings that are likely false positives with reasoning\n"
+                    "3. SEVERITY ADJUSTMENT: Re-assess severity considering the full context\n"
+                    "4. PRIORITIZED REMEDIATION: Top 5 fixes ordered by impact\n"
+                    "Be concise and actionable."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Target: {target}\n\n"
+                    f"Testing Status:\n{task_tree}\n\n"
+                    f"Cumulative Findings Summary:\n{cumulative_summary}\n\n"
+                    "Provide your analysis."
+                ),
+            },
+        ]
+        try:
+            response = await self.chat_completion(messages, max_tokens=1000, temperature=0.3)
+            return self._strip_thinking_tags(response)
+        except Exception as e:
+            print(f"[SimpleLLMClient] analyze_all_findings failed: {e}")
+            return f"Analysis failed: {e}"
+
     def _get_few_shot_examples(self, agent_name: str) -> str:
         """
         Provide few-shot examples for intelligent tool selection based on agent type.

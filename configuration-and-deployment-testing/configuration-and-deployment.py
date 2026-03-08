@@ -776,6 +776,255 @@ async def test_cloud_storage(domain: str, auth_session: Optional[Dict[str, Any]]
         return {"status": "error", "message": str(e)}
 
 
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_sensitive_file_extensions(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-CONF-03: Test File Extensions Handling for Sensitive Information.
+    Checks if the server exposes backup files, source code, or config files
+    with sensitive extensions (.bak, .old, .swp, .env, .config, etc.).
+    """
+    try:
+        findings = []
+        base = url.rstrip('/')
+
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        # Sensitive file paths to check
+        sensitive_files = [
+            # Backup / source files
+            ("/index.php.bak", "Backup file"), ("/index.php.old", "Old file"),
+            ("/index.php~", "Editor backup"), ("/index.php.swp", "Vim swap file"),
+            ("/web.config", "IIS config"), ("/web.config.bak", "IIS config backup"),
+            ("/.env", "Environment variables"), ("/.env.bak", "Env backup"),
+            ("/config.yml", "YAML config"), ("/config.json", "JSON config"),
+            ("/database.yml", "Database config"), ("/settings.py", "Django settings"),
+            ("/wp-config.php.bak", "WordPress config backup"),
+            # Source code / debug
+            ("/.git/HEAD", "Git repository"), ("/.svn/entries", "SVN repository"),
+            ("/.DS_Store", "macOS directory listing"), ("/Thumbs.db", "Windows thumbnails"),
+            ("/phpinfo.php", "PHP info page"), ("/info.php", "PHP info page"),
+            ("/server-status", "Apache status"), ("/server-info", "Apache info"),
+            # Package managers
+            ("/package.json", "Node.js dependencies"), ("/composer.json", "PHP dependencies"),
+            ("/Gemfile", "Ruby dependencies"), ("/requirements.txt", "Python dependencies"),
+            # Logs
+            ("/error.log", "Error log"), ("/access.log", "Access log"),
+            ("/debug.log", "Debug log"), ("/app.log", "Application log"),
+        ]
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            for path, file_type in sensitive_files:
+                try:
+                    resp = await client.get(f"{base}{path}")
+                    if resp.status_code == 200 and len(resp.text) > 10:
+                        # Verify it's not a generic error page
+                        content = resp.text[:500].lower()
+                        if '404' not in content and 'not found' not in content:
+                            severity = "Critical" if any(kw in path for kw in ['.env', 'config', '.git', 'phpinfo']) else "High"
+                            findings.append({
+                                "path": path,
+                                "type": file_type,
+                                "status_code": resp.status_code,
+                                "content_length": len(resp.text),
+                                "severity": severity,
+                                "evidence": resp.text[:200],
+                                "description": f"Sensitive file accessible: {file_type}"
+                            })
+                except Exception:
+                    continue
+
+        return {"status": "success", "data": {
+            "files_tested": len(sensitive_files),
+            "vulnerabilities_found": len(findings),
+            "findings": findings,
+            "description": "Exposed sensitive files can reveal credentials, source code, and internal configuration"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_hsts(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-CONF-07: Test HTTP Strict Transport Security (HSTS).
+    Checks for the presence and correctness of the Strict-Transport-Security header.
+    """
+    try:
+        findings = []
+
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Test HTTPS endpoint
+            https_url = url.replace("http://", "https://") if url.startswith("http://") else url
+            try:
+                resp = await client.get(https_url)
+                hsts = resp.headers.get("strict-transport-security", "")
+
+                if not hsts:
+                    findings.append({
+                        "type": "missing_hsts",
+                        "severity": "High",
+                        "description": "Strict-Transport-Security header is missing",
+                        "recommendation": "Add: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
+                    })
+                else:
+                    # Parse HSTS directives
+                    import re
+                    max_age_match = re.search(r'max-age=(\d+)', hsts, re.IGNORECASE)
+                    max_age = int(max_age_match.group(1)) if max_age_match else 0
+
+                    if max_age < 15768000:  # Less than 6 months
+                        findings.append({
+                            "type": "weak_hsts_max_age",
+                            "severity": "Medium",
+                            "description": f"HSTS max-age too short: {max_age}s (recommended >= 31536000)",
+                            "current_value": hsts
+                        })
+
+                    if "includesubdomains" not in hsts.lower():
+                        findings.append({
+                            "type": "hsts_missing_subdomains",
+                            "severity": "Low",
+                            "description": "HSTS missing includeSubDomains directive",
+                            "current_value": hsts
+                        })
+
+                    if "preload" not in hsts.lower():
+                        findings.append({
+                            "type": "hsts_missing_preload",
+                            "severity": "Info",
+                            "description": "HSTS missing preload directive",
+                            "current_value": hsts
+                        })
+            except Exception:
+                pass
+
+            # Test HTTP → HTTPS redirect
+            http_url = url.replace("https://", "http://") if url.startswith("https://") else url
+            try:
+                resp = await client.get(http_url)
+                if resp.status_code not in (301, 302, 307, 308):
+                    findings.append({
+                        "type": "no_https_redirect",
+                        "severity": "High",
+                        "description": "HTTP does not redirect to HTTPS",
+                        "status_code": resp.status_code
+                    })
+                elif resp.status_code == 302:
+                    findings.append({
+                        "type": "temporary_redirect",
+                        "severity": "Low",
+                        "description": "HTTP→HTTPS uses 302 (temporary) instead of 301 (permanent)",
+                    })
+            except Exception:
+                pass
+
+        return {"status": "success", "data": {
+            "vulnerabilities_found": len(findings),
+            "findings": findings,
+            "description": "HSTS prevents SSL stripping attacks and ensures HTTPS-only communication"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_subdomain_takeover(domain: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-CONF-10: Test for Subdomain Takeover.
+    Checks common subdomains for dangling DNS records that could be taken over.
+    """
+    try:
+        import socket
+        findings = []
+
+        common_subdomains = [
+            "www", "mail", "ftp", "blog", "dev", "staging", "test", "api",
+            "cdn", "static", "assets", "admin", "portal", "app", "m",
+            "shop", "store", "docs", "wiki", "status", "beta", "demo",
+        ]
+
+        # Cloud provider fingerprints indicating potential takeover
+        takeover_fingerprints = {
+            "GitHub Pages": ["There isn't a GitHub Pages site here"],
+            "Heroku": ["No such app", "no-such-app"],
+            "AWS S3": ["NoSuchBucket", "The specified bucket does not exist"],
+            "Azure": ["404 Web Site not found"],
+            "Shopify": ["Sorry, this shop is currently unavailable"],
+            "Fastly": ["Fastly error: unknown domain"],
+            "Pantheon": ["404 error unknown site"],
+            "Tumblr": ["There's nothing here"],
+            "Zendesk": ["Help Center Closed"],
+        }
+
+        req_kwargs = {"timeout": 5, "verify": False, "follow_redirects": True}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            for sub in common_subdomains:
+                fqdn = f"{sub}.{domain}"
+                try:
+                    # DNS resolution check
+                    try:
+                        socket.getaddrinfo(fqdn, 80)
+                    except socket.gaierror:
+                        # NXDOMAIN — check if CNAME exists (dangling)
+                        findings.append({
+                            "subdomain": fqdn,
+                            "type": "nxdomain",
+                            "severity": "Info",
+                            "description": f"Subdomain {fqdn} does not resolve (potential dangling CNAME)"
+                        })
+                        continue
+
+                    # Check if the subdomain serves content indicating takeover
+                    for scheme in ["https", "http"]:
+                        try:
+                            resp = await client.get(f"{scheme}://{fqdn}")
+                            body = resp.text
+
+                            for provider, fingerprints in takeover_fingerprints.items():
+                                for fp in fingerprints:
+                                    if fp in body:
+                                        findings.append({
+                                            "subdomain": fqdn,
+                                            "provider": provider,
+                                            "type": "subdomain_takeover",
+                                            "severity": "Critical",
+                                            "description": f"Potential subdomain takeover on {provider}",
+                                            "evidence": fp,
+                                            "recommendation": f"Remove dangling DNS record or claim the resource on {provider}"
+                                        })
+                            break  # If https works, skip http
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+
+        return {"status": "success", "data": {
+            "subdomains_tested": len(common_subdomains),
+            "vulnerabilities_found": len([f for f in findings if f.get("severity") in ("Critical", "High")]),
+            "findings": findings,
+            "description": "Subdomain takeover allows attackers to serve malicious content on trusted domains"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # if __name__ == "__main__":  # REMOVED: Using JSON-RPC adapter
 #     mcp.run(transport='stdio')
 

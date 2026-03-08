@@ -15,7 +15,9 @@ REACT_MODE_ENABLED = os.getenv("REACT_MODE", "true").lower() == "true"
 REACT_MAX_ITERATIONS = int(os.getenv("REACT_MAX_ITERATIONS", "3"))
 
 # Performance caps to prevent combinatorial explosion (configurable via env vars)
-MAX_PRIORITY_URLS = int(os.getenv("MAX_PRIORITY_URLS", "10"))
+# With ReAct mode (3 LLM calls/test × ~60s each), budget per URL = ~540s.
+# 5 URLs × 3 tests × 3 iterations × 60s = 2700s = exactly the timeout limit.
+MAX_PRIORITY_URLS = int(os.getenv("MAX_PRIORITY_URLS", "5"))
 MAX_TESTS_PER_URL = int(os.getenv("MAX_TESTS_PER_URL", "3"))
 
 
@@ -415,13 +417,9 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         # ✨ FULLY LLM-DRIVEN TEST EXECUTION (NO HARDCODED LOGIC)
         # ============================================================================
 
-        print(f"🔍 EXEC-LOOP-1: About to log execution header", file=sys.stderr, flush=True)
         self.log("info", "=" * 60)
-        print(f"🔍 EXEC-LOOP-2: About to log 'EXECUTING LLM-DRIVEN TEST PLAN'", file=sys.stderr, flush=True)
         self.log("info", "🤖 EXECUTING LLM-DRIVEN TEST PLAN")
-        print(f"🔍 EXEC-LOOP-3: Execution header logged", file=sys.stderr, flush=True)
         self.log("info", "=" * 60)
-        print(f"🔍 EXEC-LOOP-4: About to enter for loop, priority_urls length = {len(priority_urls)}", file=sys.stderr, flush=True)
 
         # Track findings across all tests
         all_findings = {
@@ -521,7 +519,6 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             if _skip_agent:
                 break
 
-        print(f"🔍 EXEC-LOOP-7: FOR LOOP COMPLETED - tested {len(priority_urls)} URLs", file=sys.stderr, flush=True)
         # Report all findings
         self._report_all_findings(all_findings)
 
@@ -530,6 +527,48 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         self.log("info", f"   Total URLs tested: {len(capped_urls)}")
         self.log("info", f"   Total findings: {sum(len(v) for v in all_findings.values())}")
         self.log("info", "=" * 60)
+
+        # ===== STANDALONE WSTG TESTS (not per-parameter injection) =====
+
+        # WSTG-INPV-03: HTTP Verb Tampering
+        if self.should_run_tool("test_http_verb_tampering"):
+            try:
+                self.log("info", "🔍 Testing HTTP Verb Tampering (WSTG-INPV-03)")
+                result = await self.execute_tool(
+                    server="input-validation-testing",
+                    tool="test_http_verb_tampering",
+                    args={"url": target},
+                    auth_session=auth_data, timeout=120
+                )
+                if isinstance(result, dict) and result.get("status") == "success":
+                    data = result.get("data", {})
+                    findings = data.get("findings", [])
+                    if findings:
+                        critical = [f for f in findings if f.get("severity") == "Critical"]
+                        severity = "critical" if critical else "high"
+                        self.add_finding("WSTG-INPV-03", f"HTTP Verb Tampering: {len(findings)} issue(s)",
+                                       severity=severity, evidence={"findings": findings[:5]})
+            except Exception as e:
+                self.log("warning", f"test_http_verb_tampering failed: {e}")
+
+        # WSTG-INPV-16: HTTP Incoming Requests
+        if self.should_run_tool("test_http_incoming_requests"):
+            try:
+                self.log("info", "🔍 Testing HTTP Incoming Requests (WSTG-INPV-16)")
+                result = await self.execute_tool(
+                    server="input-validation-testing",
+                    tool="test_http_incoming_requests",
+                    args={"url": target},
+                    auth_session=auth_data, timeout=120
+                )
+                if isinstance(result, dict) and result.get("status") == "success":
+                    data = result.get("data", {})
+                    findings = data.get("findings", [])
+                    if findings:
+                        self.add_finding("WSTG-INPV-16", f"HTTP header manipulation: {len(findings)} issue(s)",
+                                       severity="high", evidence={"findings": findings[:5]})
+            except Exception as e:
+                self.log("warning", f"test_http_incoming_requests failed: {e}")
 
     # ============================================================================
     # 🔧 LLM-DRIVEN TEST EXECUTION METHODS
@@ -597,22 +636,16 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         return result
 
     async def _execute_sqli_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
-        """Execute SQL injection test on LLM-selected URL with LLM-selected parameters."""
-        import sys
-        print(f"🔥🔥🔥🔥 FUNCTION ENTRY: _execute_sqli_test called with url={url}", file=sys.stderr, flush=True)
+        """Execute SQL injection test on the specific URL passed by the outer loop."""
         self.log("info", f"   🔍 SQLi testing: {url}")
 
         if not isinstance(parameters, list) or not parameters:
             parameters = ['id', 'q', 'search']
 
-        # ============================================================================
-        # 🧠 ReAct MODE: Use iterative LLM-guided testing
-        # ============================================================================
+        # ReAct MODE: iterative LLM-guided testing (skip traditional to avoid duplication)
         if REACT_MODE_ENABLED:
             self.log("info", f"   🧠 Using ReAct iterative testing mode")
-            
             react_result = await self._execute_react_test(url, "sqli", parameters, auth_data)
-            
             if react_result.get("vulnerabilities"):
                 for vuln in react_result["vulnerabilities"]:
                     all_findings['sqli'].append({
@@ -626,69 +659,35 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                         "react_mode": True
                     })
                 self.log("info", f"      ✅ ReAct found {len(react_result['vulnerabilities'])} SQLi vulnerabilities!")
-            
-            # Still run traditional tests for comprehensive coverage
-            self.log("info", f"   📋 Also running traditional SQLi tests for comparison...")
+            return  # ReAct already tested this URL — skip traditional tests
 
-        # ============================================================================
-        # PHASE 1: Test POST endpoints with JSON bodies (CRITICAL FIX)
-        # ============================================================================
-        print(f"🔥🔥🔥 PHASE 1 SQLI: ENTERED - url={url}", file=sys.stderr, flush=True)
-        self.log("warning", f"🔥🔥🔥 PHASE 1 SQLI: ENTERED - url={url}")
+        # Test POST body if URL looks like a POST endpoint
+        post_data = self._guess_post_body(url)
+        if post_data:
+            result = await self.execute_tool(
+                server="input-validation-testing",
+                tool="test_sqli",
+                args={
+                    "url": url,
+                    "method": "POST",
+                    "post_data": post_data,
+                    "content_type": "application/json"
+                },
+                auth_session=auth_data,
+                timeout=600
+            )
+            if isinstance(result, dict) and result.get("status") == "success":
+                data = result.get("data", {})
+                if data.get("vulnerable"):
+                    all_findings['sqli'].extend(data.get('findings', []))
+                    self.log("info", f"      ✓ SQL injection found in POST endpoint!")
 
-        print(f"🔥 DEBUG-A: About to get discovered_endpoints from shared_context", file=sys.stderr, flush=True)
-        # Get discovered URLs from shared context
-        discovered_endpoints = self.shared_context.get("discovered_endpoints", {})
-        print(f"🔥 DEBUG-B: Got discovered_endpoints, type={type(discovered_endpoints)}", file=sys.stderr, flush=True)
-        self.log("warning", f"🔥 PHASE 1: discovered_endpoints type={type(discovered_endpoints)}, keys={list(discovered_endpoints.keys()) if isinstance(discovered_endpoints, dict) else 'N/A'}")
-
-        discovered_urls = []
-        if discovered_endpoints and discovered_endpoints.get("endpoints"):
-            discovered_urls = [ep.get("url", "") for ep in discovered_endpoints["endpoints"]]
-            self.log("warning", f"🔥 PHASE 1: Extracted {len(discovered_urls)} discovered URLs from shared context")
-        else:
-            self.log("warning", f"🔥 PHASE 1: NO endpoints in shared context, will use current URL only")
-
-        # If no discovered URLs, use the current URL
-        if not discovered_urls:
-            discovered_urls = [url]
-            self.log("warning", f"🔥 PHASE 1: Using current URL as fallback: {url}")
-
-        self.log("warning", f"🔥 PHASE 1: About to call _get_priority_post_endpoints with {len(discovered_urls)} URLs")
-
-        # Identify priority POST endpoints for SQLi testing
-        post_endpoints = self._get_priority_post_endpoints(discovered_urls, 'sqli')
-
-        self.log("warning", f"🔥🔥🔥 PHASE 1: _get_priority_post_endpoints RETURNED {len(post_endpoints)} endpoints")
-
-        if post_endpoints:
-            self.log("info", f"      Testing {len(post_endpoints)} priority POST endpoints for SQLi")
-            for ep_info in post_endpoints[:10]:  # Test top 10 POST endpoints
-                result = await self.execute_tool(
-                    server="input-validation-testing",
-                    tool="test_sqli",
-                    args={
-                        "url": ep_info['url'],
-                        "method": "POST",
-                        "post_data": ep_info['data'],
-                        "content_type": "application/json"
-                    },
-                    auth_session=auth_data,
-                    timeout=600
-                )
-
-                if isinstance(result, dict) and result.get("status") == "success":
-                    data = result.get("data", {})
-                    if data.get("vulnerable"):
-                        all_findings['sqli'].extend(data.get('findings', []))
-                        self.log("info", f"      ✓ SQL injection found in POST endpoint!")
-
-        # PHASE 2: Test GET parameters (existing logic)
+        # Test GET parameters
         test_urls = []
         if '?' in url:
             test_urls.append(url)
         else:
-            for param in parameters[:3]:  # Use LLM's top 3 parameters
+            for param in parameters[:3]:
                 test_urls.append(f"{url}?{param}=1")
 
         for test_url in test_urls:
@@ -699,7 +698,6 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 auth_session=auth_data,
                 timeout=600
             )
-
             if isinstance(result, dict) and result.get("status") == "success":
                 data = result.get("data", {})
                 if data.get("vulnerable"):
@@ -707,20 +705,16 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     self.log("info", f"      ✓ SQL injection found!")
 
     async def _execute_xss_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
-        """Execute XSS test on LLM-selected URL with LLM-selected parameters."""
+        """Execute XSS test on the specific URL passed by the outer loop."""
         self.log("info", f"   🔍 XSS testing: {url}")
 
         if not isinstance(parameters, list) or not parameters:
             parameters = ['q', 'search', 'query']
 
-        # ============================================================================
-        # 🧠 ReAct MODE: Use iterative LLM-guided XSS testing
-        # ============================================================================
+        # ReAct MODE: iterative LLM-guided XSS testing
         if REACT_MODE_ENABLED:
             self.log("info", f"   🧠 Using ReAct iterative testing mode for XSS")
-            
             react_result = await self._execute_react_test(url, "xss", parameters, auth_data)
-            
             if react_result.get("vulnerabilities"):
                 for vuln in react_result["vulnerabilities"]:
                     all_findings['xss'].append({
@@ -734,58 +728,30 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                         "react_mode": True
                     })
                 self.log("info", f"      ✅ ReAct found {len(react_result['vulnerabilities'])} XSS vulnerabilities!")
-            
-            self.log("info", f"   📋 Also running traditional XSS tests for comparison...")
+            return  # ReAct already tested this URL — skip traditional tests
 
-        # PHASE 1: Test POST endpoints with JSON bodies (CRITICAL FIX)
-        self.log("warning", f"🔥🔥🔥 PHASE 1 XSS: ENTERED - url={url}")
+        # Test POST body if URL looks like a POST endpoint
+        post_data = self._guess_post_body(url)
+        if post_data:
+            result = await self.execute_tool(
+                server="input-validation-testing",
+                tool="test_xss_reflected",
+                args={
+                    "url": url,
+                    "method": "POST",
+                    "post_data": post_data,
+                    "content_type": "application/json"
+                },
+                auth_session=auth_data,
+                timeout=120
+            )
+            if isinstance(result, dict) and result.get("status") == "success":
+                data = result.get("data", {})
+                if data.get("vulnerable"):
+                    all_findings['xss'].extend(data.get('findings', []))
+                    self.log("info", f"      ✓ XSS found in POST endpoint!")
 
-        # Get discovered URLs from shared context
-        discovered_endpoints = self.shared_context.get("discovered_endpoints", {})
-        self.log("warning", f"🔥 PHASE 1 XSS: discovered_endpoints type={type(discovered_endpoints)}, keys={list(discovered_endpoints.keys()) if isinstance(discovered_endpoints, dict) else 'N/A'}")
-
-        discovered_urls = []
-        if discovered_endpoints and discovered_endpoints.get("endpoints"):
-            discovered_urls = [ep.get("url", "") for ep in discovered_endpoints["endpoints"]]
-            self.log("warning", f"🔥 PHASE 1 XSS: Extracted {len(discovered_urls)} discovered URLs from shared context")
-        else:
-            self.log("warning", f"🔥 PHASE 1 XSS: NO endpoints in shared context, will use current URL only")
-
-        # If no discovered URLs, use the current URL
-        if not discovered_urls:
-            discovered_urls = [url]
-            self.log("warning", f"🔥 PHASE 1 XSS: Using current URL as fallback: {url}")
-
-        self.log("warning", f"🔥 PHASE 1 XSS: About to call _get_priority_post_endpoints with {len(discovered_urls)} URLs")
-
-        # Identify priority POST endpoints for XSS testing
-        post_endpoints = self._get_priority_post_endpoints(discovered_urls, 'xss')
-
-        self.log("warning", f"🔥🔥🔥 PHASE 1 XSS: _get_priority_post_endpoints RETURNED {len(post_endpoints)} endpoints")
-
-        if post_endpoints:
-            self.log("info", f"      Testing {len(post_endpoints)} priority POST endpoints for XSS")
-            for ep_info in post_endpoints[:10]:  # Test top 10 POST endpoints
-                result = await self.execute_tool(
-                    server="input-validation-testing",
-                    tool="test_xss_reflected",
-                    args={
-                        "url": ep_info['url'],
-                        "method": "POST",
-                        "post_data": ep_info['data'],
-                        "content_type": "application/json"
-                    },
-                    auth_session=auth_data,
-                    timeout=120
-                )
-
-                if isinstance(result, dict) and result.get("status") == "success":
-                    data = result.get("data", {})
-                    if data.get("vulnerable"):
-                        all_findings['xss'].extend(data.get('findings', []))
-                        self.log("info", f"      ✓ XSS found in POST endpoint!")
-
-        # PHASE 2: Test GET parameters (existing logic)
+        # Test GET parameters
         test_urls = []
         if '?' in url:
             test_urls.append(url)
@@ -801,7 +767,6 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 auth_session=auth_data,
                 timeout=120
             )
-
             if isinstance(result, dict) and result.get("status") == "success":
                 data = result.get("data", {})
                 if data.get("vulnerable"):
@@ -833,8 +798,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                         "react_mode": True
                     })
                 self.log("info", f"      ✅ ReAct found {len(react_result['vulnerabilities'])} LFI vulnerabilities!")
-            
-            self.log("info", f"   📋 Also running traditional LFI tests for comparison...")
+            return  # ReAct already tested this URL — skip traditional tests
 
         # Traditional LFI test
         result = await self.execute_tool(
@@ -1784,6 +1748,17 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         self.log("info", f"Identified {len(priority_endpoints)} priority POST endpoints for {test_type} testing")
         return priority_endpoints
     
+    def _guess_post_body(self, url: str) -> dict | None:
+        """Return POST body if URL looks like a POST endpoint, else None."""
+        url_lower = url.lower()
+        # Only URLs with REST/API patterns that typically accept POST
+        post_keywords = ['login', 'auth', 'signin', 'signup', 'register',
+                         'feedback', 'comment', 'review', 'message', 'post',
+                         'search', 'query', 'user', 'profile', 'order', 'cart']
+        if not any(kw in url_lower for kw in post_keywords):
+            return None
+        return self._infer_post_data(url, 'sqli')
+
     def _infer_post_data(self, url: str, test_type: str) -> dict:
         """Infer likely POST data structure based on URL patterns"""
         url_lower = url.lower()
@@ -1865,7 +1840,18 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
                 'severity': 'High',
                 'owasp': 'WSTG-INPV-15'
             },
-			
+            'test_http_verb_tampering': {
+                'priority': 'HIGH',
+                'description': 'HTTP Verb Tampering for access control bypass',
+                'severity': 'High',
+                'owasp': 'WSTG-INPV-03'
+            },
+            'test_http_incoming_requests': {
+                'priority': 'HIGH',
+                'description': 'HTTP header manipulation (Host injection, IP spoofing)',
+                'severity': 'High',
+                'owasp': 'WSTG-INPV-16'
+            },
         }
 
     def _get_target(self) -> str | None:
@@ -1879,21 +1865,5 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         """Override BaseAgent method - return list of tool names for LLM planning"""
         return list(self._get_tool_info().keys())
 
-    def should_run_tool(self, tool_name: str) -> bool:
-        """Override to FORCE critical input validation tools regardless of LLM plan"""
-        import sys
-
-        # CRITICAL TOOLS: Always run these for comprehensive input validation coverage
-        # These are the most common and high-impact vulnerabilities found across web applications
-        CRITICAL_TOOLS = [
-            'test_sqli',           # SQL injection (OWASP A03:2021 - Injection)
-            'test_xss_reflected',  # XSS (OWASP A03:2021 - Injection)
-            'test_lfi',            # Path traversal / LFI (OWASP A01:2021 - Broken Access Control)
-        ]
-
-        if tool_name in CRITICAL_TOOLS:
-            print(f"🔥 {self.agent_name}: Tool {tool_name} FORCED - CRITICAL for input validation", file=sys.stderr, flush=True)
-            return True
-
-        # For non-critical tools, use base agent logic
-        return super().should_run_tool(tool_name)
+    # should_run_tool override REMOVED — base class already forces CRITICAL priority
+    # tools via ADAPTIVE_MODE (balanced→CRITICAL, aggressive→CRITICAL+HIGH)

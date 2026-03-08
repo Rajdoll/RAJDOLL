@@ -258,11 +258,32 @@ async def test_jwt_weakness(token: str, target_url: str) -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"[test_jwt_weakness] Algorithm confusion test failed: {e}")
 
-        # TEST 3: Weak secret brute force
+        # TEST 3: Weak secret brute force (comprehensive list)
         common_secrets = [
-            "secret", "password", "qwerty", "123456", "admin", "jwt",
-            "key", "test", "default", "changeme", "letmein", "welcome",
-            "monkey", "dragon", "master", "abc123", "superman", "batman"
+            # Most common JWT secrets
+            "secret", "secret123", "secretkey", "secret_key", "jwt_secret", "jwt-secret", "jwtsecret", "jwtSecret", "JWT_SECRET",
+            # Application defaults
+            "your-256-bit-secret", "your-secret-key", "your_secret_key", "mysecret", "mysecretkey", "my-secret-key", "my_secret_key", "mySecretKey",
+            # Framework defaults
+            "changeme", "changethis", "please-change-me", "default", "defaultsecret", "default_secret",
+            # Common passwords
+            "password", "password123", "123456", "12345678", "admin", "admin123", "administrator", "root", "toor", "qwerty", "letmein", "welcome", "monkey", "dragon", "master", "login",
+            # Development/test
+            "test", "testing", "test123", "testkey", "dev", "development", "devkey", "debug", "demo", "example", "sample",
+            # API/Token patterns
+            "api", "apikey", "api_key", "api-key", "api123", "token", "tokenkey", "token123", "auth", "authkey", "authentication",
+            # Random looking but common
+            "abc123", "abcdef", "qwerty123", "asdfgh", "zxcvbn", "1234567890",
+            # Base64 common values
+            "c2VjcmV0", "cGFzc3dvcmQ=", "YWRtaW4=",
+            # Hex patterns
+            "deadbeef", "cafebabe", "0123456789abcdef",
+            # Uber secret patterns
+            "supersecret", "super_secret", "super-secret", "topsecret", "top_secret", "verysecret",
+            # Key patterns
+            "key", "key123", "privatekey", "private_key", "private-key", "signingkey", "signing_key", "signing-key",
+            # Framework names
+            "node", "nodejs", "express", "flask", "django", "rails", "spring", "laravel"
         ]
 
         for secret in common_secrets:

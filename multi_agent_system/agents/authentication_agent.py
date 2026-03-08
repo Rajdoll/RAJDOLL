@@ -323,6 +323,29 @@ Write to shared_context:
 			except Exception as e:
 				self.log("warning", f"test_alternative_channel_auth failed: {e}")
 
+		# WSTG-ATHN-06: Auth bypass via schema manipulation
+		if self.should_run_tool("test_auth_bypass_schema"):
+			try:
+				res = await self.run_tool_with_timeout(
+					client.call_tool(
+						server="authentication-testing",
+						tool="test_auth_bypass_schema",
+						args={"url": target}, auth_session=auth_data
+					),
+					timeout=120
+				)
+				if isinstance(res, dict) and res.get("status") == "success":
+					data = res.get("data", {})
+					if data.get("vulnerabilities_found", 0) > 0:
+						for finding in data.get("findings", [])[:5]:
+							severity_map = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
+							safe_evidence = {"type": finding.get("type", ""), "path": finding.get("path", "")}
+							self.add_finding("WSTG-ATHN-06", f"Auth bypass: {finding.get('description', 'Schema manipulation')}",
+										   severity=severity_map.get(finding.get("severity"), "high"),
+										   evidence=safe_evidence)
+			except Exception as e:
+				self.log("warning", f"test_auth_bypass_schema failed: {e}")
+
 		self.log("info", "Authentication checks complete (OPSI B tools included)")
 
 	def _get_available_tools(self) -> list[str]:
@@ -334,7 +357,8 @@ Write to shared_context:
 			'test_password_reset',
 			'test_security_questions',
 			'test_cache_headers',
-			'test_alternative_channel_auth'
+			'test_alternative_channel_auth',
+			'test_auth_bypass_schema',
 		]
 
 	def _get_target(self) -> str | None:

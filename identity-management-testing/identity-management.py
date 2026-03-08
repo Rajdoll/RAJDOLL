@@ -592,6 +592,130 @@ async def test_username_policy(base_url: str, test_usernames: List[str] = None, 
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_weak_username_policy(base_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-IDNT-05: Test for Weak or Unenforced Username Policy.
+    Checks if the application enforces minimum username requirements
+    (length, character set, uniqueness, reserved names).
+    """
+    try:
+        findings = []
+
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        # Weak usernames to test policy enforcement
+        weak_usernames = [
+            ("a", "single_char", "Username too short (1 char)"),
+            ("ab", "two_chars", "Username too short (2 chars)"),
+            ("123", "numeric_only", "Numeric-only username"),
+            ("   ", "whitespace_only", "Whitespace-only username"),
+            ("admin", "reserved_name", "Reserved/privileged username"),
+            ("root", "reserved_name", "Reserved/privileged username"),
+            ("system", "reserved_name", "Reserved system username"),
+            ("<script>", "special_chars", "Special characters in username"),
+            ("user@evil", "injection", "Email-like injection in username"),
+            ("a" * 256, "oversized", "Extremely long username (256 chars)"),
+        ]
+
+        register_endpoints = [
+            f"{base_url.rstrip('/')}/api/Users/",
+            f"{base_url.rstrip('/')}/register",
+            f"{base_url.rstrip('/')}/api/register",
+            f"{base_url.rstrip('/')}/signup",
+        ]
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Find registration endpoint
+            reg_url = None
+            for ep in register_endpoints:
+                try:
+                    resp = await client.get(ep)
+                    if resp.status_code < 500:
+                        reg_url = ep
+                        break
+                except Exception:
+                    continue
+
+            if not reg_url:
+                # Try POST to first endpoint anyway
+                reg_url = register_endpoints[0]
+
+            accepted_weak = []
+            for username, category, description in weak_usernames:
+                try:
+                    payloads = [
+                        {"username": username, "email": f"test_{category}@test.com", "password": "Test12345!", "passwordRepeat": "Test12345!"},
+                        {"email": f"{username}@test.com", "password": "Test12345!", "passwordRepeat": "Test12345!"},
+                    ]
+                    for payload in payloads:
+                        resp = await client.post(reg_url, json=payload)
+                        # If registration succeeded (2xx) or no validation error
+                        if resp.status_code in (200, 201):
+                            accepted_weak.append({
+                                "username": username[:50],
+                                "category": category,
+                                "description": description,
+                                "status_code": resp.status_code,
+                            })
+                            break
+                        # Check if response body indicates success
+                        try:
+                            body = resp.json()
+                            if body.get("status") == "success" or "id" in body:
+                                accepted_weak.append({
+                                    "username": username[:50],
+                                    "category": category,
+                                    "description": description,
+                                    "status_code": resp.status_code,
+                                })
+                                break
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+            if accepted_weak:
+                findings.append({
+                    "type": "weak_username_policy",
+                    "severity": "Medium",
+                    "description": "Application accepts weak or invalid usernames",
+                    "evidence": accepted_weak[:5],
+                    "recommendation": "Enforce minimum username length, character restrictions, and block reserved names"
+                })
+
+            # Test duplicate username handling
+            try:
+                dup_payload = {"username": "testdup123", "email": "testdup123@test.com", "password": "Test12345!", "passwordRepeat": "Test12345!"}
+                resp1 = await client.post(reg_url, json=dup_payload)
+                resp2 = await client.post(reg_url, json=dup_payload)
+                if resp1.status_code in (200, 201) and resp2.status_code in (200, 201):
+                    findings.append({
+                        "type": "duplicate_username_allowed",
+                        "severity": "High",
+                        "description": "Application allows duplicate usernames",
+                        "recommendation": "Enforce unique username constraint"
+                    })
+            except Exception:
+                pass
+
+        return {"status": "success", "data": {
+            "weak_usernames_tested": len(weak_usernames),
+            "weak_accepted": len(accepted_weak) if 'accepted_weak' in dir() else 0,
+            "vulnerabilities_found": len(findings),
+            "findings": findings,
+            "description": "Weak username policies allow account enumeration, impersonation, and confusion attacks"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # Entrypoint (tidak ada perubahan)
 # if __name__ == "__main__":  # REMOVED: Using JSON-RPC adapter`n#     mcp.run(transport="stdio")
 

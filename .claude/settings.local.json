@@ -42,7 +42,18 @@
       "Bash(tee:*)",
       "Bash(bash monitor_job14.sh:*)",
       "Bash(bash monitor_job15.sh:*)",
-      "Bash(git -C /mnt/d/MCP/RAJDOLL log --oneline --since=\"2024-12-20\")"
+      "Bash(git -C /mnt/d/MCP/RAJDOLL log --oneline --since=\"2024-12-20\")",
+      "Bash(python:*)",
+      "Bash(node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh auth:*)",
+      "Skill(debug-logs)",
+      "Bash(sudo apt-get:*)",
+      "Bash(pip install:*)",
+      "Bash(docker-compose config:*)",
+      "Bash(docker network:*)"
     ]
   }
 }

@@ -103,7 +103,10 @@ async def ws_logs(ws: WebSocket, job_id: int):
 		# Connection closed or error
 		pass
 	finally:
-		await ws.close()
+		try:
+			await ws.close()
+		except RuntimeError:
+			pass
 
 
 @router.websocket("/ws/progress/{job_id}")
@@ -142,5 +145,7 @@ async def ws_progress(ws: WebSocket, job_id: int):  # pragma: no cover
 	except Exception:
 		pass
 	finally:
-		await ws.close()
-
+		try:
+			await ws.close()
+		except RuntimeError:
+			pass

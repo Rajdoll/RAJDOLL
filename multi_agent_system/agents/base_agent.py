@@ -269,6 +269,14 @@ class BaseAgent:
 		)
 		self.log("info", f"🔍 Tool plan check: exists={bool(self.tool_plan)}, type={type(self.tool_plan)}")
 
+		# Log planner context if available (cumulative summary + task tree from previous agents)
+		cum_summary = self._shared_context_snapshot.get("cumulative_summary", "")
+		task_tree_ctx = self._shared_context_snapshot.get("task_tree", "")
+		if cum_summary:
+			print(f"📋 {self.agent_name}: Received cumulative summary ({len(cum_summary)} chars) from previous agents", file=sys.stderr, flush=True)
+		if task_tree_ctx:
+			print(f"📋 {self.agent_name}: Received task tree context", file=sys.stderr, flush=True)
+
 		if not self.tool_plan or not self.tool_plan.get("tools"):
 			print(
 				f"▶▶▶ {self.agent_name}: Entering tool plan creation block (no tool_plan from Orchestrator)",
@@ -302,8 +310,15 @@ class BaseAgent:
 				}
 			else:
 				print(f"🔀 {self.agent_name}: BRANCH 2 - LLM planning enabled path", file=sys.stderr, flush=True)
+				# Enrich shared_context with cumulative summary for LLM planning
+				# This gives the LLM awareness of what previous agents found
+				planning_context = dict(self._shared_context_snapshot)
+				if cum_summary:
+					planning_context["previous_findings_summary"] = cum_summary[-3000:]  # Last 3k chars
+				if task_tree_ctx:
+					planning_context["testing_status"] = task_tree_ctx
+
 				# LLM planning enabled: Ask LLM for adaptive tool selection
-				# FIX: Do retries in-place; do not re-raise (orchestrator treats it as agent failure).
 				print(f"📋 {self.agent_name}: Available tools for LLM planning: {available_tools}", file=sys.stderr, flush=True)
 				selected = None
 				last_error: Exception | None = None
@@ -314,7 +329,7 @@ class BaseAgent:
 							selected = await asyncio.wait_for(
 								self._llm_client.select_tools_for_agent(
 									agent_name=self.agent_name,
-									shared_context=self._shared_context_snapshot,
+									shared_context=planning_context,
 									available_tools=available_tools,
 									system_prompt=getattr(self, "system_prompt", None),
 								),

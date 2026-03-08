@@ -3347,7 +3347,259 @@ async def test_sqli_post(url: str, data: Optional[Dict[str, str]] = None, conten
 
 
 # ============================================================================
-# MODULE COMPLETE: 20 comprehensive input validation tools implemented
-# Coverage: WSTG 4.7.1 - 4.7.19 (All major tests covered) + 7 tools (5 GET + 2 POST)
+# WSTG-INPV-03: Test for HTTP Verb Tampering
+# ============================================================================
+
+async def test_http_verb_tampering(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-INPV-03: Test for HTTP Verb Tampering.
+    Tests if the application responds differently to unusual HTTP methods,
+    potentially bypassing access controls or revealing hidden functionality.
+    """
+    try:
+        import httpx
+        findings = []
+
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD", "TRACE", "CONNECT"]
+        # Non-standard methods for bypass
+        non_standard = ["PROPFIND", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "ARBITRARY"]
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Baseline: GET request
+            try:
+                baseline = await client.get(url)
+                baseline_status = baseline.status_code
+            except Exception:
+                baseline_status = None
+
+            results = {}
+            for method in methods + non_standard:
+                try:
+                    resp = await client.request(method, url)
+                    results[method] = {
+                        "status_code": resp.status_code,
+                        "content_length": len(resp.text),
+                        "headers": dict(resp.headers)
+                    }
+
+                    # TRACE method enabled (XST vulnerability)
+                    if method == "TRACE" and resp.status_code == 200:
+                        findings.append({
+                            "type": "trace_enabled",
+                            "severity": "Medium",
+                            "description": "TRACE method enabled — potential Cross-Site Tracing (XST)",
+                            "evidence": resp.text[:200],
+                            "recommendation": "Disable TRACE method on the web server"
+                        })
+
+                    # Unexpected success with dangerous methods
+                    if method in ("PUT", "DELETE", "PATCH") and resp.status_code in (200, 201, 204):
+                        if baseline_status and baseline_status != resp.status_code:
+                            findings.append({
+                                "type": "dangerous_method_allowed",
+                                "method": method,
+                                "severity": "High",
+                                "description": f"{method} method accepted (status {resp.status_code})",
+                                "recommendation": f"Restrict {method} method if not required"
+                            })
+
+                    # Non-standard method accepted
+                    if method in non_standard and resp.status_code not in (400, 405, 501):
+                        findings.append({
+                            "type": "non_standard_method",
+                            "method": method,
+                            "severity": "Low",
+                            "status_code": resp.status_code,
+                            "description": f"Non-standard HTTP method {method} not rejected"
+                        })
+
+                except Exception:
+                    continue
+
+            # Check OPTIONS for allowed methods
+            if "OPTIONS" in results:
+                allow_header = results["OPTIONS"].get("headers", {}).get("allow", "")
+                if allow_header:
+                    allowed = [m.strip() for m in allow_header.split(",")]
+                    dangerous = [m for m in allowed if m in ("TRACE", "PUT", "DELETE")]
+                    if dangerous:
+                        findings.append({
+                            "type": "dangerous_methods_in_allow",
+                            "severity": "Medium",
+                            "description": f"OPTIONS reveals dangerous allowed methods: {dangerous}",
+                            "allow_header": allow_header
+                        })
+
+            # Test method override headers for access control bypass
+            if baseline_status in (401, 403):
+                override_headers = [
+                    ("X-HTTP-Method-Override", "GET"),
+                    ("X-HTTP-Method", "GET"),
+                    ("X-Method-Override", "GET"),
+                    ("_method", "GET"),
+                ]
+                for header, value in override_headers:
+                    try:
+                        resp = await client.post(url, headers={header: value})
+                        if resp.status_code == 200:
+                            findings.append({
+                                "type": "method_override_bypass",
+                                "header": header,
+                                "severity": "Critical",
+                                "description": f"Access control bypassed via {header} header",
+                                "evidence": f"POST with {header}:{value} returned 200 (baseline: {baseline_status})"
+                            })
+                    except Exception:
+                        continue
+
+        return {"status": "success", "data": {
+            "methods_tested": len(methods) + len(non_standard),
+            "vulnerabilities_found": len(findings),
+            "method_responses": {m: r["status_code"] for m, r in results.items()} if results else {},
+            "findings": findings,
+            "description": "HTTP verb tampering can bypass access controls and reveal hidden functionality"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# WSTG-INPV-16: Test for HTTP Incoming Requests
+# ============================================================================
+
+async def test_http_incoming_requests(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-INPV-16: Test for HTTP Incoming Requests.
+    Tests how the application handles manipulated HTTP headers that could
+    be used for IP spoofing, host header injection, or cache poisoning.
+    """
+    try:
+        import httpx
+        findings = []
+        base = url.rstrip('/')
+
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": False}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Baseline request
+            try:
+                baseline = await client.get(url)
+                baseline_body = baseline.text
+            except Exception:
+                baseline_body = ""
+
+            # Test 1: Host header injection
+            evil_host = "evil.example.com"
+            try:
+                resp = await client.get(url, headers={"Host": evil_host})
+                if evil_host in resp.text:
+                    findings.append({
+                        "type": "host_header_injection",
+                        "severity": "High",
+                        "description": "Application reflects injected Host header in response",
+                        "evidence": f"Injected host '{evil_host}' found in response body",
+                        "recommendation": "Validate Host header against a whitelist"
+                    })
+                # Check for redirect to injected host
+                if resp.status_code in (301, 302, 307):
+                    location = resp.headers.get("location", "")
+                    if evil_host in location:
+                        findings.append({
+                            "type": "host_header_redirect",
+                            "severity": "Critical",
+                            "description": "Application redirects to injected Host header",
+                            "evidence": f"Redirect location: {location}"
+                        })
+            except Exception:
+                pass
+
+            # Test 2: X-Forwarded-For IP spoofing
+            spoof_headers = [
+                ("X-Forwarded-For", "127.0.0.1"),
+                ("X-Forwarded-For", "10.0.0.1"),
+                ("X-Real-IP", "127.0.0.1"),
+                ("X-Originating-IP", "127.0.0.1"),
+                ("X-Client-IP", "127.0.0.1"),
+                ("True-Client-IP", "127.0.0.1"),
+                ("CF-Connecting-IP", "127.0.0.1"),
+            ]
+            for header, value in spoof_headers:
+                try:
+                    resp = await client.get(url, headers={header: value})
+                    # Check if response differs (potential IP-based access control bypass)
+                    if resp.status_code != baseline.status_code:
+                        findings.append({
+                            "type": "ip_spoofing",
+                            "header": header,
+                            "severity": "High",
+                            "description": f"Response differs with {header}: {value} (status {resp.status_code} vs {baseline.status_code})",
+                            "recommendation": "Do not trust client-supplied IP headers for access control"
+                        })
+                except Exception:
+                    continue
+
+            # Test 3: X-Forwarded-Host for cache poisoning
+            try:
+                resp = await client.get(url, headers={"X-Forwarded-Host": evil_host})
+                if evil_host in resp.text:
+                    findings.append({
+                        "type": "cache_poisoning",
+                        "severity": "High",
+                        "header": "X-Forwarded-Host",
+                        "description": "X-Forwarded-Host reflected in response (potential cache poisoning)",
+                        "evidence": f"Injected host found in response"
+                    })
+            except Exception:
+                pass
+
+            # Test 4: Referer-based access control
+            try:
+                admin_paths = ["/admin", "/administration", "/api/Users"]
+                for path in admin_paths:
+                    resp = await client.get(
+                        f"{base}{path}",
+                        headers={"Referer": f"{base}/admin"}
+                    )
+                    if resp.status_code == 200 and len(resp.text) > 50:
+                        # Compare with request without Referer
+                        resp2 = await client.get(f"{base}{path}")
+                        if resp2.status_code != 200:
+                            findings.append({
+                                "type": "referer_access_control",
+                                "severity": "High",
+                                "path": path,
+                                "description": "Access control based on Referer header (easily spoofed)",
+                            })
+            except Exception:
+                pass
+
+        return {"status": "success", "data": {
+            "vulnerabilities_found": len(findings),
+            "findings": findings,
+            "description": "Manipulated HTTP headers can bypass access controls, poison caches, and spoof client identity"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# MODULE COMPLETE: 22 comprehensive input validation tools implemented
+# Coverage: WSTG 4.7.1 - 4.7.19 (All major tests covered) + HTTP Verb Tampering + HTTP Incoming Requests
 # ============================================================================
 

@@ -961,6 +961,435 @@ async def test_shopping_cart_manipulation(
         return {"status": "error", "message": f"Shopping cart testing failed: {e}"}
 
 
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-BUSL-03: Test Integrity Checks.
+    Tests whether the application validates data integrity — e.g., can a user
+    tamper with prices, quantities, or hidden form values to bypass business rules?
+    """
+    try:
+        findings = []
+        base = url.rstrip('/')
+
+        req_kwargs = {"timeout": 15, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Test 1: Price tampering via API
+            product_endpoints = [
+                f"{base}/api/Products/1", f"{base}/api/products/1",
+                f"{base}/rest/products/1/reviews",
+            ]
+            for ep in product_endpoints:
+                try:
+                    resp = await client.get(ep)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        # Try to modify price
+                        tamper_resp = await client.put(ep, json={"price": 0.01})
+                        if tamper_resp.status_code in (200, 201):
+                            findings.append({
+                                "type": "price_tampering",
+                                "endpoint": ep,
+                                "severity": "Critical",
+                                "description": "Price can be modified via API request",
+                                "evidence": f"PUT {ep} with price=0.01 returned {tamper_resp.status_code}"
+                            })
+                except Exception:
+                    continue
+
+            # Test 2: Quantity manipulation (negative, zero, extreme)
+            basket_endpoints = [
+                f"{base}/api/BasketItems/", f"{base}/rest/basket/1",
+                f"{base}/api/cart",
+            ]
+            tamper_quantities = [
+                (-1, "negative_quantity"),
+                (0, "zero_quantity"),
+                (999999, "extreme_quantity"),
+            ]
+            for ep in basket_endpoints:
+                for qty, label in tamper_quantities:
+                    try:
+                        resp = await client.post(ep, json={"ProductId": 1, "BasketId": "1", "quantity": qty})
+                        if resp.status_code in (200, 201):
+                            findings.append({
+                                "type": f"quantity_tampering_{label}",
+                                "endpoint": ep,
+                                "quantity": qty,
+                                "severity": "High",
+                                "description": f"Application accepted {label} ({qty})",
+                                "evidence": f"POST {ep} with quantity={qty} returned {resp.status_code}"
+                            })
+                    except Exception:
+                        continue
+
+            # Test 3: Hidden field / parameter tampering
+            tamper_params = [
+                {"role": "admin"}, {"isAdmin": True}, {"discount": 100},
+                {"total": 0}, {"status": "completed"}, {"verified": True},
+            ]
+            user_endpoints = [
+                f"{base}/api/Users/1", f"{base}/api/user/profile",
+                f"{base}/rest/user/change-password",
+            ]
+            for ep in user_endpoints:
+                for params in tamper_params:
+                    try:
+                        resp = await client.put(ep, json=params)
+                        if resp.status_code in (200, 201):
+                            resp_body = resp.text[:200]
+                            param_name = list(params.keys())[0]
+                            if param_name in resp_body.lower():
+                                findings.append({
+                                    "type": "hidden_field_tampering",
+                                    "endpoint": ep,
+                                    "parameter": params,
+                                    "severity": "Critical",
+                                    "description": f"Server accepted tampered parameter: {param_name}",
+                                    "evidence": resp_body
+                                })
+                    except Exception:
+                        continue
+
+        return {"status": "success", "data": {
+            "vulnerable": len(findings) > 0,
+            "findings": findings,
+            "tests_performed": 3,
+            "description": "Integrity check failures allow price tampering, quantity manipulation, and privilege escalation"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-BUSL-07: Test Defenses Against Application Misuse.
+    Checks if the application detects and responds to abuse patterns
+    like rapid requests, automated form submissions, or brute-force attempts.
+    """
+    try:
+        import time
+        findings = []
+        base = url.rstrip('/')
+
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Test 1: Rapid request flood (limited burst)
+            test_endpoints = [
+                f"{base}/rest/user/login",
+                f"{base}/api/Users/",
+                f"{base}/rest/products/search?q=test",
+            ]
+            for ep in test_endpoints:
+                try:
+                    statuses = []
+                    for _ in range(10):
+                        resp = await client.get(ep)
+                        statuses.append(resp.status_code)
+                    # If all 10 succeeded with 200, no rate limiting
+                    if all(s == 200 for s in statuses):
+                        findings.append({
+                            "type": "no_rate_limiting",
+                            "endpoint": ep,
+                            "severity": "Medium",
+                            "description": f"No rate limiting on {ep} after 10 rapid requests",
+                            "evidence": f"All 10 requests returned 200"
+                        })
+                except Exception:
+                    continue
+
+            # Test 2: Failed login flood (brute-force detection)
+            login_endpoints = [
+                f"{base}/rest/user/login",
+                f"{base}/api/login",
+                f"{base}/login",
+            ]
+            for ep in login_endpoints:
+                try:
+                    blocked = False
+                    for i in range(8):
+                        resp = await client.post(ep, json={
+                            "email": f"bruteforce{i}@test.com",
+                            "password": "wrongpass"
+                        })
+                        if resp.status_code == 429:
+                            blocked = True
+                            break
+                    if not blocked:
+                        findings.append({
+                            "type": "no_brute_force_protection",
+                            "endpoint": ep,
+                            "severity": "High",
+                            "description": "No account lockout or rate limiting after multiple failed logins",
+                            "evidence": "8 failed login attempts without being blocked"
+                        })
+                except Exception:
+                    continue
+
+            # Test 3: CAPTCHA / bot detection
+            form_endpoints = [
+                f"{base}/api/Feedbacks/",
+                f"{base}/api/Complaints/",
+                f"{base}/contact",
+            ]
+            for ep in form_endpoints:
+                try:
+                    submissions = 0
+                    for i in range(5):
+                        resp = await client.post(ep, json={
+                            "comment": f"Automated test {i}",
+                            "rating": 1,
+                            "captcha": "",
+                            "captchaId": 0,
+                        })
+                        if resp.status_code in (200, 201):
+                            submissions += 1
+                    if submissions >= 3:
+                        findings.append({
+                            "type": "no_captcha_protection",
+                            "endpoint": ep,
+                            "severity": "Medium",
+                            "description": f"Form accepts automated submissions without CAPTCHA ({submissions}/5 succeeded)",
+                        })
+                except Exception:
+                    continue
+
+        return {"status": "success", "data": {
+            "vulnerable": len(findings) > 0,
+            "findings": findings,
+            "tests_performed": 3,
+            "description": "Missing abuse defenses allow brute-force, scraping, and automated attacks"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-BUSL-03: Test Integrity Checks.
+    Tests if the application properly validates data integrity — e.g.,
+    tampered prices, modified hidden fields, altered checksums, replayed tokens.
+    """
+    try:
+        findings = []
+        base = url.rstrip('/')
+
+        req_kwargs = {"timeout": 15, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Test 1: Price tampering on product/order endpoints
+            product_endpoints = [
+                f"{base}/api/Products/1", f"{base}/api/BasketItems/",
+                f"{base}/rest/products/1/reviews",
+            ]
+            for ep in product_endpoints:
+                try:
+                    resp = await client.get(ep)
+                    if resp.status_code == 200:
+                        try:
+                            data = resp.json()
+                            # Try to find price field and tamper it
+                            product = data.get("data", data)
+                            if isinstance(product, dict) and "price" in product:
+                                tampered = product.copy()
+                                tampered["price"] = 0.01
+                                put_resp = await client.put(ep, json=tampered)
+                                if put_resp.status_code in (200, 201):
+                                    findings.append({
+                                        "type": "price_tampering",
+                                        "endpoint": ep,
+                                        "severity": "Critical",
+                                        "description": "Price field can be tampered via API",
+                                        "evidence": f"Changed price to 0.01, status: {put_resp.status_code}"
+                                    })
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+            # Test 2: Quantity manipulation (negative / zero / extreme)
+            basket_endpoints = [
+                f"{base}/api/BasketItems/", f"{base}/api/basket/items",
+                f"{base}/rest/basket/1",
+            ]
+            for ep in basket_endpoints:
+                for qty in [-1, 0, 999999]:
+                    try:
+                        resp = await client.post(ep, json={"ProductId": 1, "BasketId": "1", "quantity": qty})
+                        if resp.status_code in (200, 201):
+                            try:
+                                body = resp.json()
+                                if body.get("status") == "success" or "id" in str(body).lower():
+                                    findings.append({
+                                        "type": "quantity_manipulation",
+                                        "endpoint": ep,
+                                        "quantity": qty,
+                                        "severity": "High",
+                                        "description": f"Application accepted invalid quantity: {qty}",
+                                    })
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+
+            # Test 3: Hidden field / parameter tampering
+            feedback_endpoints = [f"{base}/api/Feedbacks/", f"{base}/api/Complaints/"]
+            for ep in feedback_endpoints:
+                try:
+                    # Try injecting userId or rating field
+                    tampered_data = {
+                        "UserId": 1,
+                        "comment": "integrity test",
+                        "rating": 0,
+                        "captchaId": 0,
+                        "captcha": "test",
+                        "status": "approved",
+                    }
+                    resp = await client.post(ep, json=tampered_data)
+                    if resp.status_code in (200, 201):
+                        findings.append({
+                            "type": "hidden_field_tampering",
+                            "endpoint": ep,
+                            "severity": "Medium",
+                            "description": "Application accepted tampered hidden fields (UserId, status)",
+                        })
+                except Exception:
+                    continue
+
+        return {"status": "success", "data": {
+            "vulnerable": len(findings) > 0,
+            "findings": findings,
+            "tests_performed": 3,
+            "description": "Integrity check failures allow price tampering, quantity manipulation, and data forgery"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-BUSL-07: Test Defenses Against Application Misuse.
+    Checks if the application detects and prevents misuse patterns
+    such as rapid requests, automated form submission, and abuse of functionality.
+    """
+    try:
+        import time
+        findings = []
+        base = url.rstrip('/')
+
+        req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Test 1: Rapid-fire requests (rate limiting check)
+            rate_limit_endpoints = [
+                f"{base}/rest/user/login",
+                f"{base}/api/Users/",
+                f"{base}/api/Feedbacks/",
+            ]
+            for ep in rate_limit_endpoints:
+                try:
+                    statuses = []
+                    for i in range(15):
+                        resp = await client.post(ep, json={"email": f"test{i}@test.com", "password": "wrong"})
+                        statuses.append(resp.status_code)
+
+                    # If no 429 or blocking after 15 rapid requests
+                    if 429 not in statuses and all(s < 500 for s in statuses):
+                        findings.append({
+                            "type": "no_rate_limiting",
+                            "endpoint": ep,
+                            "severity": "Medium",
+                            "description": f"No rate limiting detected after 15 rapid requests",
+                            "evidence": f"Status codes: {list(set(statuses))}"
+                        })
+                except Exception:
+                    continue
+
+            # Test 2: CAPTCHA bypass / absence
+            form_endpoints = [
+                f"{base}/api/Feedbacks/",
+                f"{base}/contact",
+                f"{base}/api/Complaints/",
+            ]
+            for ep in form_endpoints:
+                try:
+                    # Submit without CAPTCHA
+                    resp = await client.post(ep, json={
+                        "comment": "Automated submission test",
+                        "rating": 5,
+                    })
+                    if resp.status_code in (200, 201):
+                        findings.append({
+                            "type": "no_captcha",
+                            "endpoint": ep,
+                            "severity": "Medium",
+                            "description": "Form submission accepted without CAPTCHA",
+                            "recommendation": "Implement CAPTCHA or anti-automation controls"
+                        })
+                except Exception:
+                    continue
+
+            # Test 3: Account lockout absence
+            try:
+                login_url = f"{base}/rest/user/login"
+                for i in range(10):
+                    await client.post(login_url, json={"email": "admin@juice-sh.op", "password": f"wrong{i}"})
+
+                # Try correct-looking login after lockout attempts
+                resp = await client.post(login_url, json={"email": "admin@juice-sh.op", "password": "test"})
+                if resp.status_code != 429 and resp.status_code < 500:
+                    findings.append({
+                        "type": "no_account_lockout",
+                        "severity": "High",
+                        "description": "No account lockout after 10 failed login attempts",
+                        "recommendation": "Implement progressive account lockout or CAPTCHA after failed attempts"
+                    })
+            except Exception:
+                pass
+
+        return {"status": "success", "data": {
+            "vulnerable": len(findings) > 0,
+            "findings": findings,
+            "tests_performed": 3,
+            "description": "Missing misuse defenses enable brute-force, credential stuffing, and automated abuse"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # --- Prompt ---
 # @mcp.prompt()  # REMOVED: Using JSON-RPC adapter
 def setup_prompt(domainname: str) -> str:

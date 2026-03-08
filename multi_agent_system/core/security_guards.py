@@ -79,6 +79,7 @@ class SecurityGuardRails:
             "dvwa.local",
             "juice-shop.local",
             "juice-shop",  # Docker hostname
+            "owaspjuiceshop",  # External Juice Shop container
             "dvwa"  # Docker hostname
         }
         
@@ -95,6 +96,7 @@ class SecurityGuardRails:
             "127.0.0.1",
             "0.0.0.0",
             "juice-shop",
+            "owaspjuiceshop",
             "dvwa",
             "hackthebox.eu",
             "pentesterlab.com",

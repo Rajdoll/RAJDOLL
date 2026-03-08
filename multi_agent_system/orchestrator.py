@@ -8,45 +8,42 @@ from datetime import datetime
 
 from .core.config import settings
 from .core.db import get_db
-from .models.models import Job, JobAgent, JobStatus, AgentStatus
+from .models.models import Job, JobAgent, JobStatus, AgentStatus, Finding
 from .agents.base_agent import AgentRegistry, AGENT_EXECUTION_TIMEOUT  # FIX #2: Import timeout
 from .utils.llm_planner import LLMPlanner
 from .utils.hitl_manager import HITLManager
 from .utils.shared_context_manager import SharedContextManager
 from .utils.session_service import create_authenticated_session
+from .utils.simple_llm_client import SimpleLLMClient
+from .core.task_tree import build_task_tree
 from . import agents  # noqa: F401  # ensure agent classes are registered
 
 
 DEFAULT_PLAN: List[Any] = [
-	# ===== PHASE 1: SEQUENTIAL CRITICAL PATH =====
-	# These MUST run sequentially because they build on each other's findings
-	"ReconnaissanceAgent",     # 1. Discover endpoints, tech stack, entry points
-	"AuthenticationAgent",     # 2. Obtain authenticated sessions/credentials
-	"SessionManagementAgent",  # 3. Analyze session mechanics (feeds later tests)
-	"InputValidationAgent",    # 4. Test endpoints for injection with auth when possible
-
-	# ===== PHASE 2: PARALLEL INDEPENDENT AGENTS =====
-	# These can run in parallel as they don't depend on each other
-	{
-		"parallel": [
-			"AuthorizationAgent",        # Uses auth results for authz testing
-			# SessionManagementAgent runs in Phase 1 to enable downstream authenticated testing
-			"ConfigDeploymentAgent",     # Tests misconfigurations
-			"ClientSideAgent",           # Tests client-side vulnerabilities
-			"FileUploadAgent",           # Tests file upload security
-			"APITestingAgent",           # Tests API-specific issues
-			"ErrorHandlingAgent",        # Tests error handling
-			"WeakCryptographyAgent",     # Tests crypto weaknesses
-			"BusinessLogicAgent",        # Tests business logic flaws
-			"IdentityManagementAgent",   # Tests identity management
-		]
-	},
-
-	# ===== PHASE 3: POST-ANALYSIS (TODO: Add LLM correlation) =====
-	# Future: LLM analyzes all findings and suggests additional tests
-
-	# ===== PHASE 4: REPORTING =====
-	"ReportGenerationAgent",  # Generate final OWASP WSTG 4.2 report
+	# ===== FULL SEQUENTIAL EXECUTION =====
+	# Planner-Summarizer architecture: each agent runs sequentially so that
+	# every subsequent agent receives the cumulative summary + task tree from
+	# all predecessors.  This maximises context quality for the local LLM
+	# (no semaphore contention, no parallel bottleneck).
+	#
+	# References:
+	#   - PentestGPT (Deng et al.) — Pentesting Task Tree for context tracking
+	#   - HackSynth (Muzsai et al.) — Planner + Summarizer loop
+	#   - PENTEST-AI (Bianou & Batogna) — sequential Saga Controller pattern
+	"ReconnaissanceAgent",        #  1. Discover endpoints, tech stack
+	"AuthenticationAgent",        #  2. Test auth mechanisms, obtain creds
+	"SessionManagementAgent",     #  3. Analyse session/token handling
+	"InputValidationAgent",       #  4. SQLi, XSS, LFI, SSTI, etc.
+	"AuthorizationAgent",         #  5. Privilege escalation, IDOR
+	"ConfigDeploymentAgent",      #  6. Misconfigurations, HSTS, headers
+	"ClientSideAgent",            #  7. DOM XSS, CORS, clickjacking
+	"FileUploadAgent",            #  8. File upload vulnerabilities
+	"APITestingAgent",            #  9. API-specific issues
+	"ErrorHandlingAgent",         # 10. Error disclosure, stack traces
+	"WeakCryptographyAgent",      # 11. Weak TLS, crypto flaws
+	"BusinessLogicAgent",         # 12. Business logic bypass
+	"IdentityManagementAgent",    # 13. User enumeration, registration
+	"ReportGenerationAgent",      # 14. Final OWASP WSTG 4.2 report
 ]
 
 # Mapping agent names to OWASP categories
@@ -102,6 +99,10 @@ class Orchestrator:
 		options = self.plan_metadata.get("options") if isinstance(self.plan_metadata, dict) else {}
 		self.hitl_manager = HITLManager(job_id, overrides=options)  # 🆕 HITL support
 		self.full_wstg_coverage = bool(options.get("full_wstg_coverage"))
+
+		# Planner-Summarizer state (HackSynth / PentestGPT pattern)
+		self.cumulative_summary: str = ""
+		self._llm_summarizer: Optional[SimpleLLMClient] = None
 		
 		# CRITICAL FIX: Write target URL to shared context at initialization
 		# This ensures all agents have access to the actual target URL
@@ -181,13 +182,13 @@ class Orchestrator:
 				ja.finished_at = datetime.utcnow()
 				db.commit()
 			return
-		
+
 		agent = agent_cls(job_id=self.job_id)
-		
+
 		# If LLM provided a tool plan, inject it into the agent
 		if tool_plan and hasattr(agent, 'set_tool_plan'):
 			agent.set_tool_plan(tool_plan)
-		
+
 		loop = self._ensure_event_loop()
 		error_message: Optional[str] = None
 		try:
@@ -198,13 +199,11 @@ class Orchestrator:
 				ja.started_at = datetime.utcnow()
 				db.commit()
 			# FIX PHASE 0: Refresh context cache BEFORE building snapshot
-			# This ensures we get the latest data from previous agents (especially ReconnaissanceAgent)
-			# Without this, InputValidationAgent was reading STALE context with 0 discovered_endpoints
 			self._refresh_shared_context_cache()
-			# Build current shared_context snapshot to pass into agent.execute
+			# Build shared_context snapshot and inject planner context (cumulative summary + task tree)
 			shared_ctx = self._aggregate_shared_context()
+			shared_ctx = self._inject_planner_context(shared_ctx)
 			target = self._get_target()
-			# FIX #2: Use reduced timeout (5 min) to prevent stuck agents
 			loop.run_until_complete(asyncio.wait_for(agent.execute(target=target, shared_context=shared_ctx), timeout=AGENT_EXECUTION_TIMEOUT))
 			status = AgentStatus.completed
 		except asyncio.TimeoutError as e:
@@ -226,6 +225,14 @@ class Orchestrator:
 				db.commit()
 		self._refresh_shared_context_cache()
 
+		# Planner-Summarizer: summarize findings after agent completes
+		# Skip for ReportGenerationAgent (it consumes summaries, doesn't produce them)
+		if agent_name != "ReportGenerationAgent":
+			try:
+				self._summarize_agent_and_accumulate(agent_name)
+			except Exception as e:
+				print(f"[Orchestrator] WARNING: Post-agent summarization failed for {agent_name}: {e}")
+
 	def _run_parallel_sync(self, agent_names: List[str], tools_map: Optional[Dict[str, Dict[str, Any]]] = None):
 		loop = self._ensure_event_loop()
 		tasks = []
@@ -237,10 +244,16 @@ class Orchestrator:
 		for name in agent_names:
 			agent_cls = AgentRegistry.get(name)
 			agent = agent_cls(job_id=self.job_id)
-			
+
 			# Inject tool plan if provided by LLM
 			if tools_map and name in tools_map and hasattr(agent, 'set_tool_plan'):
 				agent.set_tool_plan(tools_map[name])
+			elif not tools_map or name not in tools_map:
+				# No orchestrator tool plan for this agent — skip per-agent LLM planning
+				# to avoid 9 agents × 3 retries × 300s timeout bottleneck on LM Studio.
+				# Agents will use ADAPTIVE_MODE priority filtering instead.
+				agent.disable_llm_planning = True
+				print(f"[Orchestrator] {name}: No LLM tool plan — using ADAPTIVE_MODE priority filtering")
 			with get_db() as db:
 				ja = db.query(JobAgent).filter(JobAgent.job_id == self.job_id, JobAgent.agent_name == name).one()
 				ja.status = AgentStatus.running
@@ -474,6 +487,106 @@ class Orchestrator:
 					execution_plan.append(agent)
 		return execution_plan
 
+	# ====================================================================
+	# Planner-Summarizer: post-agent summarisation & context injection
+	# ====================================================================
+
+	def _get_llm_summarizer(self) -> Optional[SimpleLLMClient]:
+		"""Lazy-init the LLM client used for agent summarisation."""
+		if self._llm_summarizer is None:
+			try:
+				self._llm_summarizer = SimpleLLMClient()
+			except Exception as e:
+				print(f"[Orchestrator] WARNING: Cannot init LLM summarizer: {e}")
+		return self._llm_summarizer
+
+	def _collect_agent_findings_text(self, agent_name: str) -> str:
+		"""Collect all findings for an agent as a text block for the summarizer."""
+		with get_db() as db:
+			findings = (
+				db.query(Finding)
+				.filter(Finding.job_id == self.job_id, Finding.agent_name == agent_name)
+				.all()
+			)
+			if not findings:
+				return f"{agent_name}: No findings recorded."
+			lines = [f"=== {agent_name} Findings ({len(findings)} total) ==="]
+			for f in findings:
+				sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
+				lines.append(f"- [{sev.upper()}] {f.title} (category: {f.category})")
+				if f.details:
+					lines.append(f"  Details: {f.details[:300]}")
+				if f.evidence and isinstance(f.evidence, dict):
+					# Include key evidence fields (truncated)
+					ev_str = json.dumps(f.evidence, default=str)[:400]
+					lines.append(f"  Evidence: {ev_str}")
+			return "\n".join(lines)
+
+	def _summarize_agent_and_accumulate(self, agent_name: str) -> None:
+		"""After an agent finishes, summarize its findings via LLM and append
+		the summary to the cumulative summary string.
+
+		If the LLM is unavailable, falls back to the raw findings text.
+		"""
+		raw_text = self._collect_agent_findings_text(agent_name)
+		task_tree = build_task_tree(self.job_id)
+		summarizer = self._get_llm_summarizer()
+
+		summary = raw_text[:1500]  # fallback
+		if summarizer:
+			loop = self._ensure_event_loop()
+			try:
+				summary = loop.run_until_complete(
+					asyncio.wait_for(
+						summarizer.summarize_agent_findings(agent_name, raw_text, task_tree),
+						timeout=120,  # 2 min max for summarization
+					)
+				)
+				print(f"[Orchestrator] Summarized {agent_name} ({len(summary)} chars)")
+			except Exception as e:
+				print(f"[Orchestrator] WARNING: LLM summarization failed for {agent_name}: {e}")
+				# fallback already set above
+
+		# Accumulate
+		self.cumulative_summary += f"\n\n--- {agent_name} ---\n{summary}"
+		# Persist to shared context so agents can read it
+		self.context_manager.write("cumulative_summary", self.cumulative_summary)
+		self.context_manager.write("task_tree", task_tree)
+
+	def _run_final_analysis(self) -> None:
+		"""Call LLM to correlate all findings before report generation."""
+		summarizer = self._get_llm_summarizer()
+		if not summarizer:
+			print("[Orchestrator] No LLM summarizer — skipping final analysis")
+			return
+		task_tree = build_task_tree(self.job_id)
+		target = self._get_target() or ""
+		loop = self._ensure_event_loop()
+		try:
+			analysis = loop.run_until_complete(
+				asyncio.wait_for(
+					summarizer.analyze_all_findings(self.cumulative_summary, task_tree, target),
+					timeout=180,  # 3 min
+				)
+			)
+			print(f"[Orchestrator] Final analysis complete ({len(analysis)} chars)")
+			self.context_manager.write("final_analysis", analysis)
+			self.context_manager.write("cumulative_summary", self.cumulative_summary)
+			self.context_manager.write("task_tree", task_tree)
+		except Exception as e:
+			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
+
+	def _inject_planner_context(self, shared_ctx: Dict[str, Any]) -> Dict[str, Any]:
+		"""Inject cumulative summary + task tree into the shared context dict
+		that will be passed to the next agent."""
+		ctx = dict(shared_ctx)
+		if self.cumulative_summary:
+			ctx["cumulative_summary"] = self.cumulative_summary
+		task_tree = build_task_tree(self.job_id)
+		if task_tree:
+			ctx["task_tree"] = task_tree
+		return ctx
+
 	def _get_tool_plan_for_agent(self, agent_name: str) -> Optional[Dict[str, Any]]:
 		"""Extract tool plan for specific agent from LLM test plan.
 
@@ -637,15 +750,33 @@ class Orchestrator:
 				break
 			
 			print(f"[Orchestrator] Step {idx + 1}/{len(plan)}: {step}")
-			
+
 			# Get tool plan for this step
 			tool_plan = None
 			if isinstance(step, str):
 				tool_plan = self._get_tool_plan_for_agent(step)
 				if tool_plan:
 					print(f"[Orchestrator] LLM selected tools: {tool_plan['tools']}")
-			
+			elif isinstance(step, dict) and "parallel" in step:
+				# Build per-agent tool plans for parallel batch
+				tool_plan = {}
+				for agent_name in step["parallel"]:
+					agent_plan = self._get_tool_plan_for_agent(agent_name)
+					if agent_plan:
+						tool_plan[agent_name] = agent_plan
+						print(f"[Orchestrator] LLM selected tools for {agent_name}: {agent_plan['tools']}")
+				if not tool_plan:
+					tool_plan = None  # No plans found for any agent
+
 			self._run_step_sync(step, tool_plan)
+
+		# Planner-Summarizer: Run final cross-agent analysis before report generation
+		if not self._is_job_cancelled():
+			print("[Orchestrator] Running final cross-agent analysis...")
+			try:
+				self._run_final_analysis()
+			except Exception as e:
+				print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
 		# Best-effort: ensure report generation runs even if circuit breaker
 		# or early loop exit prevented reaching the final report step.

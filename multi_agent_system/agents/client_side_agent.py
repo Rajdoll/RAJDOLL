@@ -352,7 +352,49 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             except Exception as e:
                 self.log("warning", f"test_client_side_template_injection failed: {e}")
 
-        self.log("info", "Client-side checks complete - all 12 WSTG-CLNT enhanced tests executed")
+        # WSTG-CLNT-06: Resource manipulation
+        if self.should_run_tool("test_resource_manipulation"):
+            try:
+                self.log("info", "Testing for client-side resource manipulation")
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="test_resource_manipulation",
+                        args={"url": target}, auth_session=auth_data
+                    ),
+                    timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        self.add_finding("WSTG-CLNT-06", "Client-side resource manipulation detected",
+                                       severity="high", evidence=data,
+                                       details=f"Found {len(data.get('findings', []))} resource manipulation issues")
+            except Exception as e:
+                self.log("warning", f"test_resource_manipulation failed: {e}")
+
+        # WSTG-CLNT-11: Web messaging (postMessage) security
+        if self.should_run_tool("test_web_messaging"):
+            try:
+                self.log("info", "Testing web messaging (postMessage) security")
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="test_web_messaging",
+                        args={"url": target}, auth_session=auth_data
+                    ),
+                    timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        self.add_finding("WSTG-CLNT-11", "Web messaging security issues detected",
+                                       severity="high", evidence=data,
+                                       details=f"Found {len(data.get('findings', []))} postMessage security issues")
+            except Exception as e:
+                self.log("warning", f"test_web_messaging failed: {e}")
+
+        self.log("info", "Client-side checks complete - all 14 WSTG-CLNT enhanced tests executed")
 
     def _get_available_tools(self) -> list[str]:
         """Return client-side security testing tools for LLM planning"""
@@ -366,9 +408,11 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             'test_clickjacking',
             'test_websockets',
             'test_browser_storage',
-            'test_prototype_pollution',  # Phase 4.3
-            'test_postmessage_vulnerabilities',  # Phase 4.3
-            'test_client_side_template_injection',  # Phase 4.3
+            'test_prototype_pollution',
+            'test_postmessage_vulnerabilities',
+            'test_client_side_template_injection',
+            'test_resource_manipulation',
+            'test_web_messaging',
         ]
 
     def _get_target(self) -> str | None:

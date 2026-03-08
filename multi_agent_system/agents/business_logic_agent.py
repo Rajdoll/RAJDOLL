@@ -291,6 +291,42 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_shopping_cart_manipulation failed: {e}")
 
+        # WSTG-BUSL-03: Integrity checks
+        if self.should_run_tool("test_integrity_checks"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="business-logic-testing",
+                        tool="test_integrity_checks",
+                        args={"url": target}, auth_session=auth_data), timeout=180
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    if findings:
+                        critical_count = sum(1 for f in findings if f.get("severity", "").lower() == "critical")
+                        severity = "critical" if critical_count > 0 else "high"
+                        self.add_finding("WSTG-BUSL-03", f"Integrity check failures: {len(findings)} found", severity=severity, evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_integrity_checks failed: {e}")
+
+        # WSTG-BUSL-07: Application misuse defenses
+        if self.should_run_tool("test_application_misuse_defenses"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="business-logic-testing",
+                        tool="test_application_misuse_defenses",
+                        args={"url": target}, auth_session=auth_data), timeout=180
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    if findings:
+                        self.add_finding("WSTG-BUSL-07", f"Missing misuse defenses: {len(findings)} issue(s)", severity="medium", evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_application_misuse_defenses failed: {e}")
+
         self.log("info", "Business logic checks complete")
 
     def _get_available_tools(self) -> list[str]:
@@ -300,7 +336,9 @@ Write to shared_context:
             'test_workflow_bypass',
             'test_race_conditions',
             'test_timing_attacks',
-            'test_shopping_cart_manipulation'  # PHASE 2.5: Shopping cart business logic
+            'test_shopping_cart_manipulation',
+            'test_integrity_checks',
+            'test_application_misuse_defenses',
         ]
 
     def _get_target(self) -> str | None:

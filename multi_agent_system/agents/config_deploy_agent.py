@@ -239,21 +239,77 @@ Write to shared_context:
             self.log("warning", f"test_file_permissions failed: {e}")
 
         # OPSI B: Cloud storage
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="configuration-and-deployment-management",
-                    tool="test_network_infrastructure",
-                    args={"domain": domain}, auth_session=auth_data), timeout=120
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                data = res.get("data", {})
-                findings = data.get("findings", [])
-                vuln_count = data.get("vulnerabilities_found", 0)
-                if findings and vuln_count > 0:
-                    self.add_finding("WSTG-CONF", f"Cloud storage exposed: {vuln_count} issue(s)", severity="critical", evidence={"findings": findings[:3]})
-        except Exception as e:
-            self.log("warning", f"test_cloud_storage failed: {e}")
+        if self.should_run_tool("test_cloud_storage"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_cloud_storage",
+                        args={"domain": domain}, auth_session=auth_data), timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        self.add_finding("WSTG-CONF", f"Cloud storage exposed: {vuln_count} issue(s)", severity="critical", evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_cloud_storage failed: {e}")
+
+        # WSTG-CONF-03: Sensitive file extensions
+        if self.should_run_tool("test_sensitive_file_extensions"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_sensitive_file_extensions",
+                        args={"url": target}, auth_session=auth_data), timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        self.add_finding("WSTG-CONF-03", f"Sensitive files exposed: {vuln_count} found", severity="high", evidence={"findings": findings[:5]})
+            except Exception as e:
+                self.log("warning", f"test_sensitive_file_extensions failed: {e}")
+
+        # WSTG-CONF-07: HSTS testing
+        if self.should_run_tool("test_hsts"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_hsts",
+                        args={"url": target}, auth_session=auth_data), timeout=60
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        severity = "high" if any(f.get("type") == "missing_hsts" for f in findings) else "medium"
+                        self.add_finding("WSTG-CONF-07", f"HSTS issues: {vuln_count} found", severity=severity, evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_hsts failed: {e}")
+
+        # WSTG-CONF-10: Subdomain takeover
+        if self.should_run_tool("test_subdomain_takeover"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_subdomain_takeover",
+                        args={"domain": domain}, auth_session=auth_data), timeout=180
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        self.add_finding("WSTG-CONF-10", f"Subdomain takeover: {vuln_count} potential takeover(s)", severity="critical", evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_subdomain_takeover failed: {e}")
 
         self.log("info", "Configuration & Deployment checks complete")
 
@@ -269,7 +325,11 @@ Write to shared_context:
         return [
             'test_network_infrastructure',
             'find_sensitive_files_and_dirs',
-            'test_http_methods_and_headers'
+            'test_http_methods_and_headers',
+            'test_cloud_storage',
+            'test_sensitive_file_extensions',
+            'test_hsts',
+            'test_subdomain_takeover',
         ]
 
     def _domain_from_target(self, target: str) -> str:

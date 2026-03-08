@@ -161,21 +161,40 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
                 self.log("warning", f"test_account_enumeration failed: {e}")
 
         # OPSI B: Username policy testing
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="identity-management-testing",
-                    tool="test_user_registration",
-                    args={"base_url": target}, auth_session=auth_data), timeout=90
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                data = res.get("data", {})
-                findings = data.get("findings", [])
-                vuln_count = data.get("vulnerabilities_found", 0)
-                if findings and vuln_count > 0:
-                    self.add_finding("WSTG-IDNT", f"Username enumeration via registration: {vuln_count} vector(s)", severity="low", evidence={"findings": findings[:2]})
-        except Exception as e:
-            self.log("warning", f"test_username_policy failed: {e}")
+        if self.should_run_tool("test_username_policy"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="identity-management-testing",
+                        tool="test_username_policy",
+                        args={"base_url": target}, auth_session=auth_data), timeout=90
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        self.add_finding("WSTG-IDNT-04", f"Username enumeration via registration: {vuln_count} vector(s)", severity="low", evidence={"findings": findings[:2]})
+            except Exception as e:
+                self.log("warning", f"test_username_policy failed: {e}")
+
+        # WSTG-IDNT-05: Weak username policy
+        if self.should_run_tool("test_weak_username_policy"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="identity-management-testing",
+                        tool="test_weak_username_policy",
+                        args={"base_url": target}, auth_session=auth_data), timeout=90
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        self.add_finding("WSTG-IDNT-05", f"Weak username policy: {vuln_count} issue(s)", severity="medium", evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_weak_username_policy failed: {e}")
 
         self.log("info", "Identity management prep complete")
 
@@ -186,7 +205,9 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
             'test_user_registration',
             'test_account_provisioning',
             'test_account_enumeration',
-            'generate_test_usernames'
+            'generate_test_usernames',
+            'test_username_policy',
+            'test_weak_username_policy',
         ]
 
     def _get_target(self) -> str | None:

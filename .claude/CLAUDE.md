@@ -1,500 +1,218 @@
-# Multi-Agent Penetration Testing System dengan MCP (RAJDOLL)
+# CLAUDE.md
 
-**Research Project:** Pengembangan Agentic AI dengan Sistem Multi-Agen Berbasis LLM untuk Otomasi Pengujian Keamanan Web Berdasarkan Standar OWASP WSTG 4.2 menggunakan Model Context Protocol
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Author:** Martua Raja Doli Pangaribuan (NPM: 2221101809)
-**Institution:** Politeknik Siber dan Sandi Negara
-**Timeline:** 3 bulan (Jan - Mar 2026)
+## Project Summary
 
----
+RAJDOLL is a multi-agent penetration testing system that automates web security assessments per OWASP WSTG 4.2. It uses 14 specialized agents coordinated by an orchestrator, each targeting a specific WSTG category. Agents call security tools (SQLMap, Dalfox, Nmap, etc.) via MCP (Model Context Protocol) servers. An LLM (local via LM Studio or remote via OpenAI) generates adaptive tool arguments based on reconnaissance context.
 
-## 🎯 Project Overview
+**Author:** Martua Raja Doli Pangaribuan — Politeknik Siber dan Sandi Negara thesis project.
 
-Sistem multi-agent berbasis LLM yang mengotomatisasi penetration testing untuk aplikasi web. Setiap agent adalah specialist untuk kategori OWASP WSTG 4.2 (Information Gathering, Authentication Testing, Input Validation, dll).
+## Commands
 
-### Core Innovation
-- **LLM Planning**: LLM generates adaptive tool arguments berdasarkan reconnaissance context
-- **Multi-Agent Architecture**: 14 specialized agents dengan domain expertise
-- **MCP Integration**: Unified protocol untuk 15+ security tools (SQLmap, Dalfox, etc)
-- **Autonomous Testing**: Minimal human intervention, self-correcting execution
-
-### Research Contribution
-1. First MCP implementation for security testing automation
-2. 1-to-1 agent mapping dengan OWASP WSTG 4.2 categories
-3. Context-aware LLM planning untuk adaptive testing
-4. Comprehensive evaluation metrics (Precision, Recall, F1-Score, TCR)
-
----
-
-## 🏗️ Architecture
-
-### System Components
-```
-┌─────────────────────────────────────────┐
-│         ORCHESTRATOR                    │
-│  - Job Planning & Coordination          │
-│  - LLM Strategic Planning               │
-│  - Shared Context Management            │
-└────────────┬────────────────────────────┘
-             │
-    ┌────────┴──────────┐
-    │                   │
-┌───▼──────┐    ┌──────▼──────────────┐
-│ Recon    │    │  13 Test Agents     │
-│ Agent    │    │  (WSTG Categories)  │
-└──────────┘    └──────┬──────────────┘
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-  ┌───────▼────────┐    ┌──────────▼────────┐
-  │  MCP Client    │    │  Report Agent     │
-  │  (15 Tools)    │    │  (Analysis+Docs)  │
-  └────────────────┘    └───────────────────┘
-```
-
-### 14 Specialized Agents
-1. **ReconnaissanceAgent** (WSTG-INFO) - Information gathering
-2. **ConfigDeploymentAgent** (WSTG-CONF) - Configuration testing
-3. **IdentityManagementAgent** (WSTG-IDNT) - Identity testing
-4. **AuthenticationAgent** (WSTG-ATHN) - Authentication testing
-5. **AuthorizationAgent** (WSTG-AUTHZ) - Authorization testing
-6. **SessionManagementAgent** (WSTG-SESS) - Session management
-7. **InputValidationAgent** (WSTG-INPV) - Injection vulnerabilities
-8. **ErrorHandlingAgent** (WSTG-ERRH) - Error handling
-9. **WeakCryptographyAgent** (WSTG-CRYP) - Cryptography testing
-10. **BusinessLogicAgent** (WSTG-BUSL) - Business logic
-11. **ClientSideAgent** (WSTG-CLNT) - Client-side testing
-12. **FileUploadAgent** (WSTG-BUSL) - File upload vulnerabilities
-13. **APITestingAgent** (WSTG-APIT) - API security
-14. **ReportGenerationAgent** - OWASP WSTG 4.2 report generation
-
-### Technology Stack
-- **Backend**: Python 3.11+, FastAPI, Celery
-- **Database**: PostgreSQL (findings), Redis (cache/queue)
-- **LLM**: LM Studio (local) / OpenAI GPT-4o (fallback)
-- **MCP Servers**: 15 security tools via MCP protocol
-- **Containerization**: Docker Compose
-- **Frontend**: React (real-time WebSocket monitoring)
-
----
-
-## 📂 Code Structure
-
-```
-/mnt/d/MCP/RAJDOLL/
-├── api/                        # FastAPI backend
-│   ├── main.py                 # API entry point
-│   ├── routes/                 # API endpoints
-│   │   ├── scans.py
-│   │   ├── reporting.py
-│   │   ├── websocket.py
-│   │   └── evaluation.py
-│   └── schemas/                # Pydantic models
-│
-├── multi_agent_system/         # Core multi-agent system
-│   ├── orchestrator.py         # Agent coordination
-│   ├── agents/                 # 14 specialized agents
-│   │   ├── base_agent.py       # Base class (CRITICAL: has LLM merge fix)
-│   │   ├── reconnaissance_agent.py
-│   │   ├── input_validation_agent.py (69KB - most complex)
-│   │   └── ...
-│   ├── core/
-│   │   ├── config.py           # Settings
-│   │   ├── db.py               # Database connection
-│   │   └── security_guards.py  # Authorization & rate limiting
-│   ├── models/                 # SQLAlchemy models
-│   │   └── models.py           # Job, JobAgent, Finding, etc
-│   ├── utils/                  # Utilities
-│   │   ├── simple_llm_client.py  # LLM client (OpenAI compatible)
-│   │   ├── llm_planner.py        # LLM adaptive planning
-│   │   ├── mcp_client.py         # MCP protocol client
-│   │   ├── hitl_manager.py       # Human-in-the-loop
-│   │   └── shared_context_manager.py  # Anti-context-loss
-│   └── evaluation/             # Metrics calculation
-│       └── metrics.py          # Precision, Recall, F1-Score
-│
-├── authentication-testing/     # MCP servers (15 total)
-├── input-validation-testing/
-├── information-gathering/
-├── ... (12 more MCP servers)
-│
-├── frontend/                   # React dashboard
-├── docker-compose.yml          # Service orchestration
-├── .env                        # Configuration (GITIGNORED!)
-└── requirements.txt            # Python dependencies
-```
-
----
-
-## 🔧 Code Standards & Conventions
-
-### Python Code Style
-```python
-# ✅ Good
-async def execute_tool(
-    self,
-    *,
-    server: str,
-    tool: str,
-    args: Optional[Dict[str, Any]] = None,
-    timeout: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Execute MCP tool with LLM-generated arguments.
-
-    Args:
-        server: MCP server name
-        tool: Tool name to execute
-        args: Base arguments (will be merged with LLM args)
-        timeout: Optional timeout override
-
-    Returns:
-        Tool execution result dictionary
-
-    Raises:
-        ToolExecutionError: If tool fails after retries
-    """
-    # Implementation with type hints, docstrings, error handling
-    pass
-```
-
-### Critical Code Patterns
-
-**1. LLM Argument Merging (FIXED!):**
-```python
-# In base_agent.py execute_tool() method:
-# ✅ MUST call _before_tool_execution() to merge LLM args
-approval = await self._before_tool_execution(server, tool, args)
-args = approval.get("arguments", args)  # Merged args
-
-# Then normalize and execute
-if args:
-    args = self._normalize_llm_arguments(tool, args)
-result = await client.call_tool(server=server, tool=tool, args=args, ...)
-```
-
-**2. Shared Context Pattern:**
-```python
-# Write findings to shared context (all agents can read)
-self.context_manager.save({
-    "findings": [...],
-    "entry_points": [...],
-    "tech_stack": {...}
-})
-
-# Read shared context from other agents
-context = self.context_manager.load_all()
-endpoints = context.get("entry_points", [])
-```
-
-**3. Error Handling Pattern:**
-```python
-try:
-    result = await self.execute_tool(server="input-validation", tool="test_sqli", ...)
-except ToolExecutionError as e:
-    self.log("error", f"SQLi test failed: {e}")
-    self.record_tool_failure("test_sqli", str(e))
-    # Circuit breaker: skip tool if failures > threshold
-except asyncio.TimeoutError:
-    self.log("error", "Tool timeout - retrying with increased timeout")
-    result = await self.execute_tool(..., timeout=timeout * 2)
-```
-
-### Testing Standards
-- **Unit tests**: pytest, 80%+ coverage target
-- **Integration tests**: Docker-based testing
-- **Test file structure**: `tests/` mirrors `multi_agent_system/`
-- **Fixtures**: Use `conftest.py` for shared fixtures
-- **Mocking**: Mock external LLM/MCP calls in tests
-
----
-
-## 🔒 Security Considerations
-
-### Credentials & Secrets
-- ✅ **NEVER** commit `.env` file
-- ✅ Use environment variables for all secrets
-- ✅ `.env.example` for template only
-- ✅ Git pre-commit hook checks for leaked secrets
-
-### Sandboxing
-- ✅ Tools run in isolated Docker containers
-- ✅ Network segmentation for test targets
-- ✅ Rate limiting to prevent DoS
-- ✅ Authorization checks before tool execution
-
-### Target Authorization
-- ✅ Whitelist approved domains only
-- ✅ Require explicit authorization token per scan
-- ✅ Audit logging for all tool executions
-- ✅ HITL (Human-in-the-Loop) for destructive operations
-
----
-
-## 🐛 Known Issues & Workarounds
-
-### Issue 1: LLM Planning Arguments Not Applied (FIXED Dec 22, 2024)
-**Symptom:** LLM generates intelligent arguments, but tools execute with hardcoded defaults
-**Root Cause:** `execute_tool()` didn't call `_before_tool_execution()` hook
-**Fix Applied:** Added hook call in `base_agent.py:execute_tool()` (lines 472-479)
-**Verification:** Run `python fix_validation.py` - all checks should PASS
-
-### Issue 2: Context Loss in Long Scans
-**Symptom:** Later agents don't see findings from earlier agents
-**Workaround:** Use `SharedContextManager` with persistence to PostgreSQL
-**Status:** Implemented, working in production
-
-### Issue 3: MCP Server Timeout on Large Scans
-**Symptom:** SQLmap timeout after 3 minutes
-**Workaround:** Increased `TOOL_EXECUTION_TIMEOUT` to 1800s (30 min) in base_agent.py for time-based blind SQLi
-**Status:** Fixed (Dec 28, 2024)
-
-### Issue 4: WebSocket Disconnection Under Load
-**Symptom:** Frontend loses real-time updates during heavy scans
-**Workaround:** Added reconnection logic with exponential backoff
-**Status:** Needs testing
-
-### Issue 5: Low Vulnerability Coverage on Juice Shop (FIXED Dec 28, 2024)
-**Symptom:** Job ID 3 detected only 36/102 Juice Shop vulnerabilities (35% coverage)
-**Root Causes:**
-1. ADAPTIVE_MODE=aggressive filtering out tools not in LLM plan
-2. Missing MCP server registrations (api-testing, file-upload-testing)
-3. Tool configuration gaps (SQLMap/Dalfox no POST body support, no JWT testing, no business logic tests)
-**Fixes Applied:**
-- Phase 1: Changed ADAPTIVE_MODE to "off", added MCP registrations, increased timeouts → Job ID 1: 38 findings (+2)
-- Phase 2: Added POST body support, JSON content-type, auth headers, XXE SVG upload, JWT weakness testing, shopping cart manipulation (~800 lines across 3 files) → Job ID 2: Validating (expected 50-59 findings)
-**Status:** Phase 2 complete, validation scan in progress (Job ID 2)
-
----
-
-## 🧪 Testing Strategy
-
-### Test Targets
-1. **DVWA** (Damn Vulnerable Web Application)
-   - 25 known vulnerabilities
-   - Ground truth for Precision/Recall
-2. **OWASP Juice Shop**
-   - 100+ challenges
-   - Comprehensive OWASP Top 10 coverage
-3. **Custom Vulnerable App** (optional)
-
-### Evaluation Metrics
-
-**Primary Metrics (Must Have):**
-- **Precision**: TP / (TP + FP) ≥ 90%
-- **Recall**: TP / (TP + FN) ≥ 80%
-- **F1-Score**: Harmonic mean ≥ 85%
-- **Task Completion Rate (TCR)**: Test cases completed / Total WSTG tests ≥ 70%
-
-**Secondary Metrics (Should Have):**
-- False Positive Rate ≤ 15%
-- Time to First Finding ≤ 5 minutes
-- Total Scan Time ≤ 4 hours
-- SUS Score (usability) ≥ 68
-
-### Testing Commands
 ```bash
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov=multi_agent_system --cov-report=html
-
-# Run specific agent tests
-pytest tests/agents/test_input_validation_agent.py -v
-
-# Run in Docker (integration)
-docker-compose -f docker-compose.test.yml up --abort-on-container-exit
-```
-
----
-
-## 🚀 Common Commands
-
-### Development
-```bash
-# Start all services
+# Start all services (API + worker + DB + Redis + 14 MCP servers)
 docker-compose up -d
 
 # Rebuild after code changes
 docker-compose build && docker-compose up -d
 
-# View logs
-docker-compose logs -f rajdoll-api
-docker-compose logs -f rajdoll-worker
-
-# Stop all services
-docker-compose down
-
-# Clean rebuild (remove volumes)
+# Clean rebuild (wipe DB volumes)
 docker-compose down -v && docker-compose up --build -d
-```
 
-### Testing
-```bash
-# Quick validation
-python fix_validation.py
+# View API logs / worker logs
+docker-compose logs -f api
+docker-compose logs -f worker
 
-# WebSocket monitoring
-python test_websocket.py --job-id 1
+# Run tests
+pytest multi_agent_system/tests/test_new_architecture.py -v
 
-# Start test scan
+# Run with coverage
+pytest tests/ --cov=multi_agent_system --cov-report=html
+
+# Start a scan via API
 curl -X POST http://localhost:8000/api/scans \
   -H "Content-Type: application/json" \
   -d '{"target": "http://juice-shop:3000"}'
 
-# Check findings
+# Check scan findings
 curl http://localhost:8000/api/scans/1/findings | jq
 
-# Generate report
-curl http://localhost:8000/api/scans/1/report?format=pdf -o report.pdf
-```
+# Validate LLM planning fix
+python fix_validation.py
 
-### LLM Configuration
-```bash
 # Check LM Studio connection
 curl http://localhost:1234/v1/models
 
-# Test LLM inference
-curl http://localhost:1234/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "qwen2.5-7b-instruct-q4_k_m", "messages": [{"role": "user", "content": "Hello"}]}'
+# Run API locally (without Docker, needs DB+Redis running)
+uvicorn api.main:app --reload --port 8000
 
-# Monitor LLM planning in logs
-docker-compose logs rajdoll-api | grep "LLM"
-docker-compose logs rajdoll-api | grep "Using LLM arguments"
+# Run Celery worker locally
+celery -A multi_agent_system.tasks.celery_app.celery_app worker -l INFO
 ```
 
----
+## Architecture
 
-## 📊 Research Progress Tracking
+### Execution Flow
 
-### Timeline (3 Months)
+```
+POST /api/scans → security_guard.validate_target()
+  → Job record in PostgreSQL (status: queued)
+  → Celery task: run_job_task(job_id) via Redis
+  → Orchestrator(job_id).run():
+      Phase 1:   ReconnaissanceAgent (always first, sequential)
+      Phase 1.5: Auto-login via session_service.create_authenticated_session()
+      Phase 2:   LLMPlanner.plan_testing_strategy(recon_results) [5-min timeout]
+      Phase 3:   Execute plan — sequential agents then parallel block
+      Phase 4:   ReportGenerationAgent (always runs, even after circuit breaker)
+  → WebSocket pushes status updates to frontend
+```
 
-**Month 1: Implementation & Debugging (Dec 2024 - Jan 2026)**
-- Week 1: ✅ Fix LLM planning bug (Dec 22, 2024)
-- Week 2: ✅ Full system testing on DVWA (completed)
-- Week 3: ✅ Full system testing on Juice Shop (baseline: 36 findings, identified coverage gaps)
-- Week 4: 🔄 IN PROGRESS - Coverage enhancement (Phase 1: ✅ Complete, Phase 2: ✅ Complete, Job ID 2: 🔄 Validating)
+### Default Execution Plan
 
-**Month 2: Evaluation & UAT (Feb 2026)**
-- Week 5: ⏳ Run 30 evaluation scans
-- Week 6: ⏳ Calculate metrics (Precision, Recall, F1)
-- Week 7: ⏳ UAT with 10-15 practitioners
-- Week 8: ⏳ SUS questionnaire analysis
+The orchestrator always follows this order regardless of LLM plan (LLM plan only affects *tool selection* within each agent, not execution order):
 
-**Month 3: Documentation & Publication (Mar 2026)**
-- Week 9: ⏳ Thesis writing (Chapters 1-3)
-- Week 10: ⏳ Thesis writing (Chapters 4-6)
-- Week 11: ⏳ Thesis revision & review
-- Week 12: ⏳ Defense preparation & paper submission
+1. `ReconnaissanceAgent` — sequential
+2. `AuthenticationAgent` — sequential
+3. `SessionManagementAgent` — sequential
+4. `InputValidationAgent` — sequential
+5. Batch 1 (parallel): `AuthorizationAgent`, `ConfigDeploymentAgent`, `ClientSideAgent`
+6. Batch 2 (parallel): `FileUploadAgent`, `APITestingAgent`, `ErrorHandlingAgent`
+7. Batch 3 (parallel): `WeakCryptographyAgent`, `BusinessLogicAgent`, `IdentityManagementAgent`
+8. `ReportGenerationAgent` — sequential
 
-### Current Status (Updated: Dec 28, 2024)
-- **Overall Progress**: 97% implementation complete
-- **Current Phase**: Phase 2 Coverage Enhancement - COMPLETE ✅
-- **Active Validation**: Job ID 2 running (expected 50-59 findings from 38 baseline)
-- **Critical Blocker**: NONE
-- **Next Milestone**: Phase 3 (endpoint discovery & auth propagation) if coverage <80%
-- **Confidence Level**: HIGH (on track for 90%+ coverage target)
+### Two Orchestrator Implementations
 
----
+- **`orchestrator.py`** (production): Flat plan with sequential + parallel blocks
+- **`hierarchical_orchestrator.py`** (Phase 2, not default): Groups agents into clusters (RECONNAISSANCE → ATTACK → LOGIC → REPORTING) with dependency tracking, KnowledgeGraph, and AttackChainDetector
 
-## 💰 Cost Optimization
+### Agent Tool Execution — Critical Data Flow
 
-### Current LLM Strategy
-- **Primary**: LM Studio local (Qwen2.5-7B-Q4) - FREE
-- **Backup**: OpenAI GPT-4o - For final validation only
-- **Estimated Total Cost**: ~$5-10 (vs $100+ with full GPT-4o)
+Every MCP tool call goes through `BaseAgent.execute_tool()`:
 
-### Token Budget
-- Development iterations: Unlimited (local)
-- Final evaluation (30 scans): ~$5
-- Emergency GPT-4o fallback: ~$5
-- **Total 3-month budget**: $10
+```
+execute_tool(server, tool, args)
+  → should_run_tool()                    # Circuit breaker + ADAPTIVE_MODE gating
+  → _before_tool_execution()             # CRITICAL: merges LLM args with base args
+      → _merge_planned_arguments()       # Lookup from _tool_arguments_map
+      → HITLManager (if enabled)
+  → args = approval["arguments"]         # Apply merged args (the Dec 22 fix)
+  → Auth injection from shared_context
+  → _normalize_llm_arguments()           # Map 'target_url'→'url', etc.
+  → MCPClient.call_tool()                # JSON-RPC to MCP server container
+```
 
----
+### Two LLM Integration Points
 
-## 🎯 Success Criteria
+1. **LLMPlanner** (orchestrator level): Synchronous, called once after recon via ThreadPoolExecutor. Generates strategic plan for all agents. Uses `plan_testing_strategy()`.
+2. **SimpleLLMClient** (agent level): Async, called per-agent if orchestrator didn't provide a tool plan. Uses `select_tools_for_agent()`. Semaphore limits to 2 concurrent LLM calls.
 
-### Technical Criteria
-- [ ] All 14 agents execute successfully
-- [ ] LLM arguments properly merged and applied
-- [ ] Precision ≥ 90%, Recall ≥ 80%, F1 ≥ 85%
-- [ ] TCR ≥ 70% (WSTG test case coverage)
-- [ ] WebSocket real-time monitoring works
-- [ ] PDF report generation functional
-- [ ] No memory leaks in 4-hour scans
+Both strip `<think>...</think>` tags (Qwen artifact) and use multi-strategy JSON parsing (direct → strip code fences → extract first balanced block).
 
-### Research Criteria
-- [ ] Novel contribution validated (MCP + WSTG 4.2)
-- [ ] Comprehensive evaluation completed
-- [ ] Comparison with baseline (ZAP)
-- [ ] UAT with practitioners (SUS ≥ 68)
-- [ ] Thesis draft complete
-- [ ] Paper submitted to conference
+### MCP Server Architecture
 
----
+All 14 MCP servers use a single generic adapter (`mcp_adapter/server.py`). Each server is a Docker container running the same adapter image but with a different `MODULE_PATH` environment variable pointing to its testing module (e.g., `input-validation-testing/input-validation.py`).
 
-## 📚 Key Resources
+The adapter:
+- Exposes a single `POST /jsonrpc` endpoint (JSON-RPC 2.0)
+- Dynamically loads the Python module at `MODULE_PATH` via `importlib`
+- Looks up the tool function by name via `getattr(module, tool_name)`
+- Uses `inspect.signature` to filter args, only passing parameters the function accepts
+- Extracts auth session from `_auth_*` prefixed args before forwarding
 
-### Documentation
-- **OWASP WSTG 4.2**: https://owasp.org/www-project-web-security-testing-guide/v42/
-- **MCP Specification**: https://modelcontextprotocol.io/
-- **LM Studio Docs**: https://lmstudio.ai/docs
-- **Qwen Model**: https://huggingface.co/Qwen/Qwen2.5-7B-Instruct
+**MCP Server → Port mapping** (defined in docker-compose.yml):
+| Server | Port | Module |
+|--------|------|--------|
+| info-mcp | 9001 | information-gathering/information_gathering.py |
+| auth-mcp | 9002 | authentication-testing/authentication.py |
+| authorz-mcp | 9003 | authorization-testing/authorization.py |
+| session-mcp | 9004 | session-managemenet-testing/session-management.py |
+| input-mcp | 9005 | input-validation-testing/input-validation.py |
+| error-mcp | 9006 | error-handling-testing/error-handling.py |
+| crypto-mcp | 9007 | testing-for-weak-cryptography/weak-cryptography.py |
+| client-mcp | 9008 | client-side-testing/client-side.py |
+| biz-mcp | 9009 | business-logic-testing/business-logic.py |
+| confdep-mcp | 9010 | configuration-and-deployment-testing/configuration-and-deployment.py |
+| identity-mcp | 9011 | identity-management-testing/identity-management.py |
+| fileupload-mcp | 9012 | file-upload-testing/file_upload.py |
+| api-testing-mcp | 9013 | api-testing/api_testing.py |
+| katana-mcp | 9015 | katana-crawler/katana_server.py (separate Dockerfile) |
 
-### Internal Docs
-- `LM_STUDIO_SETUP_GUIDE.md` - Complete LM Studio setup for Windows
-- `FIX_SUMMARY.md` - LLM planning bug fix documentation
-- `ENHANCED_EVALUATION_METRICS.md` - Comprehensive metrics guide
-- `README.md` - Project overview & quick start
+Note: `session-managemenet-testing` is a typo in the directory name — preserved intentionally.
 
-### Scripts & Tools
-- `fix_validation.py` - Validate LLM planning fix
-- `test_websocket.py` - WebSocket monitoring test
-- `quick_start_after_fix.sh` - One-command validation & startup
+### Database Models (PostgreSQL)
 
----
+Defined in `multi_agent_system/models/models.py` (SQLAlchemy):
+- **Job**: Scan job (target, status, plan, timing)
+- **JobAgent**: Per-agent status within a job
+- **Finding**: Vulnerability finding (title, severity, WSTG ID, evidence, confidence)
+- **SharedContext**: Key-value store for inter-agent communication (recon results, entry points, auth sessions)
 
-## 🔄 Version History
+### Key Configuration
 
-### v2.1 (Current - Dec 28, 2024)
-- ✅ FIXED: Juice Shop coverage gap (36 → target 90+ findings)
-- ✅ Phase 1: ADAPTIVE_MODE configuration, MCP server registrations, timeout increases
-- ✅ Phase 2: POST body support (SQLMap/Dalfox), JWT weakness testing, XXE SVG upload, shopping cart business logic (~800 lines)
-- ✅ Enhanced: `input-validation-testing/input-validation.py` (POST/JSON/auth support)
-- ✅ Enhanced: `testing-for-weak-cryptography/weak-cryptography.py` (JWT algorithm confusion, alg:none bypass, weak secret brute force)
-- ✅ Enhanced: `business-logic-testing/business-logic.py` (shopping cart manipulation, negative quantity, IDOR)
-- 📝 Status: Validation in progress (Job ID 2)
+`multi_agent_system/core/config.py` — `Settings` dataclass, reads from env vars:
+- `ADAPTIVE_MODE`: `off` (all tools) | `balanced` | `aggressive` (production default in .env.example)
+- `REACT_MODE` / `REACT_MAX_ITERATIONS`: Enable iterative ReAct loop (env on worker)
+- `MIN_TOOLS_PER_AGENT`: Minimum coverage enforcement (default 7)
+- `DISABLE_LLM_PLANNING`: Skip LLM, use all tools with defaults
 
-### v2.0 (Dec 22, 2024)
-- ✅ FIXED: LLM planning arguments now properly applied
-- ✅ Added: Comprehensive validation scripts
-- ✅ Added: LM Studio setup guide
-- ✅ Optimized: Cost reduction via local LLM
-- 📝 Status: Ready for evaluation phase
+### Key Timeouts
 
-### v1.0 (Dec 2024)
-- ✅ Initial implementation of 14 agents
-- ✅ MCP integration with 15 tools
-- ✅ FastAPI backend + WebSocket
-- ✅ Docker orchestration
-- ❌ Issue: LLM arguments not applied (FIXED in v2.0)
+| Constant | Value | Location |
+|----------|-------|----------|
+| `AGENT_EXECUTION_TIMEOUT` | 7200s (2h) | base_agent.py |
+| `TOOL_EXECUTION_TIMEOUT` | 1800s (30m) | base_agent.py |
+| `LLM_PLANNING_TIMEOUT` | 300s (5m) | base_agent.py |
+| `job_total_timeout` | 3600s (1h) | config.py |
 
----
+## Code Patterns
 
-## 🆘 Troubleshooting Quick Reference
+### Adding a New Agent
 
-| Issue | Quick Fix |
-|-------|-----------|
-| LLM args not applied | `python fix_validation.py` - ensure all ✅ |
-| LM Studio timeout | Check GPU layers (35 for RTX 3050) |
-| Docker build fails | `docker-compose down -v && docker-compose build --no-cache` |
-| WebSocket disconnects | Check `api/routes/websocket.py` reconnection logic |
-| Agent stuck | Check logs: `docker-compose logs rajdoll-worker` |
-| High memory usage | Reduce `MAX_CONCURRENT_AGENTS` in config |
+1. Create `multi_agent_system/agents/my_agent.py` inheriting `BaseAgent` with `@AgentRegistry.register("MyAgent")`
+2. Add to `DEFAULT_PLAN` in `orchestrator.py` (sequential entry or inside `{"parallel": [...]}`)
+3. Add WSTG mapping in `AGENT_TO_OWASP_MAP`
+4. If it needs a new MCP server: create the testing module, add service to `docker-compose.yml` with `Dockerfile.mcp-tools` and unique port, add URL to `MCP_SERVER_URLS` JSON
 
----
+### Adding a New Tool to an MCP Server
 
-**Last Updated**: December 28, 2024
-**Maintained By**: Martua Raja Doli Pangaribuan
-**Next Review**: After Job ID 2 validation completes
+Add a Python function to the server's module file (e.g., `input-validation-testing/input-validation.py`). The MCP adapter auto-discovers functions by name. The function signature defines accepted parameters. Return a dict with results.
+
+### Shared Context Between Agents
+
+```python
+# Write (in any agent)
+self.context_manager.save({"entry_points": [...], "tech_stack": {...}})
+
+# Read (in any agent — orchestrator refreshes cache before each agent)
+context = self.context_manager.load_all()
+endpoints = context.get("entry_points", [])
+```
+
+### ADAPTIVE_MODE Behavior
+
+- `off`: Every tool in the agent's arsenal runs unconditionally
+- `balanced`: CRITICAL-priority tools always run + LLM-selected tools
+- `aggressive`: CRITICAL+HIGH priority tools always run + LLM-selected tools
+
+For research evaluation, `off` or `aggressive` is recommended to maximize coverage.
+
+## Known Issues
+
+1. ~~**ReAct agent method naming mismatch**~~: Fixed — `react_agent.py` now calls `chat_completion()` matching `SimpleLLMClient`. ReAct is Phase 2 code not yet wired into production agents.
+2. **Session directory typo**: `session-managemenet-testing/` (double 'e') — don't rename, it's referenced in docker-compose.yml. All references are consistent.
+3. ~~**WebSocket disconnection under load**~~: Fixed — `frontend/js/app.js` now has exponential backoff reconnection (up to 5 retries, 1s/2s/4s/8s/16s delays), with guards against reconnecting after terminal scan states.
+
+## Security Rules
+
+- **Never commit `.env`** — it contains API keys. Use `.env.example` as template.
+- Target domains must be whitelisted via `security_guards.py` before scanning.
+- All tool executions are audit-logged.
+- HITL (Human-in-the-Loop) approval is required for destructive operations when enabled.
+
+## Evaluation Metrics
+
+Target metrics for thesis validation (calculated in `multi_agent_system/evaluation/metrics.py`):
+- Precision >= 90%, Recall >= 80%, F1-Score >= 85%
+- Task Completion Rate (TCR) >= 70% of WSTG test cases
+- Test targets: DVWA (25 known vulns) and OWASP Juice Shop (100+ challenges)
