@@ -11,7 +11,7 @@
 
 ## 📋 Overview
 
-**RAJDOLL** (Reconnaissance Andジ Dynamic Offensive LLM-based) is an advanced multi-agent penetration testing system that automates comprehensive web application security assessments based on the OWASP Web Security Testing Guide (WSTG) 4.2.
+**RAJDOLL** (Reconnaissance And Joint Dynamic Offensive LLM-based) is an advanced multi-agent penetration testing system that automates comprehensive web application security assessments based on the OWASP Web Security Testing Guide (WSTG) 4.2.
 
 ### Key Features
 
@@ -596,3 +596,4 @@ If you use RAJDOLL in your research, please cite:
 
 **Version:** 2.0  
 **Last Updated:** December 14, 2025
+
