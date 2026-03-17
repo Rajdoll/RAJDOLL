@@ -53,7 +53,20 @@
       "Bash(sudo apt-get:*)",
       "Bash(pip install:*)",
       "Bash(docker-compose config:*)",
-      "Bash(docker network:*)"
+      "Bash(docker network:*)",
+      "Bash(git:*)",
+      "Bash(docker start:*)",
+      "Bash(sed:*)",
+      "Bash(for agent:*)",
+      "Bash(do echo:*)",
+      "Read(//mnt/d/MCP/RAJDOLL/multi_agent_system/agents/**)",
+      "Bash(done)",
+      "Bash(for f:*)",
+      "Read(//mnt/d/MCP/RAJDOLL/**)",
+      "Bash(ip route:*)",
+      "Bash(netstat -tlnp)",
+      "Bash(docker rm:*)",
+      "Bash(docker run:*)"
     ]
   }
 }

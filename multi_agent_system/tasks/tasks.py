@@ -87,16 +87,23 @@ def run_job_task(self, job_id: int) -> str:
             db.commit()
             return job.status.value
 
+        # Determine final status: job is "completed" if the report was generated.
+        # Individual agent failures (tool timeouts, MCP issues) are expected
+        # and should not fail the entire scan.
+        report_agent = db.query(JobAgent).filter(
+            JobAgent.job_id == job_id,
+            JobAgent.agent_name == "ReportGenerationAgent",
+        ).one_or_none()
+        report_ok = report_agent and report_agent.status == AgentStatus.completed
+
         statuses = db.query(JobAgent.status).filter(JobAgent.job_id == job_id).all()
         flat_statuses = [s[0] for s in statuses]
-
         any_failed = any(s == AgentStatus.failed for s in flat_statuses)
-        any_incomplete = any(s in (AgentStatus.pending, AgentStatus.running) for s in flat_statuses)
 
-        if any_failed or any_incomplete:
-            final = JobStatus.failed
-        else:
+        if report_ok or not any_failed:
             final = JobStatus.completed
+        else:
+            final = JobStatus.failed
 
         job.status = final
         job.updated_at = _now()

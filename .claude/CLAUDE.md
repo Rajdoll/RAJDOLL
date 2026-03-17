@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Summary
 
-RAJDOLL is a multi-agent penetration testing system that automates web security assessments per OWASP WSTG 4.2. It uses 14 specialized agents coordinated by an orchestrator, each targeting a specific WSTG category. Agents call security tools (SQLMap, Dalfox, Nmap, etc.) via MCP (Model Context Protocol) servers. An LLM (local via LM Studio or remote via OpenAI) generates adaptive tool arguments based on reconnaissance context.
+RAJDOLL is a multi-agent penetration testing system that automates web security assessments per OWASP WSTG 4.2. It uses 14 specialized agents coordinated by an orchestrator in a **Planner-Summarizer Sequential** architecture (inspired by HackSynth, PentestGPT, PENTEST-AI). Agents call security tools (SQLMap, Dalfox, Nmap, etc.) via MCP (Model Context Protocol) servers. A local LLM (Qwen 3-4B via LM Studio) generates adaptive tool arguments based on reconnaissance context, with `json_schema` enforcement for structured output.
 
 **Author:** Martua Raja Doli Pangaribuan — Politeknik Siber dan Sandi Negara thesis project.
 
@@ -14,21 +14,14 @@ RAJDOLL is a multi-agent penetration testing system that automates web security 
 # Start all services (API + worker + DB + Redis + 14 MCP servers)
 docker-compose up -d
 
-# Rebuild after code changes
-docker-compose build && docker-compose up -d
+# Rebuild after code changes (worker + specific MCP servers)
+docker-compose build --no-cache worker input-mcp auth-mcp && docker-compose up -d
 
 # Clean rebuild (wipe DB volumes)
 docker-compose down -v && docker-compose up --build -d
 
-# View API logs / worker logs
-docker-compose logs -f api
+# View worker logs (where agents run)
 docker-compose logs -f worker
-
-# Run tests
-pytest multi_agent_system/tests/test_new_architecture.py -v
-
-# Run with coverage
-pytest tests/ --cov=multi_agent_system --cov-report=html
 
 # Start a scan via API
 curl -X POST http://localhost:8000/api/scans \
@@ -38,53 +31,62 @@ curl -X POST http://localhost:8000/api/scans \
 # Check scan findings
 curl http://localhost:8000/api/scans/1/findings | jq
 
-# Validate LLM planning fix
-python fix_validation.py
+# Test individual MCP tool from worker container
+docker exec rajdoll-worker-1 curl -s -X POST http://input-mcp:9005/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"test_nosql_injection","arguments":{"url":"http://juice-shop:3000/rest/products/search?q=test"}}}'
 
 # Check LM Studio connection
 curl http://localhost:1234/v1/models
 
-# Run API locally (without Docker, needs DB+Redis running)
-uvicorn api.main:app --reload --port 8000
+# Run tests
+pytest multi_agent_system/tests/test_new_architecture.py -v
 
-# Run Celery worker locally
+# Run Celery worker locally (without Docker, needs DB+Redis running)
 celery -A multi_agent_system.tasks.celery_app.celery_app worker -l INFO
 ```
 
 ## Architecture
 
-### Execution Flow
+### Planner-Summarizer Sequential Pattern
+
+All 14 agents run **fully sequential** (no parallel batches). After each agent completes, the LLM summarizes findings into a cumulative summary that grows and is passed to the next agent. Before the report agent, `analyze_all_findings()` correlates cross-agent findings.
 
 ```
 POST /api/scans → security_guard.validate_target()
   → Job record in PostgreSQL (status: queued)
   → Celery task: run_job_task(job_id) via Redis
   → Orchestrator(job_id).run():
-      Phase 1:   ReconnaissanceAgent (always first, sequential)
+      Phase 1:   ReconnaissanceAgent (discovers endpoints, tech stack)
       Phase 1.5: Auto-login via session_service.create_authenticated_session()
       Phase 2:   LLMPlanner.plan_testing_strategy(recon_results) [5-min timeout]
-      Phase 3:   Execute plan — sequential agents then parallel block
-      Phase 4:   ReportGenerationAgent (always runs, even after circuit breaker)
+      Phase 3:   For each agent sequentially:
+                   → _inject_planner_context(cumulative_summary, task_tree)
+                   → agent.execute()
+                   → _summarize_agent_and_accumulate(agent_name)
+      Phase 4:   _run_final_analysis() — cross-agent correlation
+      Phase 5:   ReportGenerationAgent (always runs, even after circuit breaker)
   → WebSocket pushes status updates to frontend
 ```
 
-### Default Execution Plan
+### Execution Order (DEFAULT_PLAN)
 
-The orchestrator always follows this order regardless of LLM plan (LLM plan only affects *tool selection* within each agent, not execution order):
-
-1. `ReconnaissanceAgent` — sequential
-2. `AuthenticationAgent` — sequential
-3. `SessionManagementAgent` — sequential
-4. `InputValidationAgent` — sequential
-5. Batch 1 (parallel): `AuthorizationAgent`, `ConfigDeploymentAgent`, `ClientSideAgent`
-6. Batch 2 (parallel): `FileUploadAgent`, `APITestingAgent`, `ErrorHandlingAgent`
-7. Batch 3 (parallel): `WeakCryptographyAgent`, `BusinessLogicAgent`, `IdentityManagementAgent`
-8. `ReportGenerationAgent` — sequential
-
-### Two Orchestrator Implementations
-
-- **`orchestrator.py`** (production): Flat plan with sequential + parallel blocks
-- **`hierarchical_orchestrator.py`** (Phase 2, not default): Groups agents into clusters (RECONNAISSANCE → ATTACK → LOGIC → REPORTING) with dependency tracking, KnowledgeGraph, and AttackChainDetector
+```
+ 1. ReconnaissanceAgent      →  Discover endpoints, tech stack
+ 2. AuthenticationAgent      →  Test auth mechanisms
+ 3. SessionManagementAgent   →  Session/token handling
+ 4. InputValidationAgent     →  SQLi, XSS, LFI, SSTI, NoSQL injection
+ 5. AuthorizationAgent       →  Privilege escalation, IDOR
+ 6. ConfigDeploymentAgent    →  Misconfigs, headers, vulnerable components
+ 7. ClientSideAgent          →  DOM XSS, CORS, clickjacking
+ 8. FileUploadAgent          →  Upload vulns, path traversal download
+ 9. APITestingAgent          →  API-specific issues
+10. ErrorHandlingAgent       →  Error disclosure, stack traces
+11. WeakCryptographyAgent    →  Weak TLS, crypto flaws
+12. BusinessLogicAgent       →  Business logic bypass
+13. IdentityManagementAgent  →  User enumeration, registration
+14. ReportGenerationAgent    →  Final OWASP WSTG 4.2 report
+```
 
 ### Agent Tool Execution — Critical Data Flow
 
@@ -93,32 +95,33 @@ Every MCP tool call goes through `BaseAgent.execute_tool()`:
 ```
 execute_tool(server, tool, args)
   → should_run_tool()                    # Circuit breaker + ADAPTIVE_MODE gating
-  → _before_tool_execution()             # CRITICAL: merges LLM args with base args
+  → _before_tool_execution()             # Merges LLM args with base args
       → _merge_planned_arguments()       # Lookup from _tool_arguments_map
+      → _auto_generate_test_arguments()  # Fallback if LLM returned empty args
       → HITLManager (if enabled)
-  → args = approval["arguments"]         # Apply merged args (the Dec 22 fix)
+  → args = approval["arguments"]
   → Auth injection from shared_context
   → _normalize_llm_arguments()           # Map 'target_url'→'url', etc.
   → MCPClient.call_tool()                # JSON-RPC to MCP server container
 ```
 
-### Two LLM Integration Points
+### LLM Integration (Two Points)
 
-1. **LLMPlanner** (orchestrator level): Synchronous, called once after recon via ThreadPoolExecutor. Generates strategic plan for all agents. Uses `plan_testing_strategy()`.
-2. **SimpleLLMClient** (agent level): Async, called per-agent if orchestrator didn't provide a tool plan. Uses `select_tools_for_agent()`. Semaphore limits to 2 concurrent LLM calls.
+1. **LLMPlanner** (orchestrator level): Called once after recon. Generates strategic plan for all agents. Uses `plan_testing_strategy()`. 5-min timeout.
+2. **SimpleLLMClient** (agent level): Called per-agent via `select_tools_for_agent()`. Uses `json_schema` response format for structured output. Strips `<think>` tags. Multi-strategy JSON parsing (direct → strip code fences → extract first balanced block).
 
-Both strip `<think>...</think>` tags (Qwen artifact) and use multi-strategy JSON parsing (direct → strip code fences → extract first balanced block).
+**Current LLM**: Qwen 3-4B via LM Studio (fits 4GB VRAM, ~15-20s/call). `json_schema` enforcement ensures arguments are populated (unlike Qwen 2.5-7B which returned empty `{}`).
 
 ### MCP Server Architecture
 
-All 14 MCP servers use a single generic adapter (`mcp_adapter/server.py`). Each server is a Docker container running the same adapter image but with a different `MODULE_PATH` environment variable pointing to its testing module (e.g., `input-validation-testing/input-validation.py`).
+All 14 MCP servers use a single generic adapter (`mcp_adapter/server.py`). Each server is a Docker container running the same adapter image but with a different `MODULE_PATH` environment variable.
 
 The adapter:
-- Exposes a single `POST /jsonrpc` endpoint (JSON-RPC 2.0)
+- Exposes `POST /jsonrpc` endpoint (JSON-RPC 2.0)
 - Dynamically loads the Python module at `MODULE_PATH` via `importlib`
-- Looks up the tool function by name via `getattr(module, tool_name)`
-- Uses `inspect.signature` to filter args, only passing parameters the function accepts
-- Extracts auth session from `_auth_*` prefixed args before forwarding
+- **`_resolve_url_aliases()`**: Maps LLM-generated `url` param to function-expected `domain`/`host`/`base_url` (solves parameter mismatch)
+- **`_filter_args_for_callable()`**: Uses `inspect.signature` to only pass accepted parameters
+- Extracts auth session from `_auth_*` prefixed args
 
 **MCP Server → Port mapping** (defined in docker-compose.yml):
 | Server | Port | Module |
@@ -151,8 +154,8 @@ Defined in `multi_agent_system/models/models.py` (SQLAlchemy):
 ### Key Configuration
 
 `multi_agent_system/core/config.py` — `Settings` dataclass, reads from env vars:
-- `ADAPTIVE_MODE`: `off` (all tools) | `balanced` | `aggressive` (production default in .env.example)
-- `REACT_MODE` / `REACT_MAX_ITERATIONS`: Enable iterative ReAct loop (env on worker)
+- `ADAPTIVE_MODE`: `off` (all tools) | `balanced` | `aggressive`
+- `REACT_MODE` / `REACT_MAX_ITERATIONS`: Enable iterative ReAct loop per test
 - `MIN_TOOLS_PER_AGENT`: Minimum coverage enforcement (default 7)
 - `DISABLE_LLM_PLANNING`: Skip LLM, use all tools with defaults
 
@@ -160,23 +163,33 @@ Defined in `multi_agent_system/models/models.py` (SQLAlchemy):
 
 | Constant | Value | Location |
 |----------|-------|----------|
-| `AGENT_EXECUTION_TIMEOUT` | 7200s (2h) | base_agent.py |
-| `TOOL_EXECUTION_TIMEOUT` | 1800s (30m) | base_agent.py |
+| `AGENT_EXECUTION_TIMEOUT` | 2700s (45m) | base_agent.py |
+| `TOOL_EXECUTION_TIMEOUT` | 600s (10m) | base_agent.py |
 | `LLM_PLANNING_TIMEOUT` | 300s (5m) | base_agent.py |
-| `job_total_timeout` | 3600s (1h) | config.py |
+| `LLM_SUMMARIZATION_TIMEOUT` | 300s (5m) | orchestrator.py |
+| `LLM_FINAL_ANALYSIS_TIMEOUT` | 600s (10m) | orchestrator.py |
+| `JOB_TOTAL_TIMEOUT` | 14400s (4h) | config.py |
+
+### Job Status Logic
+
+The job is marked `completed` as long as `ReportGenerationAgent` finishes successfully, even if some agents failed (tool timeouts, MCP issues are expected). The job is only `failed` if the report was NOT generated AND agents failed. This logic is enforced in two places:
+- `orchestrator.py` — `run()` method, end of Phase 3
+- `tasks/tasks.py` — `run_job_task()` (Celery task layer, re-evaluates and overrides)
 
 ## Code Patterns
 
 ### Adding a New Agent
 
 1. Create `multi_agent_system/agents/my_agent.py` inheriting `BaseAgent` with `@AgentRegistry.register("MyAgent")`
-2. Add to `DEFAULT_PLAN` in `orchestrator.py` (sequential entry or inside `{"parallel": [...]}`)
+2. Add to `DEFAULT_PLAN` in `orchestrator.py` (sequential list)
 3. Add WSTG mapping in `AGENT_TO_OWASP_MAP`
 4. If it needs a new MCP server: create the testing module, add service to `docker-compose.yml` with `Dockerfile.mcp-tools` and unique port, add URL to `MCP_SERVER_URLS` JSON
 
 ### Adding a New Tool to an MCP Server
 
-Add a Python function to the server's module file (e.g., `input-validation-testing/input-validation.py`). The MCP adapter auto-discovers functions by name. The function signature defines accepted parameters. Return a dict with results.
+Add an async Python function to the server's module file (e.g., `input-validation-testing/input-validation.py`). The MCP adapter auto-discovers functions by name. The function signature defines accepted parameters. Return a dict with `{"status": "success", "data": {...}}`.
+
+Tools accepting `domain` or `host` parameters should use `_parse_target()` helper (where available) to handle both full URLs (`http://host:3000`) and bare hostnames.
 
 ### Shared Context Between Agents
 
@@ -199,9 +212,9 @@ For research evaluation, `off` or `aggressive` is recommended to maximize covera
 
 ## Known Issues
 
-1. ~~**ReAct agent method naming mismatch**~~: Fixed — `react_agent.py` now calls `chat_completion()` matching `SimpleLLMClient`. ReAct is Phase 2 code not yet wired into production agents.
-2. **Session directory typo**: `session-managemenet-testing/` (double 'e') — don't rename, it's referenced in docker-compose.yml. All references are consistent.
-3. ~~**WebSocket disconnection under load**~~: Fixed — `frontend/js/app.js` now has exponential backoff reconnection (up to 5 retries, 1s/2s/4s/8s/16s delays), with guards against reconnecting after terminal scan states.
+1. **Session directory typo**: `session-managemenet-testing/` (double 'e') — don't rename, it's referenced in docker-compose.yml. All references are consistent.
+2. **Juice Shop auto-login fails**: Default credentials (`admin@juice-sh.op`/`admin123`) not in the auto-login credential list. Agents continue with unauthenticated testing.
+3. **Thinking models incompatible**: Qwen 3-4B-thinking outputs `<think>` tags that conflict with `json_schema` enforcement. Non-thinking Qwen 3-4B with `json_schema` is the optimal choice for 4GB VRAM.
 
 ## Security Rules
 

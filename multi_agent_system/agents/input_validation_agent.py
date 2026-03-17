@@ -430,7 +430,8 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             'ssrf': [],
             'ssti': [],
             'command_injection': [],
-            'http_smuggling': []
+            'http_smuggling': [],
+            'nosql_injection': []
         }
 
         # Cap priority URLs to prevent combinatorial explosion
@@ -511,6 +512,8 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                         await self._execute_command_injection_test(url, parameters, all_findings, auth_data)
                     elif test_type == 'http_smuggling':
                         await self._execute_http_smuggling_test(url, all_findings)
+                    elif test_type == 'nosql_injection':
+                        await self._execute_nosql_injection_test(url, parameters, all_findings, auth_data)
                     else:
                         self.log("warning", f"   Unknown test type: {test_type}")
                 except Exception as e:
@@ -569,6 +572,61 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                                        severity="high", evidence={"findings": findings[:5]})
             except Exception as e:
                 self.log("warning", f"test_http_incoming_requests failed: {e}")
+
+        # WSTG-INPV-02: Stored XSS on user-generated content endpoints
+        if self.should_run_tool("test_stored_xss"):
+            try:
+                self.log("info", "🔍 Testing Stored XSS (WSTG-INPV-02)")
+                # Test common user-content endpoints
+                from urllib.parse import urljoin
+                stored_xss_endpoints = [
+                    "/api/Feedbacks/", "/rest/products/1/reviews",
+                    "/api/Complaints", "/api/Recycles/",
+                    "/profile", "/api/Users/",
+                ]
+                for ep in stored_xss_endpoints:
+                    ep_url = urljoin(target, ep)
+                    result = await self.execute_tool(
+                        server="input-validation-testing",
+                        tool="test_stored_xss",
+                        args={"url": ep_url},
+                        auth_session=auth_data, timeout=120
+                    )
+                    if isinstance(result, dict) and result.get("status") == "success":
+                        data = result.get("data", {})
+                        if data.get("vulnerable"):
+                            xss_findings = data.get("findings", [])
+                            self.add_finding("WSTG-INPV-02", f"Stored XSS on {ep}: {len(xss_findings)} issue(s)",
+                                           severity="high", evidence={"endpoint": ep, "findings": xss_findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_stored_xss failed: {e}")
+
+        # WSTG-INPV-05: Standalone NoSQL Injection on key endpoints
+        if self.should_run_tool("test_nosql_injection"):
+            try:
+                self.log("info", "🔍 Testing NoSQL Injection (standalone)")
+                from urllib.parse import urljoin
+                nosql_endpoints = [
+                    "/rest/products/search?q=test",
+                    "/rest/track-order/1",
+                    "/rest/user/login",
+                ]
+                for ep in nosql_endpoints:
+                    ep_url = urljoin(target, ep)
+                    result = await self.execute_tool(
+                        server="input-validation-testing",
+                        tool="test_nosql_injection",
+                        args={"url": ep_url},
+                        auth_session=auth_data, timeout=120
+                    )
+                    if isinstance(result, dict) and result.get("status") == "success":
+                        data = result.get("data", {})
+                        if data.get("vulnerable"):
+                            nosql_findings = data.get("findings", [])
+                            self.add_finding("WSTG-INPV-05", f"NoSQL Injection on {ep}: {len(nosql_findings)} issue(s)",
+                                           severity="high", evidence={"endpoint": ep, "findings": nosql_findings[:5]})
+            except Exception as e:
+                self.log("warning", f"test_nosql_injection failed: {e}")
 
     # ============================================================================
     # 🔧 LLM-DRIVEN TEST EXECUTION METHODS
@@ -926,6 +984,28 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 })
                 self.log("info", f"      ✓ HTTP Smuggling found!")
 
+    async def _execute_nosql_injection_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
+        """Execute NoSQL injection test on LLM-selected URL."""
+        self.log("info", f"   🔍 NoSQL Injection testing: {url}")
+
+        if not isinstance(parameters, list) or not parameters:
+            parameters = ['q', 'search', 'id']
+
+        for param in parameters[:2]:
+            test_url = url if '?' in url else f"{url}?{param}=test"
+            result = await self.execute_tool(
+                server="input-validation-testing",
+                tool="test_nosql_injection",
+                args={"url": test_url, "param": param},
+                auth_session=auth_data,
+                timeout=120
+            )
+            if isinstance(result, dict) and result.get("status") == "success":
+                data = result.get("data", {})
+                if data.get("vulnerable"):
+                    all_findings['nosql_injection'].extend(data.get('findings', []))
+                    self.log("info", f"      ✓ NoSQL injection found!")
+
     def _report_all_findings(self, all_findings: dict):
         """Report all findings to database."""
         # SQL Injection
@@ -1006,6 +1086,16 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 severity="high",
                 evidence={"findings": all_findings['http_smuggling']},
                 details=f"LLM-driven testing found {len(all_findings['http_smuggling'])} HTTP smuggling vulnerabilities"
+            )
+
+        # NoSQL Injection
+        if all_findings['nosql_injection']:
+            self.add_finding(
+                "WSTG-INPV-05",
+                f"NoSQL Injection detected ({len(all_findings['nosql_injection'])} instances)",
+                severity="high",
+                evidence={"findings": all_findings['nosql_injection']},
+                details=f"LLM-driven testing found {len(all_findings['nosql_injection'])} NoSQL injection vulnerabilities"
             )
 
     def _merge_llm_and_rule_plans(self, llm_plan: dict, rule_plan: dict, discovered_urls: list[str]) -> dict:
@@ -1128,9 +1218,9 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 
             # 🔴 HIGH: Login/Auth endpoints (score: 95)
             elif any(pattern in url_lower for pattern in ['/login', '/auth', '/signin', '/register', '/signup']):
-                tests = ['sqli']
+                tests = ['sqli', 'nosql_injection']
                 priority_score = 95
-                reason = "Authentication endpoint - SQLi for auth bypass"
+                reason = "Authentication endpoint - SQLi/NoSQLi for auth bypass"
                 parameters = ['email', 'username', 'password', 'user']
 
             # 🟠 ELEVATED: SSRF-prone endpoints (score: 93)
@@ -1170,9 +1260,9 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 
             # 🟡 MODERATE: General API/REST endpoints (score: 85)
             elif any(pattern in url_lower for pattern in ['/api/', '/rest/']):
-                tests = ['sqli', 'xss']
+                tests = ['sqli', 'xss', 'nosql_injection']
                 priority_score = 85
-                reason = "API endpoint - injection risk"
+                reason = "API endpoint - injection risk (SQL + NoSQL)"
 
                 # Specific API patterns
                 if any(p in url_lower for p in ['/products', '/items', '/users', '/orders']):
@@ -1851,6 +1941,18 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
                 'description': 'HTTP header manipulation (Host injection, IP spoofing)',
                 'severity': 'High',
                 'owasp': 'WSTG-INPV-16'
+            },
+            'test_nosql_injection': {
+                'priority': 'HIGH',
+                'description': 'NoSQL/MongoDB injection with operator and JS payloads',
+                'severity': 'High',
+                'owasp': 'WSTG-INPV-05'
+            },
+            'test_stored_xss': {
+                'priority': 'HIGH',
+                'description': 'Stored XSS via user-generated content endpoints',
+                'severity': 'High',
+                'owasp': 'WSTG-INPV-02'
             },
         }
 

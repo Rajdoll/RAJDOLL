@@ -103,9 +103,18 @@ class SimpleLLMClient:
                     }
                     if not (self.model.startswith("gpt-5") or self.model.startswith("o1")):
                         payload["temperature"] = temperature
-                    # DISABLED: LM Studio qwen models don't support json_object mode
-                    # if (self.model.startswith("gpt-5") or self.model.startswith("gpt-4o")) and response_schema is not None:
-                    #     payload["response_format"] = {"type": "json_object"}
+                    # Enable structured JSON output via json_schema (LM Studio compatible)
+                    # Skip for thinking models — they output <think> tags that break json_schema enforcement
+                    is_thinking_model = "thinking" in self.model.lower() or "think" in self.model.lower()
+                    if response_schema is not None and not is_thinking_model:
+                        payload["response_format"] = {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": response_schema.get("title", "structured_response"),
+                                "strict": True,
+                                "schema": response_schema,
+                            }
+                        }
 
                 response = await client.post(
                     self.endpoint,

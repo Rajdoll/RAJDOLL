@@ -53,7 +53,45 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     addLog('[SYSTEM] RAJDOLL initialized. Ready to scan.', 'success');
+
+    // Auto-restore last scan state on page load
+    restoreLastScan();
 });
+
+// ========== AUTO-RESTORE LAST SCAN ==========
+async function restoreLastScan() {
+    try {
+        const response = await fetch(`${API_BASE}/scans`);
+        if (!response.ok) return;
+        const scans = await response.json();
+        if (!scans || scans.length === 0) return;
+
+        // Get the most recent scan (API returns newest first)
+        const lastScan = scans[0];
+        const jobId = lastScan.job_id || lastScan.id;
+        if (!jobId) return;
+
+        currentJobId = jobId;
+        jobIdDisplay.textContent = jobId;
+        targetDisplay.textContent = lastScan.target || '-';
+
+        const status = lastScan.status || 'unknown';
+        if (['queued', 'running'].includes(status)) {
+            addLog(`[SYSTEM] Resuming monitoring of scan #${jobId}...`, 'info');
+            startStatusPolling();
+        } else {
+            // Fetch full status to show agents and buttons
+            const detailResp = await fetch(`${API_BASE}/scans/${jobId}`);
+            if (detailResp.ok) {
+                const data = await detailResp.json();
+                updateStatusDisplay(data);
+                if (data.agents) updateAgentsDisplay(data.agents);
+            }
+        }
+    } catch (e) {
+        console.log('[restoreLastScan] No previous scan found:', e.message);
+    }
+}
 
 // ========== SCAN OPERATIONS ==========
 async function handleScanSubmit(e) {

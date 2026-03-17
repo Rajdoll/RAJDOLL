@@ -5,6 +5,7 @@ import os
 import re
 import json
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse
 
 # Logging configuration
 import logging
@@ -39,6 +40,31 @@ async def execute_wsl_command(command: str, timeout: int = 180) -> str:
         return "Error: Command timed out"
     except Exception as e:
         return f"Error: {e}"
+
+def _parse_target(domain_or_url: str) -> Dict[str, Any]:
+    """Parse a domain or full URL into components for flexible use.
+
+    Handles both bare hostnames ('juice-shop') and full URLs ('http://juice-shop:3000/path').
+
+    Returns dict with:
+    - base_url: Full URL for HTTP requests (e.g., 'http://juice-shop:3000')
+    - hostname: Bare hostname for DNS/nmap operations (e.g., 'juice-shop')
+    - scheme: Protocol ('http' or 'https')
+    - port: Port number or None
+    """
+    s = str(domain_or_url).strip().rstrip("/")
+    if "://" in s:
+        parsed = urlparse(s)
+        hostname = parsed.hostname or s
+        scheme = parsed.scheme
+        port = parsed.port
+        base_url = f"{scheme}://{hostname}"
+        if port and not (scheme == "https" and port == 443) and not (scheme == "http" and port == 80):
+            base_url += f":{port}"
+        return {"base_url": base_url, "hostname": hostname, "scheme": scheme, "port": port}
+    else:
+        return {"base_url": f"https://{s}", "hostname": s, "scheme": "https", "port": None}
+
 
 # Helper function to validate ffuf findings by following redirects
 async def _validate_ffuf_findings(domain: str, ffuf_results: List[Dict], auth_session: Optional[Dict[str, Any]] = None) -> List[Dict]:
@@ -182,16 +208,18 @@ async def test_network_infrastructure(domain: str) -> Dict[str, Any]:
     Phase 3: Validation of critical exposed services.
     """
     try:
+        t = _parse_target(domain)
+        host = t["hostname"]
         # Phase 1: Extended port scan for better coverage
-        top_scan_cmd = f"nmap -Pn -T4 --top-ports 1000 {domain}"
+        top_scan_cmd = f"nmap -Pn -T4 --top-ports 1000 {host}"
         top_out = await execute_wsl_command(top_scan_cmd, timeout=180)
         open_ports = ",".join(re.findall(r"^(\d+)/tcp\s+open", top_out, re.MULTILINE))
 
         if not open_ports:
-            return {"status": "success", "data": {"message": f"No open TCP ports found in the top 1000 for {domain}."}}
+            return {"status": "success", "data": {"message": f"No open TCP ports found in the top 1000 for {host}."}}
 
         # Phase 2: Service version detection
-        svc_scan_cmd = f"nmap -Pn -T4 -sV -sC -p {open_ports} {domain}"
+        svc_scan_cmd = f"nmap -Pn -T4 -sV -sC -p {open_ports} {host}"
         svc_out = await execute_wsl_command(svc_scan_cmd, timeout=300)
         
         # Parse service information manually since JSON output might not work
@@ -220,7 +248,7 @@ async def test_network_infrastructure(domain: str) -> Dict[str, Any]:
                         critical_services.append(port_info)
 
         # Phase 3: Validate critical services
-        validated_critical = await _validate_critical_services(domain, critical_services)
+        validated_critical = await _validate_critical_services(host, critical_services)
 
         return {
             "status": "success",
@@ -321,15 +349,18 @@ async def find_sensitive_files_and_dirs(domain: str, auth_session: Optional[Dict
     Validates findings by following redirects to determine actual accessibility.
     """
     try:
+        t = _parse_target(domain)
+        base = t["base_url"]
+        host = t["hostname"]
         # Menggunakan path wordlist yang Anda tentukan sebelumnya
         login_list = "/mnt/d/MCP/RAJDOLL/SecLists/Discovery/Web-Content/Logins.fuzz.txt"
-        output_file = f"ffuf_output_{domain}.json"
-        
+        output_file = f"ffuf_output_{host}.json"
+
         if not os.path.exists(login_list):
             return {"status": "error", "message": f"Wordlist not found at: {login_list}"}
-            
+
         cmd = (
-            f"ffuf -w {login_list} -u https://{domain}/FUZZ "
+            f"ffuf -w {login_list} -u {base}/FUZZ "
             f"-mc 200,301,302,401,403 -o {output_file} -of json"
         )
         # Add auth headers/cookies to ffuf command if auth_session provided
@@ -368,6 +399,8 @@ async def test_http_methods_and_headers(domain: str, auth_session: Optional[Dict
     Tests multiple dangerous methods and provides detailed security assessment.
     """
     try:
+        t = _parse_target(domain)
+        target_url = t["base_url"]
         # Build request kwargs with auth support
         req_kwargs = {"verify": False, "timeout": 10}
         if auth_session:
@@ -377,19 +410,19 @@ async def test_http_methods_and_headers(domain: str, auth_session: Optional[Dict
                 req_kwargs['headers'] = auth_session.get('headers', {})
             elif 'token' in auth_session:
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
-        
+
         async with httpx.AsyncClient(**req_kwargs) as client:
             # Test basic GET request for headers
-            resp = await client.get(f"https://{domain}")
+            resp = await client.get(target_url)
             headers = {h.lower(): resp.headers[h] for h in resp.headers}
 
             # Test dangerous HTTP methods
             dangerous_methods = ["PUT", "DELETE", "TRACE", "CONNECT", "PATCH"]
             method_results = {}
-            
+
             for method in dangerous_methods:
                 try:
-                    method_resp = await client.request(method, f"https://{domain}")
+                    method_resp = await client.request(method, target_url)
                     method_results[method] = {
                         "status_code": method_resp.status_code,
                         "allowed": method_resp.status_code not in [400, 405, 501],
@@ -704,14 +737,16 @@ async def test_cloud_storage(domain: str, auth_session: Optional[Dict[str, Any]]
     WSTG-CONF-11: Testing Cloud Storage
     """
     try:
+        t = _parse_target(domain)
+        host = t["hostname"]
         findings = []
-        
+
         # Common cloud storage patterns
         cloud_patterns = [
-            {"name": "AWS S3", "pattern": f"{domain.replace('.', '-')}.s3.amazonaws.com"},
-            {"name": "AWS S3 Regional", "pattern": f"{domain.replace('.', '-')}.s3-us-west-2.amazonaws.com"},
-            {"name": "Azure Blob", "pattern": f"{domain.replace('.', '')}.blob.core.windows.net"},
-            {"name": "Google Cloud Storage", "pattern": f"{domain.replace('.', '-')}.storage.googleapis.com"},
+            {"name": "AWS S3", "pattern": f"{host.replace('.', '-')}.s3.amazonaws.com"},
+            {"name": "AWS S3 Regional", "pattern": f"{host.replace('.', '-')}.s3-us-west-2.amazonaws.com"},
+            {"name": "Azure Blob", "pattern": f"{host.replace('.', '')}.blob.core.windows.net"},
+            {"name": "Google Cloud Storage", "pattern": f"{host.replace('.', '-')}.storage.googleapis.com"},
         ]
         
         # Build request kwargs with auth support
@@ -951,6 +986,8 @@ async def test_subdomain_takeover(domain: str, auth_session: Optional[Dict[str, 
     """
     try:
         import socket
+        t = _parse_target(domain)
+        host = t["hostname"]
         findings = []
 
         common_subdomains = [
@@ -976,7 +1013,7 @@ async def test_subdomain_takeover(domain: str, auth_session: Optional[Dict[str, 
 
         async with httpx.AsyncClient(**req_kwargs) as client:
             for sub in common_subdomains:
-                fqdn = f"{sub}.{domain}"
+                fqdn = f"{sub}.{host}"
                 try:
                     # DNS resolution check
                     try:
@@ -1023,6 +1060,244 @@ async def test_subdomain_takeover(domain: str, auth_session: Optional[Dict[str, 
         }}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+async def test_vulnerable_components(
+    domain: str,
+    auth_session: dict = None
+) -> dict:
+    """
+    WSTG-CONF-08: Test for Known Vulnerable Components
+
+    Scans for outdated/vulnerable JavaScript libraries, server frameworks,
+    and CMS platforms by analyzing response headers, HTML source, and
+    JavaScript files.
+
+    Detection methods:
+    - HTTP response header fingerprinting (Server, X-Powered-By)
+    - HTML source code library version extraction
+    - JavaScript file version pattern matching
+    - Cookie-based framework detection
+    """
+    findings = []
+
+    t = _parse_target(domain)
+    target_url = t["base_url"]
+
+    req_kwargs = {"timeout": 20, "follow_redirects": True, "verify": False}
+    if auth_session:
+        if 'cookies' in auth_session:
+            req_kwargs['cookies'] = auth_session['cookies']
+        if 'headers' in auth_session:
+            req_kwargs['headers'] = auth_session.get('headers', {})
+        elif 'token' in auth_session:
+            req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+    # Known vulnerable library patterns (inline subset for standalone operation)
+    library_patterns = {
+        "jQuery": {
+            "patterns": [r"jquery[.-]?(\d+\.\d+\.\d+)", r"jQuery v(\d+\.\d+\.\d+)", r"jQuery JavaScript Library v(\d+\.\d+\.\d+)"],
+            "vulnerable_below": "3.5.0",
+            "cves": ["CVE-2020-11022", "CVE-2020-11023", "CVE-2019-11358"],
+            "severity": "medium"
+        },
+        "Angular": {
+            "patterns": [r"angular[.-]?(\d+\.\d+\.\d+)", r"AngularJS v(\d+\.\d+\.\d+)"],
+            "vulnerable_below": "1.8.0",
+            "cves": ["CVE-2022-25869", "CVE-2019-10768"],
+            "severity": "high"
+        },
+        "Lodash": {
+            "patterns": [r"lodash[.-]?(\d+\.\d+\.\d+)"],
+            "vulnerable_below": "4.17.21",
+            "cves": ["CVE-2020-8203", "CVE-2021-23337", "CVE-2019-10744"],
+            "severity": "high"
+        },
+        "Moment.js": {
+            "patterns": [r"moment[.-]?(\d+\.\d+\.\d+)", r"//! moment\.js.*v(\d+\.\d+\.\d+)"],
+            "vulnerable_below": "2.29.4",
+            "cves": ["CVE-2022-24785", "CVE-2022-31129"],
+            "severity": "high"
+        },
+        "Bootstrap": {
+            "patterns": [r"bootstrap[.-]?(\d+\.\d+\.\d+)", r"Bootstrap v(\d+\.\d+\.\d+)"],
+            "vulnerable_below": "4.3.1",
+            "cves": ["CVE-2019-8331", "CVE-2018-14040"],
+            "severity": "medium"
+        },
+        "Handlebars": {
+            "patterns": [r"handlebars[.-]?(\d+\.\d+\.\d+)", r"Handlebars v(\d+\.\d+\.\d+)"],
+            "vulnerable_below": "4.7.6",
+            "cves": ["CVE-2021-23383", "CVE-2019-19919"],
+            "severity": "critical"
+        },
+        "Socket.io": {
+            "patterns": [r"socket\.io[.-]?(\d+\.\d+\.\d+)"],
+            "vulnerable_below": "2.4.0",
+            "cves": ["CVE-2020-28481"],
+            "severity": "medium"
+        },
+    }
+
+    # Server header fingerprints
+    server_patterns = [
+        {"header": "Server", "pattern": r"Apache/(\d+\.\d+\.\d+)", "name": "Apache"},
+        {"header": "Server", "pattern": r"nginx/(\d+\.\d+\.\d+)", "name": "Nginx"},
+        {"header": "Server", "pattern": r"Microsoft-IIS/(\d+\.\d+)", "name": "IIS"},
+        {"header": "X-Powered-By", "pattern": r"Express", "name": "Express.js"},
+        {"header": "X-Powered-By", "pattern": r"PHP/(\d+\.\d+\.\d+)", "name": "PHP"},
+    ]
+
+    try:
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Fetch main page
+            resp = await client.get(target_url)
+            html = resp.text
+            resp_headers = dict(resp.headers)
+
+            # ===== CHECK 1: Server/Framework Headers =====
+            for fp in server_patterns:
+                header_val = resp_headers.get(fp["header"].lower(), "")
+                if header_val:
+                    match = re.search(fp["pattern"], header_val, re.IGNORECASE)
+                    if match:
+                        version = match.group(1) if match.lastindex else "detected"
+                        findings.append({
+                            "component": fp["name"],
+                            "version": version,
+                            "source": f"HTTP header: {fp['header']}",
+                            "type": "server_info_disclosure",
+                            "severity": "low",
+                            "description": f"{fp['name']} version {version} disclosed via {fp['header']} header",
+                            "recommendation": f"Remove or obfuscate {fp['header']} header"
+                        })
+
+            # ===== CHECK 2: JavaScript Library Detection in HTML =====
+            for lib_name, lib_info in library_patterns.items():
+                for pattern in lib_info["patterns"]:
+                    match = re.search(pattern, html, re.IGNORECASE)
+                    if match:
+                        version = match.group(1) if match.lastindex else "unknown"
+
+                        # Simple version comparison
+                        is_vulnerable = False
+                        try:
+                            vuln_parts = [int(x) for x in lib_info["vulnerable_below"].split(".")]
+                            ver_parts = [int(x) for x in version.split(".")]
+                            is_vulnerable = ver_parts < vuln_parts
+                        except (ValueError, IndexError):
+                            pass
+
+                        if is_vulnerable:
+                            findings.append({
+                                "component": lib_name,
+                                "version": version,
+                                "vulnerable_below": lib_info["vulnerable_below"],
+                                "cves": lib_info["cves"],
+                                "source": "HTML source",
+                                "type": "vulnerable_component",
+                                "severity": lib_info["severity"],
+                                "description": f"{lib_name} {version} is vulnerable (CVEs: {', '.join(lib_info['cves'][:3])})",
+                                "recommendation": f"Update {lib_name} to version >= {lib_info['vulnerable_below']}"
+                            })
+                        else:
+                            findings.append({
+                                "component": lib_name,
+                                "version": version,
+                                "source": "HTML source",
+                                "type": "component_detected",
+                                "severity": "info",
+                                "description": f"{lib_name} {version} detected"
+                            })
+                        break  # Found this library, move to next
+
+            # ===== CHECK 3: JavaScript File Scanning =====
+            # Find JS file references in HTML
+            js_urls = re.findall(r'(?:src|href)=["\']([^"\']*\.js(?:\?[^"\']*)?)["\']', html, re.IGNORECASE)
+
+            for js_url in js_urls[:20]:  # Limit to 20 JS files
+                if js_url.startswith("//"):
+                    js_url = f"{t['scheme']}:{js_url}"
+                elif js_url.startswith("/"):
+                    js_url = f"{target_url}{js_url}"
+                elif not js_url.startswith("http"):
+                    js_url = f"{target_url}/{js_url}"
+
+                try:
+                    js_resp = await client.get(js_url, timeout=10)
+                    if js_resp.status_code == 200:
+                        js_content = js_resp.text[:50000]  # First 50KB
+
+                        for lib_name, lib_info in library_patterns.items():
+                            # Skip if already found in HTML
+                            if any(f.get("component") == lib_name for f in findings):
+                                continue
+
+                            for pattern in lib_info["patterns"]:
+                                match = re.search(pattern, js_content, re.IGNORECASE)
+                                if match:
+                                    version = match.group(1) if match.lastindex else "unknown"
+
+                                    is_vulnerable = False
+                                    try:
+                                        vuln_parts = [int(x) for x in lib_info["vulnerable_below"].split(".")]
+                                        ver_parts = [int(x) for x in version.split(".")]
+                                        is_vulnerable = ver_parts < vuln_parts
+                                    except (ValueError, IndexError):
+                                        pass
+
+                                    if is_vulnerable:
+                                        findings.append({
+                                            "component": lib_name,
+                                            "version": version,
+                                            "vulnerable_below": lib_info["vulnerable_below"],
+                                            "cves": lib_info["cves"],
+                                            "source": f"JavaScript file: {js_url.split('/')[-1][:50]}",
+                                            "type": "vulnerable_component",
+                                            "severity": lib_info["severity"],
+                                            "description": f"{lib_name} {version} is vulnerable",
+                                            "recommendation": f"Update {lib_name} to >= {lib_info['vulnerable_below']}"
+                                        })
+                                    break
+                except Exception:
+                    continue
+
+            # ===== CHECK 4: Cookie-based Detection =====
+            cookie_patterns = {
+                "connect.sid": "Express.js",
+                "JSESSIONID": "Java Servlet",
+                "PHPSESSID": "PHP",
+                "laravel_session": "Laravel",
+                "ASP.NET_SessionId": "ASP.NET",
+            }
+
+            set_cookie = resp_headers.get("set-cookie", "")
+            for cookie_name, framework in cookie_patterns.items():
+                if cookie_name in set_cookie:
+                    findings.append({
+                        "component": framework,
+                        "version": "detected",
+                        "source": f"Cookie: {cookie_name}",
+                        "type": "framework_detected",
+                        "severity": "info",
+                        "description": f"{framework} detected via {cookie_name} cookie"
+                    })
+
+        vulnerable_count = len([f for f in findings if f.get("type") == "vulnerable_component"])
+
+        return {
+            "status": "success",
+            "data": {
+                "vulnerable": vulnerable_count > 0,
+                "vulnerabilities_found": vulnerable_count,
+                "total_components_detected": len(findings),
+                "findings": findings,
+                "description": f"Component analysis complete. Found {vulnerable_count} vulnerable components out of {len(findings)} detected.",
+                "message": f"Found {vulnerable_count} vulnerable components" if vulnerable_count > 0 else "No vulnerable components detected"
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Vulnerable component testing failed: {str(e)}"}
 
 
 # if __name__ == "__main__":  # REMOVED: Using JSON-RPC adapter

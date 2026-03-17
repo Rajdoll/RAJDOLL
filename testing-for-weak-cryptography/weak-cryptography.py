@@ -82,13 +82,20 @@ async def test_cleartext_info(domain: str, auth_session: Optional[Dict[str, Any]
     """
     [REVISI] Checks for sensitive data transmission over plain HTTP.
     logger.info(f"🔍 Executing test_cleartext_info")
-    
+
     Args:
-        domain: Target domain to check
+        domain: Target domain or full URL to check
         auth_session: Optional authentication session with cookies/headers/token
     """
     try:
-        url = f"http://{domain}"
+        # Handle both bare domain and full URL
+        if "://" in str(domain):
+            parsed = urlparse(str(domain))
+            url = f"http://{parsed.hostname}"
+            if parsed.port and parsed.port != 80:
+                url += f":{parsed.port}"
+        else:
+            url = f"http://{domain}"
         req_kwargs = {"timeout": 8, "follow_redirects": True}
         if auth_session:
             if 'cookies' in auth_session:

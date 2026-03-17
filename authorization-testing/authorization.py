@@ -240,6 +240,20 @@ async def test_idor_comprehensive(
             "/rest/items/{id}",
             "/users/{id}",  # Simple patterns
             "/items/{id}",
+            "/rest/basket/{id}",        # Shopping basket access
+            "/api/BasketItems/{id}",    # Basket items
+            "/api/Feedbacks/{id}",      # Feedback/reviews
+            "/api/Complaints/{id}",     # Complaint records
+            "/api/Recycles/{id}",       # Recycle data
+            "/api/Addresss/{id}",       # Address records (note: typo-inclusive)
+            "/api/Addresses/{id}",      # Address records
+            "/api/Cards/{id}",          # Payment cards
+            "/api/Products/{id}",       # Product details
+            "/api/Quantitys/{id}",      # Quantity records
+            "/api/SecurityQuestions/{id}", # Security questions
+            "/rest/products/{id}/reviews", # Product reviews
+            "/api/Deliverys/{id}",      # Delivery records
+            "/api/Wallets/{id}",        # Wallet data
         ]
     else:
         idor_patterns = endpoint_patterns

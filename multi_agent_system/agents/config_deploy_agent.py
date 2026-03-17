@@ -187,56 +187,59 @@ Write to shared_context:
                 self.log("warning", f"find_sensitive_files_and_dirs failed: {e}")
 
         # OPSI B: File extensions testing
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="configuration-and-deployment-management",
-                    tool="find_sensitive_files_and_dirs",
-                    args={"base_url": target}, auth_session=auth_data), timeout=120
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                data = res.get("data", {})
-                vulns = data.get("findings", [])
-                vuln_count = data.get("vulnerabilities_found", 0)
-                if vulns and vuln_count > 0:
-                    self.add_finding("WSTG-CONF", f"Dangerous file extensions allowed: {vuln_count} vulnerable extension(s)", severity="high", evidence={"findings": vulns[:5]})
-        except Exception as e:
-            self.log("warning", f"test_file_extensions failed: {e}")
+        if self.should_run_tool("test_file_extensions"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_file_extensions",
+                        args={"base_url": target}, auth_session=auth_data), timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    vulns = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if vulns and vuln_count > 0:
+                        self.add_finding("WSTG-CONF", f"Dangerous file extensions allowed: {vuln_count} vulnerable extension(s)", severity="high", evidence={"findings": vulns[:5]})
+            except Exception as e:
+                self.log("warning", f"test_file_extensions failed: {e}")
 
         # OPSI B: RIA cross-domain policy
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="configuration-and-deployment-management",
-                    tool="test_network_infrastructure",
-                    args={"base_url": target}, auth_session=auth_data), timeout=90
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                data = res.get("data", {})
-                findings = data.get("findings", [])
-                vuln_count = data.get("vulnerabilities_found", 0)
-                if findings and vuln_count > 0:
-                    self.add_finding("WSTG-CONF", f"Cross-domain policy misconfiguration: {vuln_count} issue(s)", severity="medium", evidence={"findings": findings[:3]})
-        except Exception as e:
-            self.log("warning", f"test_ria_cross_domain failed: {e}")
+        if self.should_run_tool("test_ria_cross_domain"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_ria_cross_domain",
+                        args={"base_url": target}, auth_session=auth_data), timeout=90
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        self.add_finding("WSTG-CONF", f"Cross-domain policy misconfiguration: {vuln_count} issue(s)", severity="medium", evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_ria_cross_domain failed: {e}")
 
         # OPSI B: File permissions
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="configuration-and-deployment-management",
-                    tool="test_network_infrastructure",
-                    args={"base_url": target}, auth_session=auth_data), timeout=150
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                data = res.get("data", {})
-                findings = data.get("findings", [])
-                vuln_count = data.get("vulnerabilities_found", 0)
-                if findings and vuln_count > 0:
-                    severity = "high" if any("traversal" in str(f).lower() for f in findings) else "medium"
-                    self.add_finding("WSTG-CONF", f"File permission vulnerabilities: {vuln_count} found", severity=severity, evidence={"findings": findings[:3]})
-        except Exception as e:
-            self.log("warning", f"test_file_permissions failed: {e}")
+        if self.should_run_tool("test_file_permissions"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_file_permissions",
+                        args={"base_url": target}, auth_session=auth_data), timeout=150
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if findings and vuln_count > 0:
+                        severity = "high" if any("traversal" in str(f).lower() for f in findings) else "medium"
+                        self.add_finding("WSTG-CONF", f"File permission vulnerabilities: {vuln_count} found", severity=severity, evidence={"findings": findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_file_permissions failed: {e}")
 
         # OPSI B: Cloud storage
         if self.should_run_tool("test_cloud_storage"):
@@ -311,6 +314,30 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_subdomain_takeover failed: {e}")
 
+        # WSTG-CONF-08: Vulnerable components
+        if self.should_run_tool("test_vulnerable_components"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_vulnerable_components",
+                        args={"domain": domain}, auth_session=auth_data), timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    vuln_count = data.get("vulnerabilities_found", 0)
+                    if vuln_count > 0:
+                        vuln_findings = [f for f in data.get("findings", []) if f.get("type") == "vulnerable_component"]
+                        self.add_finding("WSTG-CONF-08", f"Vulnerable components: {vuln_count} outdated library/framework(s)",
+                                       severity="high", evidence={"findings": vuln_findings[:5]})
+                    # Also report info disclosure via headers
+                    info_findings = [f for f in data.get("findings", []) if f.get("type") == "server_info_disclosure"]
+                    if info_findings:
+                        self.add_finding("WSTG-CONF-08", f"Server info disclosure: {len(info_findings)} header(s) expose version",
+                                       severity="low", evidence={"findings": info_findings[:3]})
+            except Exception as e:
+                self.log("warning", f"test_vulnerable_components failed: {e}")
+
         self.log("info", "Configuration & Deployment checks complete")
 
     def _get_target(self) -> str | None:
@@ -326,10 +353,14 @@ Write to shared_context:
             'test_network_infrastructure',
             'find_sensitive_files_and_dirs',
             'test_http_methods_and_headers',
+            'test_file_extensions',
+            'test_ria_cross_domain',
+            'test_file_permissions',
             'test_cloud_storage',
             'test_sensitive_file_extensions',
             'test_hsts',
             'test_subdomain_takeover',
+            'test_vulnerable_components',
         ]
 
     def _domain_from_target(self, target: str) -> str:
