@@ -21,9 +21,9 @@ from ..utils.confidence_scorer import ConfidenceScorer, ConfidenceScore, Evidenc
 
 # Timeouts aligned with job_total_timeout (3600s) to prevent cascading delays
 AGENT_EXECUTION_TIMEOUT = 2700  # 45 minutes per agent (leaves room for other phases within 1hr job timeout)
-LLM_PLANNING_TIMEOUT = 300      # 5 minutes for LLM planning
+LLM_PLANNING_TIMEOUT = 120      # 2 minutes for LLM planning (Qwen 3-4B responds in 15-60s)
 TOOL_EXECUTION_TIMEOUT = 600    # 10 minutes per tool (sufficient for SQLMap; was 1800s which let stuck tools block everything)
-MAX_LLM_RETRIES = 3             # Maximum LLM retry attempts
+MAX_LLM_RETRIES = 2             # Maximum LLM retry attempts (worst case: 240s vs 900s)
 MAX_TOOLS_PER_AGENT = 50        # Allow comprehensive testing (was 5)
 
 # Global concurrency limit for LLM planning across agents.
@@ -293,6 +293,18 @@ class BaseAgent:
 
 			# Check if LLM planning disabled via env var or class attribute
 			disable_planning = os.getenv('DISABLE_LLM_PLANNING', 'false').lower() == 'true' or getattr(self, "disable_llm_planning", False)
+
+			# Tier 2.1: Skip per-agent LLM if orchestrator already ran LLM planning
+			# (the orchestrator plan just didn't have tools for THIS agent — use all tools)
+			if not disable_planning and getattr(self, "_orchestrator_had_plan", False):
+				disable_planning = True
+				print(f"⏭️ {self.agent_name}: Skipping per-agent LLM — orchestrator already planned (no tools for this agent)", file=sys.stderr, flush=True)
+
+			# Tier 2.2: Skip LLM planning for agents with <= 5 tools (no value in selection)
+			if not disable_planning and len(available_tools) <= 5:
+				disable_planning = True
+				print(f"⏭️ {self.agent_name}: Skipping LLM — only {len(available_tools)} tools (run all)", file=sys.stderr, flush=True)
+
 			print(
 				f"▶▶▶ {self.agent_name}: disable_planning={disable_planning}, has_llm_client={bool(self._llm_client)}",
 				file=sys.stderr,

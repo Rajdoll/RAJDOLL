@@ -190,15 +190,15 @@ Write to shared_context:
 				)
 				if isinstance(res, dict) and res.get("status") == "success":
 					data = res.get("data", {})
-				# Sanitize evidence - extract safe fields only
-				safe_evidence = {
-					"page_served_over_https": bool(data.get("page_served_over_https")),
-					"form_action_is_https": bool(data.get("form_action_is_https"))
-				}
-				if not data.get("page_served_over_https") or not data.get("form_action_is_https"):
-					self.add_finding("WSTG-ATHN", "Login not fully over HTTPS", severity="medium", evidence=safe_evidence)
-				else:
-					self.add_finding("WSTG-ATHN", "Login served over HTTPS", severity="info", evidence=safe_evidence)
+					# Sanitize evidence - extract safe fields only
+					safe_evidence = {
+						"page_served_over_https": bool(data.get("page_served_over_https")),
+						"form_action_is_https": bool(data.get("form_action_is_https"))
+					}
+					if not data.get("page_served_over_https") or not data.get("form_action_is_https"):
+						self.add_finding("WSTG-ATHN", "Login not fully over HTTPS", severity="medium", evidence=safe_evidence)
+					else:
+						self.add_finding("WSTG-ATHN", "Login served over HTTPS", severity="info", evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_tls_credentials failed: {e}")
 
@@ -265,14 +265,12 @@ Write to shared_context:
 						data = res.get("data", {})
 						if data.get("security_questions_found"):
 							severity = "medium" if data.get("rate_limiting") else "high"
-						severity = "medium" if data.get("rate_limiting") else "high"
-						# Sanitize questions - might contain unhashable objects
-						questions = data.get("sample_questions", [])
-						safe_questions = str(questions) if not isinstance(questions, (list, dict, str, int, float, bool, type(None))) else questions
-						self.add_finding("WSTG-ATHN", "Security questions may be predictable", severity=severity,
-									   evidence={"questions": safe_questions, "rate_limiting": data.get("rate_limiting")})
-						break
-				self.log("warning", f"test_security_questions failed: {e}")
+							# Sanitize questions - might contain unhashable objects
+							questions = data.get("sample_questions", [])
+							safe_questions = str(questions) if not isinstance(questions, (list, dict, str, int, float, bool, type(None))) else questions
+							self.add_finding("WSTG-ATHN", "Security questions may be predictable", severity=severity,
+										   evidence={"questions": safe_questions, "rate_limiting": data.get("rate_limiting")})
+							break
 			except Exception as e:
 				self.log("warning", f"test_security_questions failed: {e}")
 		if self.should_run_tool("test_password_reset"):
@@ -346,6 +344,99 @@ Write to shared_context:
 			except Exception as e:
 				self.log("warning", f"test_auth_bypass_schema failed: {e}")
 
+		# Test default credentials
+		if self.should_run_tool("test_default_credentials"):
+			try:
+				res = await self.run_tool_with_timeout(
+					client.call_tool(
+						server="authentication-testing",
+						tool="test_default_credentials",
+						args={"target": target}, auth_session=auth_data
+					),
+					timeout=120
+				)
+				if isinstance(res, dict) and res.get("status") == "success":
+					data = res.get("data", {})
+					if data.get("vulnerabilities_found", 0) > 0:
+						for finding in data.get("findings", [])[:5]:
+							safe_evidence = {"username": finding.get("username", ""), "service": finding.get("service", "")}
+							self.add_finding("WSTG-ATHN-02", f"Default credentials: {finding.get('description', 'Default credentials found')}",
+										   severity="critical", evidence=safe_evidence)
+			except Exception as e:
+				self.log("warning", f"test_default_credentials failed: {e}")
+
+		# Test auth bypass (ffuf-based fuzzing)
+		if self.should_run_tool("test_auth_bypass"):
+			try:
+				res = await self.run_tool_with_timeout(
+					client.call_tool(
+						server="authentication-testing",
+						tool="test_auth_bypass",
+						args={"url": target}, auth_session=auth_data
+					),
+					timeout=120
+				)
+				if isinstance(res, dict) and res.get("status") == "success":
+					data = res.get("data", {})
+					if data.get("vulnerabilities_found", 0) > 0:
+						for finding in data.get("findings", [])[:5]:
+							safe_evidence = {"path": finding.get("path", ""), "status_code": finding.get("status_code", "")}
+							self.add_finding("WSTG-ATHN-04", f"Auth bypass: {finding.get('description', 'Authentication bypass found')}",
+										   severity="high", evidence=safe_evidence)
+			except Exception as e:
+				self.log("warning", f"test_auth_bypass failed: {e}")
+
+		# Test "Remember Me" cookie weakness
+		if self.should_run_tool("test_remember_me"):
+			try:
+				# Collect cookies from target
+				import httpx
+				async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=12) as http:
+					resp = await http.get(target)
+					cookies = [{"name": c.name, "value": c.value, "domain": c.domain, "path": c.path}
+							  for c in resp.cookies.jar]
+					if cookies:
+						res = await self.run_tool_with_timeout(
+							client.call_tool(
+								server="authentication-testing",
+								tool="test_remember_me",
+								args={"cookies": cookies}, auth_session=auth_data
+							),
+							timeout=30
+						)
+						if isinstance(res, dict) and res.get("status") == "success":
+							data = res.get("data", {})
+							if data.get("vulnerabilities_found", 0) > 0:
+								self.add_finding("WSTG-ATHN-05", "Remember Me cookie weakness detected",
+											   severity="medium", evidence={"findings": data.get("findings", [])[:3]})
+			except Exception as e:
+				self.log("warning", f"test_remember_me failed: {e}")
+
+		# Analyze JWT tokens if available
+		if self.should_run_tool("analyze_jwt"):
+			try:
+				jwt_token = None
+				if auth_data:
+					jwt_token = auth_data.get("token") or auth_data.get("jwt_token")
+				if jwt_token:
+					res = await self.run_tool_with_timeout(
+						client.call_tool(
+							server="authentication-testing",
+							tool="analyze_jwt",
+							args={"token": jwt_token}, auth_session=auth_data
+						),
+						timeout=30
+					)
+					if isinstance(res, dict) and res.get("status") == "success":
+						data = res.get("data", {})
+						if data.get("vulnerabilities_found", 0) > 0:
+							for finding in data.get("findings", [])[:5]:
+								safe_evidence = {"type": finding.get("type", ""), "description": finding.get("description", "")}
+								self.add_finding("WSTG-ATHN-09", f"JWT vulnerability: {finding.get('description', 'JWT issue found')}",
+											   severity=finding.get("severity", "high").lower(), evidence=safe_evidence)
+			except Exception as e:
+				self.log("warning", f"analyze_jwt failed: {e}")
+
 		self.log("info", "Authentication checks complete (OPSI B tools included)")
 
 	def _get_available_tools(self) -> list[str]:
@@ -359,6 +450,9 @@ Write to shared_context:
 			'test_cache_headers',
 			'test_alternative_channel_auth',
 			'test_auth_bypass_schema',
+			'test_auth_bypass',
+			'test_remember_me',
+			'analyze_jwt',
 		]
 
 	def _get_target(self) -> str | None:

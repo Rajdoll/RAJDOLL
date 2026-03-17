@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -105,6 +106,52 @@ def _monkeypatch_module(mod: Any, module_path: str) -> None:
         # Non-fatal; best-effort adjustments only
         pass
 
+def _resolve_url_aliases(fn: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Map URL-like parameters to match what the tool function expects.
+
+    Handles common mismatches between LLM-generated arg names and tool signatures:
+    - LLM generates 'url' but tool expects 'domain', 'host', 'base_url', or 'target_url'
+    - LLM generates 'domain' but tool expects 'url'
+    """
+    try:
+        sig = inspect.signature(fn)
+    except Exception:
+        return args
+
+    expected = set(sig.parameters.keys())
+    args = dict(args)  # copy so we don't mutate caller's dict
+
+    # Collect available URL-like values
+    url_val = args.get("url") or args.get("target_url") or args.get("base_url")
+    domain_val = args.get("domain") or args.get("host")
+
+    # url -> domain: pass the FULL url so the tool can parse protocol/port
+    if "domain" in expected and "domain" not in args and url_val:
+        args["domain"] = url_val
+
+    # url -> host: extract hostname (for tools like TLS that need bare host)
+    if "host" in expected and "host" not in args and url_val:
+        parsed = urlparse(url_val if "://" in str(url_val) else f"https://{url_val}")
+        args["host"] = parsed.hostname or str(url_val)
+        # Also map port if tool accepts it and URL has a non-default port
+        if "port" in expected and "port" not in args and parsed.port:
+            args["port"] = parsed.port
+
+    # url -> base_url
+    if "base_url" in expected and "base_url" not in args and url_val:
+        args["base_url"] = url_val
+
+    # url -> target_url
+    if "target_url" in expected and "target_url" not in args and args.get("url"):
+        args["target_url"] = args["url"]
+
+    # domain -> url: construct URL from domain
+    if "url" in expected and "url" not in args and domain_val:
+        args["url"] = f"https://{domain_val}" if "://" not in str(domain_val) else str(domain_val)
+
+    return args
+
+
 def _filter_args_for_callable(fn: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Filter args to only those accepted by fn unless it accepts **kwargs."""
     try:
@@ -170,6 +217,8 @@ async def jsonrpc_endpoint(req: JsonRpcRequest):
         if auth_session:
             filtered_args['auth_session'] = auth_session
 
+        # Resolve URL parameter aliases before filtering
+        filtered_args = _resolve_url_aliases(fn, filtered_args)
         call_args = _filter_args_for_callable(fn, filtered_args)
 
         async def _runner():

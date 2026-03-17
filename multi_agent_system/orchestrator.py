@@ -185,6 +185,10 @@ class Orchestrator:
 
 		agent = agent_cls(job_id=self.job_id)
 
+		# Tier 2.1: Tell agent whether orchestrator had an LLM plan
+		# so it can skip redundant per-agent LLM planning
+		agent._orchestrator_had_plan = bool(self.llm_test_plan)
+
 		# If LLM provided a tool plan, inject it into the agent
 		if tool_plan and hasattr(agent, 'set_tool_plan'):
 			agent.set_tool_plan(tool_plan)
@@ -539,7 +543,7 @@ class Orchestrator:
 				summary = loop.run_until_complete(
 					asyncio.wait_for(
 						summarizer.summarize_agent_findings(agent_name, raw_text, task_tree),
-						timeout=120,  # 2 min max for summarization
+						timeout=300,  # 5 min max for summarization (Qwen 3-4B on 4GB VRAM)
 					)
 				)
 				print(f"[Orchestrator] Summarized {agent_name} ({len(summary)} chars)")
@@ -566,7 +570,7 @@ class Orchestrator:
 			analysis = loop.run_until_complete(
 				asyncio.wait_for(
 					summarizer.analyze_all_findings(self.cumulative_summary, task_tree, target),
-					timeout=180,  # 3 min
+					timeout=600,  # 10 min for final cross-agent analysis
 				)
 			)
 			print(f"[Orchestrator] Final analysis complete ({len(analysis)} chars)")
@@ -794,18 +798,29 @@ class Orchestrator:
 		# Aggregation/reporting would go here
 		print("[Orchestrator] Testing completed")
 		
-		# Check if any agents failed and update job status accordingly
+		# Determine final job status based on agent results
+		# The job is "completed" as long as the report was generated.
+		# Individual agent failures are expected (tool timeouts, MCP issues)
+		# and should not fail the entire scan.
 		with get_db() as db:
 			failed_agents = db.query(JobAgent).filter(
 				JobAgent.job_id == self.job_id,
 				JobAgent.status == AgentStatus.failed
 			).all()
-			
+			report_agent = db.query(JobAgent).filter(
+				JobAgent.job_id == self.job_id,
+				JobAgent.agent_name == "ReportGenerationAgent",
+			).one_or_none()
+			report_ok = report_agent and report_agent.status == AgentStatus.completed
+
 			if failed_agents:
 				failed_names = [ja.agent_name for ja in failed_agents]
 				print(f"[Orchestrator] WARNING: {len(failed_agents)} agent(s) failed: {failed_names}")
-				self._update_job_status(JobStatus.failed)
-			else:
-				print("[Orchestrator] All agents completed successfully")
+
+			if report_ok or not failed_agents:
+				print(f"[Orchestrator] Job completed (report generated, {len(failed_agents)} agent(s) had errors)")
 				self._update_job_status(JobStatus.completed)
+			else:
+				print(f"[Orchestrator] Job failed — report not generated and {len(failed_agents)} agent(s) failed")
+				self._update_job_status(JobStatus.failed)
 

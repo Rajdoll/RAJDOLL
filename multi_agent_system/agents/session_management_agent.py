@@ -378,7 +378,10 @@ Write to shared_context:
             'test_logout_functionality',
             'test_session_fixation',
             'test_cors_misconfiguration',
-            'test_exposed_session_vars'
+            'test_exposed_session_vars',
+            'test_csrf_protection',
+            'test_session_puzzling',
+            'test_session_hijacking',
         ]
 
     def _get_target(self) -> str | None:

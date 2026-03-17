@@ -241,6 +241,62 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                 except Exception as e:
                     self.log("warning", f"MIME type bypass test failed: {e}")
         
+        # Test upload size limits
+        if self.should_run_tool("test_upload_size_limit"):
+            for endpoint in upload_endpoints[:3]:
+                upload_url = endpoint.get("url")
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="file-upload-testing",
+                            tool="test_upload_size_limit",
+                            args={"url": upload_url, "file_param": "file"},
+                            auth_session=auth_data
+                        ),
+                        timeout=90
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        if data.get("vulnerable"):
+                            findings = data.get("findings", [])
+                            for finding in findings:
+                                self.add_finding(
+                                    "WSTG-BUSL-09",
+                                    f"Upload size limit bypass: {finding.get('file_size', 'unknown')}",
+                                    severity=finding.get("severity", "medium"),
+                                    evidence={"url": upload_url, "description": finding.get("description", "")}
+                                )
+                            self.log("info", f"Found {len(findings)} size limit issues")
+                except Exception as e:
+                    self.log("warning", f"Upload size limit test failed: {e}")
+
+        # Test path traversal in file downloads
+        if self.should_run_tool("test_path_traversal_download"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="file-upload-testing",
+                        tool="test_path_traversal_download",
+                        args={"url": target},
+                        auth_session=auth_data
+                    ),
+                    timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        findings = data.get("findings", [])
+                        for finding in findings:
+                            self.add_finding(
+                                "WSTG-BUSL-09",
+                                f"Path traversal download: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "high"),
+                                evidence={"url": finding.get("url", ""), "description": finding.get("description", "")}
+                            )
+                        self.log("info", f"Found {len(findings)} path traversal download vulnerabilities")
+            except Exception as e:
+                self.log("warning", f"Path traversal download test failed: {e}")
+
         self.log("info", "File upload testing complete")
     
     def _get_target(self) -> str | None:
@@ -257,5 +313,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
             'test_unrestricted_upload',
             'test_path_traversal_upload',
             'test_xxe_via_svg',
-            'test_mime_type_bypass'
+            'test_mime_type_bypass',
+            'test_upload_size_limit',
+            'test_path_traversal_download',
         ]

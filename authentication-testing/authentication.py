@@ -6,7 +6,7 @@ import json
 import httpx
 import base64
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Configure logging
 logging.basicConfig(
