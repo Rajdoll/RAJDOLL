@@ -185,13 +185,13 @@ class Orchestrator:
 
 		agent = agent_cls(job_id=self.job_id)
 
-		# Tier 2.1: Tell agent whether orchestrator had an LLM plan
-		# so it can skip redundant per-agent LLM planning
-		agent._orchestrator_had_plan = bool(self.llm_test_plan)
-
-		# If LLM provided a tool plan, inject it into the agent
+		# If LLM provided a tool plan for THIS agent, inject it
+		# and mark that orchestrator already planned (skip per-agent LLM)
 		if tool_plan and hasattr(agent, 'set_tool_plan'):
 			agent.set_tool_plan(tool_plan)
+			agent._orchestrator_had_plan = True
+		else:
+			agent._orchestrator_had_plan = False
 
 		loop = self._ensure_event_loop()
 		error_message: Optional[str] = None

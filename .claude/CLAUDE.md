@@ -8,14 +8,37 @@ RAJDOLL is a multi-agent penetration testing system that automates web security 
 
 **Author:** Martua Raja Doli Pangaribuan — Politeknik Siber dan Sandi Negara thesis project.
 
+### Juice Shop Challenge Coverage (Added 2026-03-18)
+
+16 new Juice Shop-specific MCP tools were added to maximize challenge coverage:
+
+| Tool | MCP Server | Agent | Targets |
+|------|-----------|-------|---------|
+| `test_sqli_login` | input-mcp | InputValidationAgent | Login bypass SQLi (admin/bender/jim) |
+| `analyze_javascript_routes` | info-mcp | ReconnaissanceAgent | Hidden routes, secrets in JS files |
+| `test_hidden_endpoints` | confdep-mcp | ConfigDeploymentAgent | /ftp, /metrics, /support/logs, etc. |
+| `test_registration_mass_assignment` | identity-mcp | IdentityManagementAgent | Admin role injection at registration |
+| `test_captcha_and_rate_limit` | biz-mcp | BusinessLogicAgent | Missing rate limiting on login/feedback |
+| `test_http_parameter_pollution` | input-mcp | InputValidationAgent | Duplicate param abuse on endpoints |
+| `test_user_spoofing` | authorz-mcp | AuthorizationAgent | Feedback/review UserId manipulation |
+| `test_open_redirect` | client-mcp | ClientSideAgent | Allowlist bypass (/redirect?to=) |
+| `test_2fa_bypass` | auth-mcp | AuthenticationAgent | TOTP brute force, 2FA skip |
+| `test_csp_bypass` | client-mcp | ClientSideAgent | CSP analysis + bypass vectors |
+| `test_coupon_forgery` | biz-mcp | BusinessLogicAgent | Expired coupons, negative qty |
+| `test_npm_vulnerabilities` | confdep-mcp | ConfigDeploymentAgent | Exposed package.json + CVE check |
+| `test_redos` | input-mcp | InputValidationAgent | ReDoS payloads on search/login |
+| Enhanced null byte bypass | fileupload-mcp | FileUploadAgent | Juice Shop /ftp null byte tricks |
+
+Additionally, `file-upload-testing/file_upload.py` was enhanced with Juice Shop-specific files (package.json.bak, coupons_2013.md.bak, encrypt.pyc, etc.) and proactive null byte testing for the /ftp directory.
+
 ## Commands
 
 ```bash
 # Start all services (API + worker + DB + Redis + 14 MCP servers)
 docker-compose up -d
 
-# Rebuild after code changes (worker + specific MCP servers)
-docker-compose build --no-cache worker input-mcp auth-mcp && docker-compose up -d
+# Rebuild after code changes (worker + all modified MCP servers)
+docker-compose build --no-cache worker input-mcp auth-mcp authorz-mcp identity-mcp confdep-mcp client-mcp biz-mcp info-mcp fileupload-mcp && docker-compose up -d
 
 # Clean rebuild (wipe DB volumes)
 docker-compose down -v && docker-compose up --build -d
@@ -72,19 +95,19 @@ POST /api/scans → security_guard.validate_target()
 ### Execution Order (DEFAULT_PLAN)
 
 ```
- 1. ReconnaissanceAgent      →  Discover endpoints, tech stack
- 2. AuthenticationAgent      →  Test auth mechanisms
+ 1. ReconnaissanceAgent      →  Discover endpoints, tech stack, JS route analysis
+ 2. AuthenticationAgent      →  Test auth mechanisms, 2FA bypass (12 tools)
  3. SessionManagementAgent   →  Session/token handling
- 4. InputValidationAgent     →  SQLi, XSS, LFI, SSTI, NoSQL injection
- 5. AuthorizationAgent       →  Privilege escalation, IDOR
- 6. ConfigDeploymentAgent    →  Misconfigs, headers, vulnerable components
- 7. ClientSideAgent          →  DOM XSS, CORS, clickjacking
- 8. FileUploadAgent          →  Upload vulns, path traversal download
+ 4. InputValidationAgent     →  SQLi, XSS, LFI, SSTI, NoSQL, HPP, ReDoS, login SQLi
+ 5. AuthorizationAgent       →  Privilege escalation, IDOR, user spoofing (6 tools)
+ 6. ConfigDeploymentAgent    →  Misconfigs, headers, hidden endpoints, npm vulns (16 tools)
+ 7. ClientSideAgent          →  DOM XSS, CORS, clickjacking, CSP bypass, open redirect (17 tools)
+ 8. FileUploadAgent          →  Upload vulns, path traversal, null byte bypass
  9. APITestingAgent          →  API-specific issues
 10. ErrorHandlingAgent       →  Error disclosure, stack traces
 11. WeakCryptographyAgent    →  Weak TLS, crypto flaws
-12. BusinessLogicAgent       →  Business logic bypass
-13. IdentityManagementAgent  →  User enumeration, registration
+12. BusinessLogicAgent       →  Business logic bypass, coupon forgery, rate limiting (15 tools)
+13. IdentityManagementAgent  →  User enumeration, registration, mass assignment (8 tools)
 14. ReportGenerationAgent    →  Final OWASP WSTG 4.2 report
 ```
 
@@ -213,8 +236,9 @@ For research evaluation, `off` or `aggressive` is recommended to maximize covera
 ## Known Issues
 
 1. **Session directory typo**: `session-managemenet-testing/` (double 'e') — don't rename, it's referenced in docker-compose.yml. All references are consistent.
-2. **Juice Shop auto-login fails**: Default credentials (`admin@juice-sh.op`/`admin123`) not in the auto-login credential list. Agents continue with unauthenticated testing.
+2. **Juice Shop auto-login**: Default credentials (`admin@juice-sh.op`/`admin123`) ARE in `session_service.py DEFAULT_CREDENTIALS`. If auto-login fails, check that the Juice Shop container is running (`docker ps | grep juice-shop`). Run with `--restart unless-stopped` for stability.
 3. **Thinking models incompatible**: Qwen 3-4B-thinking outputs `<think>` tags that conflict with `json_schema` enforcement. Non-thinking Qwen 3-4B with `json_schema` is the optimal choice for 4GB VRAM.
+4. **Orchestrator LLM plan does NOT contain per-agent tools**: The orchestrator's `plan_testing_strategy()` returns `{"strategy": ..., "execution_plan": {"sequence": [agents]}}` — this is a high-level strategy, NOT per-agent tool assignments. The `_orchestrator_had_plan` flag must only be True when `tool_plan` is actually provided to the agent (fixed 2026-03-18 in orchestrator.py). If set True incorrectly, all agents skip their per-agent LLM planning and lose LLM-generated arguments, causing massive recall regression.
 
 ## Security Rules
 
