@@ -628,6 +628,82 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             except Exception as e:
                 self.log("warning", f"test_nosql_injection failed: {e}")
 
+        # WSTG-ATHN-03: SQL Injection Login Bypass
+        if self.should_run_tool("test_sqli_login"):
+            try:
+                self.log("info", "🔍 Testing SQL Injection Login Bypass (WSTG-ATHN-03)")
+                result = await self.execute_tool(
+                    server="input-validation-testing",
+                    tool="test_sqli_login",
+                    args={"url": target},
+                    auth_session=auth_data, timeout=120
+                )
+                if isinstance(result, dict) and result.get("status") == "success":
+                    data = result.get("data", {})
+                    if data.get("vulnerable"):
+                        sqli_login_findings = data.get("findings", [])
+                        for finding in sqli_login_findings:
+                            severity = finding.get("severity", "critical")
+                            self.add_finding(
+                                "WSTG-ATHN-03",
+                                f"SQL Injection Login Bypass: {finding.get('description', 'Auth bypass')} on {finding.get('endpoint', '/login')}",
+                                severity=severity,
+                                evidence={
+                                    "endpoint": finding.get("endpoint"),
+                                    "payload": finding.get("payload"),
+                                    "method": finding.get("method"),
+                                    "type": finding.get("type"),
+                                    "evidence": finding.get("evidence", "")[:500]
+                                }
+                            )
+                        self.log("info", f"   ✓ Found {len(sqli_login_findings)} SQLi login bypass vulnerabilities!")
+            except Exception as e:
+                self.log("warning", f"test_sqli_login failed: {e}")
+
+        # WSTG-INPV-04: HTTP Parameter Pollution
+        if self.should_run_tool("test_http_parameter_pollution"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="input-validation-testing",
+                        tool="test_http_parameter_pollution",
+                        args={"url": target}, auth_session=auth_data), timeout=90
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-INPV-04",
+                                f"HTTP Parameter Pollution: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "medium"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_http_parameter_pollution failed: {e}")
+
+        # WSTG-INPV-13: ReDoS and algorithmic complexity
+        if self.should_run_tool("test_redos"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="input-validation-testing",
+                        tool="test_redos",
+                        args={"url": target}, auth_session=auth_data), timeout=180
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-INPV-13",
+                                f"ReDoS/Complexity: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "high"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_redos failed: {e}")
+
     # ============================================================================
     # 🔧 LLM-DRIVEN TEST EXECUTION METHODS
     # ============================================================================
@@ -1953,6 +2029,24 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
                 'description': 'Stored XSS via user-generated content endpoints',
                 'severity': 'High',
                 'owasp': 'WSTG-INPV-02'
+            },
+            'test_sqli_login': {
+                'priority': 'CRITICAL',
+                'description': 'SQL Injection login bypass on authentication endpoints',
+                'severity': 'Critical',
+                'owasp': 'WSTG-ATHN-03'
+            },
+            'test_http_parameter_pollution': {
+                'priority': 'HIGH',
+                'description': 'HTTP Parameter Pollution on key endpoints',
+                'severity': 'Medium',
+                'owasp': 'WSTG-INPV-04'
+            },
+            'test_redos': {
+                'priority': 'HIGH',
+                'description': 'ReDoS and algorithmic complexity attacks',
+                'severity': 'High',
+                'owasp': 'WSTG-INPV-13'
             },
         }
 

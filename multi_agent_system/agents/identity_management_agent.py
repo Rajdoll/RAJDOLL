@@ -196,6 +196,30 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
             except Exception as e:
                 self.log("warning", f"test_weak_username_policy failed: {e}")
 
+        # Test mass assignment on registration
+        if self.should_run_tool("test_registration_mass_assignment"):
+            try:
+                self.log("info", "Testing registration mass assignment...")
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="identity-management-testing",
+                        tool="test_registration_mass_assignment",
+                        args={"url": target}, auth_session=auth_data), timeout=60
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-IDNT-02",
+                                f"Registration {finding['type']}: {finding['description']}",
+                                severity=finding.get("severity", "high"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": finding.get("evidence", "")[:200]}
+                            )
+                        self.log("info", f"Found {len(data.get('findings', []))} mass assignment issues")
+            except Exception as e:
+                self.log("warning", f"test_registration_mass_assignment failed: {e}")
+
         self.log("info", "Identity management prep complete")
 
     def _get_available_tools(self) -> list[str]:
@@ -208,6 +232,7 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
             'generate_test_usernames',
             'test_username_policy',
             'test_weak_username_policy',
+            'test_registration_mass_assignment',
         ]
 
     def _get_target(self) -> str | None:

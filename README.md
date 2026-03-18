@@ -13,42 +13,56 @@
 
 **RAJDOLL** (Reconnaissance And Joint Dynamic Offensive LLM-based) is an advanced multi-agent penetration testing system that automates comprehensive web application security assessments based on the OWASP Web Security Testing Guide (WSTG) 4.2.
 
+Built as a thesis project at **Politeknik Siber dan Sandi Negara** using the **Planner-Summarizer Sequential** architecture (inspired by HackSynth, PentestGPT, and PENTEST-AI).
+
 ### Key Features
 
-✨ **14 Specialized Agents** - Each agent is an expert in one OWASP WSTG category  
-🧠 **LLM-Powered Planning** - Claude/GPT-4 generates adaptive test strategies  
-🔗 **MCP Integration** - Unified protocol for 15+ security tools (SQLMap, Dalfox, etc.)  
-🎯 **100+ Test Cases** - Comprehensive OWASP WSTG 4.2 coverage  
-📊 **Real-time Monitoring** - WebSocket updates and detailed logging  
-📄 **Professional Reports** - OWASP-compliant Markdown/PDF reports  
-🔐 **Ethical Safeguards** - Authorization controls, rate limiting, HITL confirmation  
+✨ **14 Specialized Agents** - Each expert in one OWASP WSTG category, running sequentially with cumulative context
+🧠 **Local LLM Planning** - Qwen 3-4B via LM Studio generates adaptive tool arguments with `json_schema` enforcement
+🔗 **14 MCP Servers** - 130+ security tools via Model Context Protocol (JSON-RPC 2.0)
+🎯 **97+ WSTG Test Cases** - Including 16 Juice Shop-specific challenge tools
+📊 **Real-time Monitoring** - WebSocket updates, per-agent status, live findings
+📄 **Professional Reports** - OWASP-compliant Markdown/PDF with cross-agent correlation
+🔐 **Ethical Safeguards** - Domain whitelist, rate limiting, HITL confirmation, audit logging
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    ORCHESTRATOR                         │
-│  - Job Planning & Coordination                          │
-│  - LLM Strategic Planning                               │
-│  - Shared Context Management                            │
-└────────────────┬────────────────────────────────────────┘
-                 │
-        ┌────────┴──────────┐
-        │                   │
-┌───────▼──────┐    ┌──────▼───────────────────────────┐
-│ Recon Agent  │    │  13 Specialized Test Agents      │
-│ (Entry Point)│    │  (WSTG Categories 1-13)          │
-└──────────────┘    └──────┬───────────────────────────┘
-                           │
-              ┌────────────┴────────────┐
-              │                         │
-     ┌────────▼─────────┐    ┌─────────▼────────┐
-     │  MCP Client      │    │  Report Agent    │
-     │  (15 Tools)      │    │  (Analysis+Docs) │
-     └──────────────────┘    └──────────────────┘
+POST /api/scans --> SecurityGuard --> Job (PostgreSQL) --> Celery (Redis)
+                                                              |
+                                                     Orchestrator.run()
+                                                              |
+Phase 1:   ReconnaissanceAgent -----> Discover endpoints, JS routes, tech stack
+Phase 1.5: Auto-login (session_service) -----> Authenticated session for all agents
+Phase 2:   LLMPlanner.plan_testing_strategy() -----> Strategic plan [5-min timeout]
+Phase 3:   For each of 14 agents sequentially:
+              --> Per-agent LLM selects tools + generates arguments
+              --> Agent executes tools via MCP (JSON-RPC 2.0)
+              --> LLM summarizes findings --> cumulative_summary grows
+Phase 4:   analyze_all_findings() -----> Cross-agent correlation
+Phase 5:   ReportGenerationAgent -----> Final OWASP WSTG 4.2 report
 ```
+
+### Agent Execution Order
+
+| # | Agent | Tools | Focus |
+|---|-------|-------|-------|
+| 1 | ReconnaissanceAgent | 10+ | Endpoints, tech stack, JS route analysis |
+| 2 | AuthenticationAgent | 12 | Auth bypass, 2FA, JWT, lockout |
+| 3 | SessionManagementAgent | 7 | Session tokens, cookies, fixation |
+| 4 | InputValidationAgent | 24+ | SQLi, XSS, LFI, SSTI, NoSQL, HPP, ReDoS |
+| 5 | AuthorizationAgent | 6 | IDOR, privesc, user spoofing |
+| 6 | ConfigDeploymentAgent | 16 | Misconfigs, hidden endpoints, npm vulns |
+| 7 | ClientSideAgent | 17 | DOM XSS, CORS, CSP bypass, open redirect |
+| 8 | FileUploadAgent | 5+ | Upload vulns, null byte bypass |
+| 9 | APITestingAgent | 7 | API-specific issues |
+| 10 | ErrorHandlingAgent | 5 | Error disclosure, stack traces |
+| 11 | WeakCryptographyAgent | 5 | Weak TLS, crypto flaws |
+| 12 | BusinessLogicAgent | 15 | Logic bypass, coupon forgery, rate limiting |
+| 13 | IdentityManagementAgent | 8 | User enumeration, mass assignment |
+| 14 | ReportGenerationAgent | 1 | OWASP WSTG 4.2 report |
 
 **For detailed architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md)
 
@@ -60,7 +74,7 @@
 
 - **Python:** 3.11+
 - **Docker:** 20.10+ & Docker Compose 2.0+
-- **API Key:** Anthropic Claude or OpenAI GPT-4 (optional but recommended)
+- **LLM:** LM Studio with Qwen 3-4B (4GB VRAM) or any OpenAI-compatible API
 - **OS:** Linux/macOS/Windows (WSL2)
 
 ### Installation
@@ -68,7 +82,7 @@
 #### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/rajdoll.git
+git clone https://github.com/Rajdoll/RAJDOLL.git
 cd rajdoll
 ```
 
@@ -84,21 +98,23 @@ nano .env
 **Required Environment Variables:**
 
 ```bash
-# LLM Configuration (RECOMMENDED)
-LLM_PROVIDER=anthropic  # or "openai"
-LLM_API_KEY=your_api_key_here
-LLM_MODEL=claude-3-5-sonnet-20241022  # or "gpt-4o"
-DISABLE_LLM_PLANNING=false  # Set to true to use static planning only
+# LLM Configuration (Local LLM via LM Studio — no cloud API needed)
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://host.docker.internal:1234/v1
+LLM_MODEL=qwen3-4b
+DISABLE_LLM_PLANNING=false
 
-# Database
-DATABASE_URL=postgresql://rajdoll:rajdoll@db:5432/rajdoll
+# Database (pre-configured in docker-compose.yml)
+DATABASE_URL=postgresql+psycopg://rajdoll:rajdoll@db:5432/rajdoll
 
-# Redis (optional, for caching)
+# Redis
 REDIS_URL=redis://redis:6379/0
 
-# Security (IMPORTANT)
-AUTH_TOKEN=your_secure_token_here
-WHITELIST_DOMAINS=localhost,127.0.0.1,dvwa.local,juice-shop.local
+# Adaptive Mode (tool selection strategy)
+ADAPTIVE_MODE=off  # off=all tools | balanced | aggressive
+
+# Security
+WHITELIST_DOMAINS=localhost,127.0.0.1,juice-shop
 ```
 
 #### 3. Build & Launch
@@ -221,18 +237,33 @@ curl -X POST http://localhost:8000/api/scans \
 ### OWASP Juice Shop
 
 ```bash
-# Run Juice Shop container
-docker run -d -p 3000:3000 bkimminich/juice-shop
+# Run Juice Shop on the Docker compose network (recommended)
+docker run -d --name juice-shop --network rajdoll_default \
+  -p 3000:3000 --restart unless-stopped bkimminich/juice-shop
 
-# Scan with RAJDOLL
+# Scan with RAJDOLL (use internal hostname)
 curl -X POST http://localhost:8000/api/scans \
   -H "Content-Type: application/json" \
-  -d '{"target": "http://host.docker.internal:3000"}'
+  -d '{"target": "http://juice-shop:3000"}'
 ```
+
+**Juice Shop Challenge Coverage:**
+
+RAJDOLL includes 16 Juice Shop-specific tools targeting:
+- SQL Injection login bypass (admin, bender, jim accounts)
+- JavaScript static analysis for hidden routes/secrets
+- Hidden endpoint discovery (/ftp, /metrics, /support/logs)
+- Mass assignment at registration (admin role injection)
+- Null byte bypass for restricted files (package.json.bak, encrypt.pyc)
+- Coupon code forgery and negative quantity abuse
+- Open redirect with allowlist bypass (crypto wallet URLs)
+- 2FA/TOTP bypass testing
+- CAPTCHA and rate limiting abuse
+- User spoofing on feedback/reviews
 
 **Expected Results:**
 - **DVWA:** ~25 vulnerabilities detected (Precision: ~90%, Recall: ~85%)
-- **Juice Shop:** ~80-100 vulnerabilities detected
+- **Juice Shop:** 40-60+ vulnerabilities detected across 12 WSTG categories
 
 ---
 
@@ -300,60 +331,32 @@ RAJDOLL implements comprehensive evaluation metrics based on academic research s
 
 ### LLM Configuration
 
-```python
-# .env file
-LLM_PROVIDER=anthropic  # or "openai"
-LLM_API_KEY=sk-ant-xxx  # Your API key
-LLM_MODEL=claude-3-5-sonnet-20241022
-LLM_MAX_TOKENS=4000
-DISABLE_LLM_PLANNING=false
+RAJDOLL uses a **local LLM** (no cloud API dependency) via LM Studio:
 
-# If disabled, uses static DEFAULT_PLAN
+```bash
+# .env file — Local LLM via LM Studio
+LLM_PROVIDER=openai                              # OpenAI-compatible API
+LLM_BASE_URL=http://host.docker.internal:1234/v1  # LM Studio endpoint
+LLM_MODEL=qwen3-4b                               # Fits 4GB VRAM
+DISABLE_LLM_PLANNING=false
 ```
+
+**LLM is used at two points:**
+1. **Orchestrator level** — `plan_testing_strategy()`: Strategic plan after recon (5-min timeout)
+2. **Agent level** — `select_tools_for_agent()`: Per-agent tool selection with `json_schema` enforcement for structured arguments
 
 **LLM Planning Benefits:**
-- Adaptive test selection based on target
-- Context-aware test ordering
-- Comprehensive argument generation
-- ~20-30% more findings vs static plan
+- Adaptive tool arguments based on reconnaissance context
+- Context-aware parameter generation (target-specific payloads)
+- ~2x more findings vs static default arguments
 
-### Agent Configuration
+### Timeout Configuration
 
-```yaml
-# multi_agent_system/config/agents.yaml
-agents:
-  ReconnaissanceAgent:
-    timeout: 300  # 5 minutes
-    max_retries: 3
-    tools:
-      - subfinder
-      - amass
-      - nmap
-  
-  InputValidationAgent:
-    timeout: 900  # 15 minutes
-    max_retries: 3
-    tools:
-      - sqlmap  # level=3, risk=2
-      - dalfox
-      - ffuf
-```
-
-### Tool Configuration
-
-```yaml
-# MCP tool settings
-tools:
-  sqlmap:
-    level: 3  # 1-5 (3=balanced)
-    risk: 2   # 1-3 (2=moderate)
-    timeout: 600  # 10 minutes
-    threads: 4
-  
-  dalfox:
-    timeout: 120
-    worker: 100
-    blind: false
+```bash
+JOB_TOTAL_TIMEOUT=14400   # 4 hours total scan budget
+AGENT_TIMEOUT=2700         # 45 minutes per agent
+TOOL_TIMEOUT=600           # 10 minutes per tool
+LLM_PLANNING_TIMEOUT=300   # 5 minutes for LLM planning
 ```
 
 ---
@@ -362,40 +365,43 @@ tools:
 
 ```
 rajdoll/
-├── api/                        # FastAPI backend
+├── api/                            # FastAPI backend
 │   ├── main.py
-│   ├── routes/
-│   └── schemas/
-├── multi_agent_system/         # Core multi-agent system
-│   ├── orchestrator.py         # Agent coordination
-│   ├── agents/                 # 14 specialized agents
-│   │   ├── base_agent.py
-│   │   ├── reconnaissance_agent.py
-│   │   ├── input_validation_agent.py
-│   │   └── ...
+│   └── routes/                     # scans, reporting, websocket, hitl
+├── multi_agent_system/             # Core multi-agent system
+│   ├── orchestrator.py             # Planner-Summarizer Sequential coordination
+│   ├── agents/                     # 14 specialized agents
+│   │   ├── base_agent.py           # Base class (LLM planning, MCP execution)
+│   │   ├── reconnaissance_agent.py # JS route analysis, endpoint discovery
+│   │   ├── input_validation_agent.py # 24+ tools (SQLi, XSS, HPP, ReDoS...)
+│   │   ├── authentication_agent.py # 12 tools (2FA bypass, JWT, lockout...)
+│   │   ├── client_side_agent.py    # 17 tools (CSP bypass, open redirect...)
+│   │   ├── business_logic_agent.py # 15 tools (coupon forgery, rate limit...)
+│   │   └── ... (8 more agents)
 │   ├── core/
-│   │   ├── config.py
-│   │   ├── db.py
-│   │   └── security_guards.py  # Authorization & rate limiting
-│   ├── models/                 # SQLAlchemy models
-│   ├── utils/                  # Utilities
-│   │   ├── simple_llm_client.py
-│   │   ├── mcp_client.py
+│   │   ├── config.py               # Settings (ADAPTIVE_MODE, timeouts)
+│   │   ├── db.py                   # PostgreSQL connection
+│   │   └── task_tree.py            # WSTG testing status tracker
+│   ├── utils/
+│   │   ├── simple_llm_client.py    # LLM API (json_schema enforcement)
+│   │   ├── mcp_client.py           # MCP JSON-RPC client
+│   │   ├── session_service.py      # Auto-login (Juice Shop credentials)
 │   │   └── shared_context_manager.py
-│   └── evaluation/             # Metrics calculation
-│       └── metrics.py
-├── authentication-testing/     # MCP servers (15 total)
-├── input-validation-testing/
-├── ...
-├── frontend/                   # React dashboard
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── ARCHITECTURE.md             # Detailed architecture
-├── SECURITY.md                 # Security guidelines
-├── EVALUATION.md               # Metrics & measurement
-├── UAT_PLAN.md                 # User acceptance testing
-└── README.md                   # This file
+│   └── evaluation/metrics.py       # Precision/Recall/F1 calculation
+├── mcp_adapter/server.py           # Generic MCP adapter (all 14 servers)
+├── information-gathering/          # 14 MCP tool modules (one per server)
+├── authentication-testing/         #   Each is an async Python module
+├── input-validation-testing/       #   auto-discovered by mcp_adapter
+├── client-side-testing/
+├── business-logic-testing/
+├── ... (9 more testing modules)
+├── katana-crawler/                 # Headless web crawler (separate image)
+├── frontend/                       # React dashboard
+├── docker-compose.yml              # 20+ services orchestration
+├── Dockerfile                      # Main API/worker image
+├── Dockerfile.mcp-tools            # MCP server image
+├── .claude/commands/               # 12 Claude Code skills
+└── README.md
 ```
 
 ---
@@ -469,28 +475,31 @@ python -m multi_agent_system.evaluation.metrics --job-id 1
 
 ## 📊 Benchmarks
 
-### Performance (OWASP Juice Shop)
+### Performance Targets
 
-| Metric | RAJDOLL | Manual Pentest | ZAP/Burp |
-|--------|---------|----------------|----------|
-| **Total Time** | 3.5 hours | 12 hours | 2 hours |
-| **Vulnerabilities Found** | 85 | 95 | 45 |
-| **False Positive Rate** | 12% | <5% | 22% |
-| **WSTG Coverage** | 75% | 100% | 40% |
-| **Cost per Scan** | $3-5 | $10K-15K | Free |
+| Metric | Target | Description |
+|--------|--------|-------------|
+| **Precision** | >= 90% | Few false positives |
+| **Recall** | >= 80% | Comprehensive detection |
+| **F1-Score** | >= 85% | Balanced performance |
+| **TCR** | >= 70% | WSTG test case completion rate |
+| **Scan Time** | <= 4 hours | Full WSTG coverage |
+| **TTFF** | <= 5 min | Time to first finding |
 
-### Accuracy (DVWA)
+### Test Targets
 
-```
-Known Vulnerabilities: 25
-Detected: 21 (True Positives)
-Missed: 4 (False Negatives)
-False Alarms: 2 (False Positives)
+- **DVWA**: 25 known vulnerabilities
+- **OWASP Juice Shop**: 90 challenges (47 automatable, 43 manual/OSINT)
 
-Precision: 91.3%
-Recall: 84.0%
-F1-Score: 87.5%
-```
+### Tool Coverage
+
+| Agent | Tools | Key Capabilities |
+|-------|-------|-----------------|
+| InputValidationAgent | 24+ | SQLi (login bypass), XSS, LFI, SSTI, NoSQL, HPP, ReDoS |
+| ClientSideAgent | 17 | DOM XSS, CORS, CSP bypass, open redirect, clickjacking |
+| ConfigDeploymentAgent | 16 | Hidden endpoints, npm vulns, HSTS, headers |
+| BusinessLogicAgent | 15 | Coupon forgery, rate limiting, cart manipulation |
+| AuthenticationAgent | 12 | 2FA bypass, JWT analysis, lockout, default creds |
 
 ---
 
@@ -528,13 +537,13 @@ This software is provided for **AUTHORIZED SECURITY TESTING ONLY**. Unauthorized
 If you use RAJDOLL in your research, please cite:
 
 ```bibtex
-@mastersthesis{pangaribuan2026rajdoll,
+@thesis{pangaribuan2026rajdoll,
   title={Pengembangan Agentic AI dengan Sistem Multi-Agen Berbasis LLM untuk Otomasi Pengujian Keamanan Web Berdasarkan Standar OWASP WSTG 4.2 menggunakan Model Context Protocol},
   author={Pangaribuan, Martua Raja Doli},
   year={2026},
-  school={Telkom University},
-  type={Master's Thesis},
-  address={Bandung, Indonesia}
+  school={Politeknik Siber dan Sandi Negara},
+  type={Thesis},
+  address={Bogor, Indonesia}
 }
 ```
 
@@ -542,13 +551,9 @@ If you use RAJDOLL in your research, please cite:
 
 ## 📞 Contact & Support
 
-**Author:** Martua Raja Doli Pangaribuan  
-**Institution:** Telkom University - NextGCAI Research Group  
-**Email:** martua.raja@student.telkomuniversity.ac.id  
-**GitHub:** [@yourusername](https://github.com/yourusername)
-
-**Research Group:** NextGCAI (Next Generation Cybersecurity AI)  
-**Website:** [Coming Soon]
+**Author:** Martua Raja Doli Pangaribuan
+**Institution:** Politeknik Siber dan Sandi Negara
+**GitHub:** [@Rajdoll](https://github.com/Rajdoll)
 
 ---
 
@@ -565,35 +570,31 @@ If you use RAJDOLL in your research, please cite:
 
 ## 🗺️ Roadmap
 
-### Version 2.1 (Q1 2026)
-- [ ] Enhanced LLM planning with fine-tuned models
-- [ ] Mobile app security testing (OWASP MASVS)
-- [ ] API security testing (OWASP ASVS)
-- [ ] Integration with Burp Suite Pro
-- [ ] Real-time collaboration features
+### Version 2.0 (Completed)
+- [x] Planner-Summarizer Sequential architecture
+- [x] 14 specialized agents with 130+ tools
+- [x] Local LLM support (Qwen 3-4B, 4GB VRAM)
+- [x] MCP adapter with auto-discovery
+- [x] HITL live execution monitor
 
-### Version 2.2 (Q2 2026)
-- [ ] Machine learning for finding prioritization
-- [ ] Automated exploitation (post-exploitation agent)
-- [ ] Cloud platform scanning (AWS, Azure, GCP)
+### Version 2.1 (Current - Q1 2026)
+- [x] 16 Juice Shop-specific challenge tools
+- [x] Orchestrator Tier 2.1 regression fix
+- [x] JS static analysis for hidden routes
+- [x] 12 Claude Code project skills
+- [ ] Final thesis evaluation metrics
+- [ ] Coverage matrix compilation
+
+### Version 2.2 (Planned - Q2 2026)
+- [ ] Fine-tuned local LLM for pentest planning
+- [ ] ReAct loop improvements (iterative testing)
+- [ ] API security testing enhancements (GraphQL)
 - [ ] Compliance reporting (PCI-DSS, ISO 27001)
-
-### Version 3.0 (Q3 2026)
-- [ ] Self-hosted LLM support (Llama 3.1, Mixtral)
-- [ ] Multi-language support (Bahasa Indonesia, Chinese, Japanese)
-- [ ] Enterprise features (SSO, RBAC, multi-tenancy)
-- [ ] Penetration testing automation marketplace
-
----
-
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/rajdoll&type=Date)](https://star-history.com/#yourusername/rajdoll&Date)
 
 ---
 
 **Made with ❤️ by Security Researchers, for Security Researchers**
 
-**Version:** 2.0  
-**Last Updated:** December 14, 2025
+**Version:** 2.1
+**Last Updated:** March 18, 2026
 

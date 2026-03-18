@@ -40,6 +40,7 @@ You are ConfigDeploymentAgent, OWASP WSTG-CONF expert specializing in configurat
 1. test_network_infrastructure - Scan ports and services
 2. find_sensitive_files_and_dirs - Find exposed configs/backups (100+ paths)
 3. test_http_methods_and_headers - Test dangerous HTTP methods
+4. test_hidden_endpoints - Direct checks for known sensitive paths (FTP, metrics, admin, API docs, encryption keys)
 
 📋 TESTING CHECKLIST (Execute ALL):
 1. Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
@@ -81,6 +82,7 @@ You are ConfigDeploymentAgent, OWASP WSTG-CONF expert specializing in configurat
 - test_network_infrastructure(domain): Nmap scan + service validation
 - test_cache_headers(url): Cache-Control, Pragma analysis
 - check_generic_error_pages(base_url): Error page information disclosure
+- test_hidden_endpoints(url): Direct checks for 20+ known sensitive paths (no wordlist needed)
 
 📊 CONTEXT-AWARE TESTING:
 Read from shared_context:
@@ -338,6 +340,65 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_vulnerable_components failed: {e}")
 
+        # WSTG-CONF-04: Hidden endpoints / sensitive path discovery
+        if self.should_run_tool("test_hidden_endpoints"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_hidden_endpoints",
+                        args={"url": target}, auth_session=auth_data), timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    findings = data.get("findings", [])
+                    endpoints_found = data.get("endpoints_found", 0)
+                    if findings and endpoints_found > 0:
+                        # Group by severity for reporting
+                        critical_findings = [f for f in findings if f.get("severity") == "critical"]
+                        high_findings = [f for f in findings if f.get("severity") == "high"]
+                        other_findings = [f for f in findings if f.get("severity") not in ("critical", "high")]
+
+                        if critical_findings:
+                            self.add_finding("WSTG-CONF-04",
+                                f"Critical sensitive endpoints exposed: {len(critical_findings)} path(s)",
+                                severity="critical",
+                                evidence={"findings": critical_findings[:5]})
+                        if high_findings:
+                            self.add_finding("WSTG-CONF-04",
+                                f"Sensitive endpoints exposed: {len(high_findings)} high-severity path(s)",
+                                severity="high",
+                                evidence={"findings": high_findings[:5]})
+                        if other_findings:
+                            self.add_finding("WSTG-CONF-04",
+                                f"Hidden endpoints discovered: {len(other_findings)} path(s)",
+                                severity="medium",
+                                evidence={"findings": other_findings[:5]})
+            except Exception as e:
+                self.log("warning", f"test_hidden_endpoints failed: {e}")
+
+        # WSTG-CONF-02: npm/package vulnerability scanning
+        if self.should_run_tool("test_npm_vulnerabilities"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="configuration-and-deployment-management",
+                        tool="test_npm_vulnerabilities",
+                        args={"url": target}, auth_session=auth_data), timeout=60
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-CONF-02",
+                                f"Vulnerable component: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "medium"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_npm_vulnerabilities failed: {e}")
+
         self.log("info", "Configuration & Deployment checks complete")
 
     def _get_target(self) -> str | None:
@@ -361,6 +422,8 @@ Write to shared_context:
             'test_hsts',
             'test_subdomain_takeover',
             'test_vulnerable_components',
+            'test_hidden_endpoints',
+            'test_npm_vulnerabilities',
         ]
 
     def _domain_from_target(self, target: str) -> str:

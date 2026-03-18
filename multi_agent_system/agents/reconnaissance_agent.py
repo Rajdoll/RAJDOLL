@@ -220,6 +220,14 @@ Operate autonomously without human guidance.
             "handler": "_handle_katana_crawl",
             "timeout": 320,  # Increased timeout for headless execution (300s + 20s buffer)
         },
+        "analyze_javascript_routes": {
+            "server": "information-gathering",
+            "tool": "analyze_javascript_routes",
+            "priority": "HIGH",  # HIGH: Discovers hidden routes, secrets, API endpoints in JS
+            "arg_builder": lambda target, domain: {"url": target},
+            "handler": "_handle_js_routes_analysis",
+            "timeout": 120,
+        },
     }
 
     FOLLOW_UP_TOOL_BUILDERS: ClassVar[Dict[str, Dict[str, str]]] = {
@@ -1190,6 +1198,43 @@ Operate autonomously without human guidance.
         )
 
         self.log("info", f"✓ Katana crawl found {total_found} endpoints via JS parsing (API: {len(payload['api_endpoints'])}, JS: {len(payload.get('js_files', []))}, XHR: {len(payload.get('xhr_endpoints', []))})")
+
+    def _handle_js_routes_analysis(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+        """Process JavaScript route analysis results — hidden routes, secrets, API endpoints."""
+        if not isinstance(data, dict):
+            self.log("warning", f"JS route analysis did not return valid data: {self._brief_tool_result(data)}")
+            return
+
+        findings = data.get("findings", [])
+        routes = data.get("routes_discovered", [])
+        api_endpoints = data.get("api_endpoints", [])
+        secrets_count = data.get("secrets_found", 0)
+        js_file = data.get("js_file", "")
+
+        snapshot["js_routes_analysis"] = data
+        self.write_context("js_routes_analysis", {
+            "hidden_routes": [f for f in findings if f.get("type") == "hidden_route"],
+            "api_endpoints": api_endpoints,
+            "secrets_found": secrets_count,
+            "js_file": js_file,
+            "all_routes": routes,
+        })
+
+        if findings:
+            self.add_finding(
+                "WSTG-INFO-06",
+                f"JS static analysis: {len(findings)} findings ({len(routes)} routes, {len(api_endpoints)} API endpoints, {secrets_count} secrets)",
+                severity="medium" if secrets_count > 0 else "info",
+                evidence={
+                    "js_file": js_file,
+                    "hidden_routes": [f.get("route") for f in findings if f.get("type") == "hidden_route"][:10],
+                    "api_endpoints": api_endpoints[:10],
+                    "secrets_count": secrets_count,
+                    "sample_findings": findings[:5],
+                },
+            )
+
+        self.log("info", f"✓ JS route analysis: {len(routes)} routes, {len(api_endpoints)} API endpoints, {secrets_count} secrets from {js_file}")
 
     async def _perform_endpoint_discovery(self, target: str, baseline_snapshot: Dict[str, Any]) -> None:
         self.log("info", "🔎 Executing custom endpoint discovery crawl")

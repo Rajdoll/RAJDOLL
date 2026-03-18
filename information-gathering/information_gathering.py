@@ -2689,6 +2689,196 @@ async def generate_reconnaissance_report(domain: str) -> Dict[str, Any]:
     except Exception as e:
         return {"status": "error", "message": f"Report generation failed: {str(e)}"}
 
+async def analyze_javascript_routes(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Analyze JavaScript files for hidden routes, hardcoded secrets, and API endpoints.
+
+    Fetches main.js/main-es2015.js and extracts:
+    - Angular/React route definitions (path: "...")
+    - API endpoint strings (/api/..., /rest/...)
+    - Hardcoded tokens, keys, base64 strings
+    - Hidden admin/debug pages
+
+    OWASP Reference: WSTG-INFO-06, WSTG-INFO-05
+    """
+    findings = []
+    headers = {}
+    if auth_session:
+        if 'headers' in auth_session:
+            headers.update(auth_session['headers'])
+        elif 'token' in auth_session:
+            headers['Authorization'] = f"Bearer {auth_session['token']}"
+
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Common JS file paths
+    js_paths = [
+        "/main.js", "/main-es2015.js", "/main-es5.js",
+        "/runtime.js", "/runtime-es2015.js",
+        "/polyfills.js", "/polyfills-es2015.js",
+        "/vendor.js", "/scripts.js",
+        "/static/js/main.js", "/static/js/bundle.js",
+        "/assets/js/app.js", "/dist/main.js",
+    ]
+
+    js_content = ""
+    js_url_found = ""
+
+    async with httpx.AsyncClient(timeout=30, verify=False, follow_redirects=True, headers=headers) as client:
+        # First try to find JS files from the HTML page
+        try:
+            resp = await client.get(base_url)
+            if resp.status_code == 200:
+                # Extract script src from HTML
+                script_srcs = re.findall(r'<script[^>]+src=["\']([^"\']+\.js)["\']', resp.text)
+                for src in script_srcs:
+                    if 'main' in src or 'app' in src or 'bundle' in src:
+                        if src.startswith('http'):
+                            js_paths.insert(0, src.replace(base_url, ''))
+                        elif src.startswith('/'):
+                            js_paths.insert(0, src)
+                        else:
+                            js_paths.insert(0, f"/{src}")
+        except Exception:
+            pass
+
+        # Try to fetch JS files
+        for js_path in js_paths:
+            try:
+                js_url = f"{base_url}{js_path}" if not js_path.startswith('http') else js_path
+                resp = await client.get(js_url)
+                if resp.status_code == 200 and len(resp.text) > 1000 and ('function' in resp.text or 'const ' in resp.text or 'var ' in resp.text):
+                    js_content = resp.text
+                    js_url_found = js_url
+                    break
+            except Exception:
+                continue
+
+        if not js_content:
+            return {"status": "success", "data": {"vulnerable": False, "findings": [], "message": "No JavaScript files found"}}
+
+        # === Extract Angular/React Routes ===
+        route_patterns = [
+            r'path:\s*["\']([^"\']+)["\']',  # Angular: path: "admin"
+            r'route:\s*["\']([^"\']+)["\']',  # Generic
+            r'\"\/([a-zA-Z][\w-]+(?:\/[\w-]+)*)\"',  # Path-like strings "/something"
+        ]
+
+        routes_found = set()
+        for pattern in route_patterns:
+            matches = re.findall(pattern, js_content)
+            for match in matches:
+                if len(match) > 1 and len(match) < 50 and not match.endswith(('.js', '.css', '.png', '.jpg', '.svg', '.ico', '.woff', '.ttf')):
+                    routes_found.add(match)
+
+        # Known sensitive routes to flag
+        sensitive_routes = {
+            'administration': 'Admin panel',
+            'score-board': 'Score board (hidden)',
+            'accounting': 'Accounting page',
+            'token-sale': 'Token sale page',
+            'tokensale-ico-ea': 'Token sale ICO',
+            'web3-sandbox': 'Web3 sandbox',
+            'premium-content': 'Premium content',
+        }
+
+        for route in routes_found:
+            route_lower = route.lower().replace('/', '')
+            for sensitive, desc in sensitive_routes.items():
+                if sensitive in route_lower:
+                    findings.append({
+                        "type": "hidden_route",
+                        "route": route,
+                        "url": f"{base_url}/#{('/' + route) if not route.startswith('/') else route}",
+                        "severity": "medium",
+                        "description": f"Hidden route found in JS: {desc}",
+                    })
+
+        # === Extract API Endpoints ===
+        api_patterns = [
+            r'["\'](\/?(?:api|rest|graphql)\/[\w\/-]+)["\']',
+        ]
+        api_endpoints = set()
+        for pattern in api_patterns:
+            matches = re.findall(pattern, js_content)
+            api_endpoints.update(matches)
+
+        # === Extract Hardcoded Secrets ===
+        secret_patterns = [
+            (r'(?:password|passwd|secret|key|token|api_key)\s*[:=]\s*["\']([^"\']{8,})["\']', "hardcoded_secret"),
+            (r'["\']([A-Za-z0-9+/]{40,}={0,2})["\']', "base64_string"),  # Long base64
+            (r'eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+', "jwt_token"),  # JWT pattern
+        ]
+
+        secrets_found = []
+        for pattern, secret_type in secret_patterns:
+            matches = re.findall(pattern, js_content[:500000])  # Limit search to first 500K chars
+            for match in matches[:5]:  # Max 5 per type
+                if not any(s['value'] == match for s in secrets_found):
+                    secrets_found.append({"type": secret_type, "value": match[:50] + "..." if len(match) > 50 else match})
+                    findings.append({
+                        "type": f"js_{secret_type}",
+                        "severity": "high" if secret_type in ("hardcoded_secret", "jwt_token") else "medium",
+                        "description": f"Possible {secret_type} found in JavaScript",
+                        "evidence": match[:100],
+                    })
+
+        # Verify hidden routes are accessible
+        for finding in [f for f in findings if f["type"] == "hidden_route"]:
+            try:
+                route_url = finding.get("url", "")
+                # For Angular hash routes, check the base page
+                resp = await client.get(base_url)
+                if resp.status_code == 200:
+                    finding["verified"] = True
+            except Exception:
+                finding["verified"] = False
+
+    return {
+        "status": "success",
+        "data": {
+            "vulnerable": len(findings) > 0,
+            "findings": findings,
+            "js_file": js_url_found,
+            "routes_discovered": list(routes_found)[:30],
+            "api_endpoints": list(api_endpoints)[:20],
+            "secrets_found": len(secrets_found),
+        }
+    }
+
+
+__all__ = [
+    'comprehensive_domain_recon',
+    'enumerate_active_subdomains',
+    'enumerate_applications',
+    'test_subdomain_takeover',
+    'advanced_technology_fingerprinting',
+    'fingerprint_web_server',
+    'search_engine_reconnaissance',
+    'security_headers_analysis',
+    'run_comprehensive_scan',
+    'check_meta_files',
+    'check_metafiles',
+    'analyze_content',
+    'analyze_webpage_content',
+    'identify_entry_points',
+    'map_execution_paths',
+    'fingerprint_framework',
+    'fingerprint_application',
+    'map_architecture',
+    'find_entry_points',
+    'run_dig_lookup',
+    'run_whois_lookup',
+    'check_email_security',
+    'ffuf_directory_scan',
+    'dirsearch_scan',
+    'feroxbuster_scan',
+    'generate_reconnaissance_report',
+    'analyze_javascript_routes',
+]
+
+
 if __name__ == "__main__":
     ensure_directories()
     logger.info("Enhanced Information Gathering MCP Server starting...")

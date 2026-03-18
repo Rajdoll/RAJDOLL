@@ -435,6 +435,50 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_unexpected_file_upload failed: {e}")
 
+        # WSTG-BUSL-05: CAPTCHA bypass and rate limiting abuse
+        if self.should_run_tool("test_captcha_and_rate_limit"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="business-logic-testing",
+                        tool="test_captcha_and_rate_limit",
+                        args={"url": target}, auth_session=auth_data), timeout=120
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-BUSL-05",
+                                f"Rate limiting bypass: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "medium"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_captcha_and_rate_limit failed: {e}")
+
+        # WSTG-BUSL-09: Coupon code forgery and pricing abuse
+        if self.should_run_tool("test_coupon_forgery"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="business-logic-testing",
+                        tool="test_coupon_forgery",
+                        args={"url": target}, auth_session=auth_data), timeout=90
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-BUSL-09",
+                                f"Coupon/pricing vulnerability: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "high"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_coupon_forgery failed: {e}")
+
         self.log("info", "Business logic checks complete")
 
     def _get_available_tools(self) -> list[str]:
@@ -453,6 +497,8 @@ Write to shared_context:
             'test_process_timing_race_condition',
             'test_usage_limits_burst',
             'test_unexpected_file_upload',
+            'test_captcha_and_rate_limit',
+            'test_coupon_forgery',
         ]
 
     def _get_target(self) -> str | None:

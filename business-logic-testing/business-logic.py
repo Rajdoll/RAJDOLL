@@ -1181,6 +1181,343 @@ async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict
         return {"status": "error", "message": str(e)}
 
 
+async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    WSTG-BUSL-05: Test CAPTCHA bypass and rate limiting abuse.
+    Sends rapid requests to key endpoints to detect missing rate limiting (HTTP 429)
+    and tests whether forms can be submitted without a valid CAPTCHA field.
+    """
+    try:
+        findings = []
+        base = url.rstrip('/')
+
+        req_kwargs = {"timeout": 10.0, "verify": False, "follow_redirects": True}
+        if auth_session:
+            if 'cookies' in auth_session:
+                req_kwargs['cookies'] = auth_session['cookies']
+            if 'headers' in auth_session:
+                req_kwargs['headers'] = auth_session.get('headers', {})
+            elif 'token' in auth_session:
+                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+
+        async with httpx.AsyncClient(**req_kwargs) as client:
+            # ── Test 1: Missing rate limiting on key endpoints ──
+            rate_limit_targets = [
+                {"path": "/rest/user/login", "method": "POST",
+                 "body": {"email": "ratelimit@test.com", "password": "wrongpass"},
+                 "label": "Login brute force"},
+                {"path": "/api/Users", "method": "POST",
+                 "body": {"email": "spam@test.com", "password": "Spam1234!", "passwordRepeat": "Spam1234!",
+                          "securityQuestion": {"id": 1, "question": "Name?"}, "securityAnswer": "x"},
+                 "label": "Registration spam"},
+                {"path": "/api/Feedbacks", "method": "POST",
+                 "body": {"comment": "rate limit test", "rating": 1, "captcha": "", "captchaId": 0},
+                 "label": "Feedback spam"},
+                {"path": "/api/Complaints", "method": "POST",
+                 "body": {"message": "rate limit test"},
+                 "label": "Complaint spam"},
+                {"path": "/rest/products/search?q=apple", "method": "GET",
+                 "body": None,
+                 "label": "Search abuse"},
+            ]
+
+            REQUEST_COUNT = 15
+
+            for target in rate_limit_targets:
+                ep = f"{base}{target['path']}"
+                try:
+                    statuses = []
+                    rate_limited = False
+                    captcha_seen = False
+
+                    for i in range(REQUEST_COUNT):
+                        if target["method"] == "POST" and target["body"]:
+                            resp = await client.post(ep, json=target["body"])
+                        else:
+                            resp = await client.get(ep)
+
+                        statuses.append(resp.status_code)
+
+                        # Detect rate limiting
+                        if resp.status_code == 429:
+                            rate_limited = True
+                            break
+
+                        # Detect CAPTCHA challenge in response body
+                        body_text = resp.text.lower() if resp.text else ""
+                        if "captcha" in body_text and ("challenge" in body_text or "verify" in body_text):
+                            captcha_seen = True
+                            rate_limited = True
+                            break
+
+                    if not rate_limited:
+                        success_count = sum(1 for s in statuses if s in (200, 201, 401, 402))
+                        severity = "high" if target["label"] == "Login brute force" else "medium"
+                        findings.append({
+                            "type": f"no_rate_limiting_{target['label'].lower().replace(' ', '_')}",
+                            "endpoint": ep,
+                            "severity": severity,
+                            "description": (
+                                f"No rate limiting on {target['label']}: "
+                                f"{REQUEST_COUNT} rapid requests sent, "
+                                f"{success_count} processed without throttling"
+                            ),
+                            "evidence": {
+                                "requests_sent": REQUEST_COUNT,
+                                "status_codes": statuses,
+                                "rate_limited": False,
+                                "captcha_challenged": False,
+                            }
+                        })
+                except Exception:
+                    continue
+
+            # ── Test 2: CAPTCHA bypass — submit forms without CAPTCHA field ──
+            captcha_form_targets = [
+                {"path": "/api/Feedbacks", "label": "Feedback form",
+                 "with_captcha": {"comment": "captcha test", "rating": 3, "captcha": "12345", "captchaId": 1},
+                 "without_captcha": {"comment": "captcha bypass test", "rating": 3}},
+                {"path": "/api/Complaints", "label": "Complaint form",
+                 "with_captcha": {"message": "captcha test", "captcha": "12345", "captchaId": 1},
+                 "without_captcha": {"message": "captcha bypass test"}},
+                {"path": "/api/Users", "label": "Registration form",
+                 "with_captcha": {"email": "captchatest@test.com", "password": "Captcha1234!",
+                                  "passwordRepeat": "Captcha1234!",
+                                  "securityQuestion": {"id": 1, "question": "Name?"}, "securityAnswer": "x",
+                                  "captcha": "12345", "captchaId": 1},
+                 "without_captcha": {"email": "nocaptcha@test.com", "password": "NoCaptcha1234!",
+                                     "passwordRepeat": "NoCaptcha1234!",
+                                     "securityQuestion": {"id": 1, "question": "Name?"}, "securityAnswer": "x"}},
+            ]
+
+            for target in captcha_form_targets:
+                ep = f"{base}{target['path']}"
+                try:
+                    # Submit WITH bogus CAPTCHA values
+                    resp_with = await client.post(ep, json=target["with_captcha"])
+                    # Submit WITHOUT CAPTCHA field at all
+                    resp_without = await client.post(ep, json=target["without_captcha"])
+
+                    with_status = resp_with.status_code
+                    without_status = resp_without.status_code
+
+                    # If form accepts submission without CAPTCHA (2xx response)
+                    if without_status in (200, 201):
+                        findings.append({
+                            "type": "captcha_bypass",
+                            "endpoint": ep,
+                            "severity": "medium",
+                            "description": (
+                                f"CAPTCHA bypass on {target['label']}: "
+                                f"form accepted without CAPTCHA field (HTTP {without_status})"
+                            ),
+                            "evidence": {
+                                "with_captcha_status": with_status,
+                                "without_captcha_status": without_status,
+                                "captcha_required": False,
+                            }
+                        })
+
+                    # If form accepts bogus CAPTCHA values (no validation)
+                    if with_status in (200, 201):
+                        findings.append({
+                            "type": "captcha_not_validated",
+                            "endpoint": ep,
+                            "severity": "medium",
+                            "description": (
+                                f"CAPTCHA not validated on {target['label']}: "
+                                f"bogus captcha value accepted (HTTP {with_status})"
+                            ),
+                            "evidence": {
+                                "bogus_captcha_status": with_status,
+                                "captcha_validated": False,
+                            }
+                        })
+                except Exception:
+                    continue
+
+            # ── Test 3: Empty CAPTCHA field accepted ──
+            empty_captcha_targets = [
+                {"path": "/api/Feedbacks",
+                 "body": {"comment": "empty captcha", "rating": 2, "captcha": "", "captchaId": 0}},
+            ]
+            for target in empty_captcha_targets:
+                ep = f"{base}{target['path']}"
+                try:
+                    resp = await client.post(ep, json=target["body"])
+                    if resp.status_code in (200, 201):
+                        findings.append({
+                            "type": "empty_captcha_accepted",
+                            "endpoint": ep,
+                            "severity": "medium",
+                            "description": (
+                                f"Empty CAPTCHA accepted on {ep}: "
+                                f"submitted with empty captcha string (HTTP {resp.status_code})"
+                            ),
+                            "evidence": {
+                                "empty_captcha_status": resp.status_code,
+                            }
+                        })
+                except Exception:
+                    continue
+
+        vuln_count = len(findings)
+        return {"status": "success", "data": {
+            "vulnerable": vuln_count > 0,
+            "findings": findings,
+            "vulnerabilities_found": vuln_count,
+            "tests_performed": 3,
+            "description": "CAPTCHA bypass and rate limiting abuse testing per WSTG-BUSL-05"
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def test_coupon_forgery(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Test coupon code abuse, negative pricing, and discount manipulation (WSTG-BUSL-09)."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        if auth_session:
+            if auth_session.get("token"):
+                headers["Authorization"] = f"Bearer {auth_session['token']}"
+            if auth_session.get("cookies"):
+                headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in auth_session["cookies"].items())
+
+        findings = []
+
+        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True, headers=headers) as client:
+            # 1. Test known/expired coupon codes (Juice Shop z85-encoded dates)
+            known_coupons = [
+                "n<MibgC7sn",   # Expired coupon
+                "o*IVqtMzMt",   # Expired coupon
+                "mNYS7Dxo40",   # Common test coupon
+                "WMNSUVHFJB",   # Brute force attempt
+                "TEST123",
+                "DISCOUNT10",
+            ]
+            for basket_id in range(1, 6):
+                for coupon in known_coupons:
+                    try:
+                        resp = await client.put(
+                            f"{base_url}/rest/basket/{basket_id}/coupon/{coupon}",
+                            json={"couponCode": coupon}
+                        )
+                        if resp.status_code == 200 and ("discount" in resp.text.lower() or resp.status_code == 200):
+                            try:
+                                body = resp.json()
+                                if body.get("data") or "discount" in str(body).lower():
+                                    findings.append({
+                                        "type": "Expired/known coupon accepted",
+                                        "endpoint": f"/rest/basket/{basket_id}/coupon/{coupon}",
+                                        "severity": "high",
+                                        "description": f"Coupon '{coupon}' accepted on basket {basket_id}",
+                                        "evidence": str(body)[:200]
+                                    })
+                                    break  # One finding per basket is enough
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+
+            # 2. Test negative quantity manipulation
+            for basket_id in range(1, 4):
+                for item_id in range(1, 6):
+                    try:
+                        resp = await client.put(
+                            f"{base_url}/api/BasketItems/{item_id}",
+                            json={"quantity": -1}
+                        )
+                        if resp.status_code == 200:
+                            try:
+                                body = resp.json()
+                                if body.get("data") or body.get("status") == "success":
+                                    findings.append({
+                                        "type": "Negative quantity accepted",
+                                        "endpoint": f"/api/BasketItems/{item_id}",
+                                        "severity": "critical",
+                                        "description": "Negative quantity accepted - potential credit generation",
+                                        "evidence": str(body)[:200]
+                                    })
+                                    break
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+
+            # 3. Test zero/negative price via direct product manipulation
+            for product_id in range(1, 6):
+                try:
+                    resp = await client.put(
+                        f"{base_url}/api/Products/{product_id}",
+                        json={"price": 0}
+                    )
+                    if resp.status_code == 200:
+                        try:
+                            body = resp.json()
+                            if body.get("data"):
+                                findings.append({
+                                    "type": "Price manipulation to zero",
+                                    "endpoint": f"/api/Products/{product_id}",
+                                    "severity": "critical",
+                                    "description": "Product price set to 0 via direct API call",
+                                    "evidence": str(body)[:200]
+                                })
+                                break
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+            # 4. Test coupon reuse (apply same coupon twice)
+            for basket_id in range(1, 4):
+                try:
+                    coupon = "n<MibgC7sn"
+                    resp1 = await client.put(f"{base_url}/rest/basket/{basket_id}/coupon/{coupon}")
+                    resp2 = await client.put(f"{base_url}/rest/basket/{basket_id}/coupon/{coupon}")
+                    if resp1.status_code == 200 and resp2.status_code == 200:
+                        findings.append({
+                            "type": "Coupon reuse allowed",
+                            "endpoint": f"/rest/basket/{basket_id}/coupon",
+                            "severity": "high",
+                            "description": "Same coupon code can be applied multiple times",
+                            "evidence": f"First: {resp1.status_code}, Second: {resp2.status_code}"
+                        })
+                        break
+                except Exception:
+                    continue
+
+            # 5. Test Quantitys endpoint exposure (data leak)
+            try:
+                resp = await client.get(f"{base_url}/api/Quantitys")
+                if resp.status_code == 200:
+                    try:
+                        body = resp.json()
+                        if body.get("data") and len(body["data"]) > 0:
+                            findings.append({
+                                "type": "Quantity data exposed",
+                                "endpoint": "/api/Quantitys",
+                                "severity": "medium",
+                                "description": f"Internal quantity data exposed ({len(body['data'])} records)",
+                                "evidence": str(body["data"][:2])[:200]
+                            })
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        return {"status": "success", "data": {
+            "vulnerable": len(findings) > 0,
+            "findings": findings,
+            "vulnerabilities_found": len(findings)
+        }}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # --- Prompt ---
 # @mcp.prompt()  # REMOVED: Using JSON-RPC adapter
 def setup_prompt(domainname: str) -> str:

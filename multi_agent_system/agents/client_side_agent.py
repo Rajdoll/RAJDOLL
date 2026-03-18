@@ -394,7 +394,53 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             except Exception as e:
                 self.log("warning", f"test_web_messaging failed: {e}")
 
-        self.log("info", "Client-side checks complete - all 14 WSTG-CLNT enhanced tests executed")
+        # WSTG-CLNT-15: CSP bypass testing for XSS
+        if self.should_run_tool("test_csp_bypass"):
+            try:
+                self.log("info", "Testing CSP bypass vectors")
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="test_csp_bypass",
+                        args={"url": target}, auth_session=auth_data), timeout=60
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-CLNT-15",
+                                f"CSP issue: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "medium"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_csp_bypass failed: {e}")
+
+        # WSTG-CLNT-04: Open redirect with allowlist bypass
+        if self.should_run_tool("test_open_redirect"):
+            try:
+                self.log("info", "Testing for open redirect vulnerabilities")
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="test_open_redirect",
+                        args={"url": target}, auth_session=auth_data), timeout=90
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("vulnerable"):
+                        for finding in data.get("findings", []):
+                            self.add_finding(
+                                "WSTG-CLNT-04",
+                                f"Open redirect: {finding.get('type', 'unknown')}",
+                                severity=finding.get("severity", "medium"),
+                                evidence={"endpoint": finding.get("endpoint", ""), "payload": finding.get("payload", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                            )
+            except Exception as e:
+                self.log("warning", f"test_open_redirect failed: {e}")
+
+        self.log("info", "Client-side checks complete - all 15 WSTG-CLNT enhanced tests executed")
 
     def _get_available_tools(self) -> list[str]:
         """Return client-side security testing tools for LLM planning"""
@@ -413,6 +459,8 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             'test_client_side_template_injection',
             'test_resource_manipulation',
             'test_web_messaging',
+            'test_csp_bypass',
+            'test_open_redirect',
         ]
 
     def _get_target(self) -> str | None:
