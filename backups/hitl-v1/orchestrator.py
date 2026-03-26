@@ -557,56 +557,6 @@ class Orchestrator:
 		self.context_manager.write("cumulative_summary", self.cumulative_summary)
 		self.context_manager.write("task_tree", task_tree)
 
-	def _gather_agent_checkpoint_data(self, agent_name: str) -> Dict[str, Any]:
-		"""Collect summary data for an agent checkpoint."""
-		from .models.models import FindingSeverity
-		with get_db() as db:
-			findings = (
-				db.query(Finding)
-				.filter(Finding.job_id == self.job_id, Finding.agent_name == agent_name)
-				.all()
-			)
-			severity_counts: Dict[str, int] = {}
-			key_findings = []
-			for f in findings:
-				sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
-				severity_counts[sev] = severity_counts.get(sev, 0) + 1
-				if sev in ("critical", "high") and len(key_findings) < 10:
-					key_findings.append({
-						"title": f.title[:120],
-						"severity": sev,
-						"wstg": f.category or "",
-					})
-		return {
-			"findings_count": len(findings) if findings else 0,
-			"findings_by_severity": severity_counts,
-			"key_findings": key_findings,
-		}
-
-	def _generate_checkpoint_recommendations(
-		self, completed_agent: str, remaining: List[str], checkpoint_data: Dict[str, Any]
-	) -> List[Dict[str, Any]]:
-		"""Generate recommendations for the next step based on findings so far."""
-		recs = []
-		if remaining:
-			recs.append({
-				"agent": remaining[0],
-				"reason": f"Next in default execution order",
-				"priority": "default",
-			})
-		# If critical findings exist, suggest related agents
-		criticals = checkpoint_data.get("findings_by_severity", {}).get("critical", 0)
-		if criticals > 0:
-			for agent in remaining:
-				if agent == remaining[0]:
-					continue
-				# Suggest InputValidation if injection found
-				if "Injection" in str(checkpoint_data.get("key_findings", [])) and "Input" in agent:
-					recs.append({"agent": agent, "reason": "Injection findings suggest deeper input testing", "priority": "high"})
-				if "auth" in completed_agent.lower() and "Authorization" in agent:
-					recs.append({"agent": agent, "reason": "Auth findings suggest authorization testing", "priority": "high"})
-		return recs[:5]
-
 	def _run_final_analysis(self) -> None:
 		"""Call LLM to correlate all findings before report generation."""
 		summarizer = self._get_llm_summarizer()
@@ -793,35 +743,16 @@ class Orchestrator:
 
 		# PHASE 3: Execute the plan with LLM-selected tools
 		print(f"[Orchestrator] Phase 3: Executing testing plan with {len(plan)} steps...")
-		agent_hitl_auto = False  # Set True when user chooses "auto" at a checkpoint
-		skip_agents_set: set = set()  # Agents the user chose to skip
-
 		for idx, step in enumerate(plan):
-			agent_name = step if isinstance(step, str) else str(step)
-
 			# Check if job was cancelled
 			if self._is_job_cancelled():
 				print("[Orchestrator] Job cancelled by user, aborting...")
 				break
-
+			
 			if self._get_failures() >= settings.circuit_breaker_failures:
 				print(f"[Orchestrator] Circuit breaker triggered: {self._get_failures()} failures")
 				break
-
-			# Check if user requested to skip this agent
-			if agent_name in skip_agents_set:
-				print(f"[Orchestrator] Skipping {agent_name} (user requested)")
-				with get_db() as db:
-					ja = db.query(JobAgent).filter(
-						JobAgent.job_id == self.job_id, JobAgent.agent_name == agent_name
-					).one_or_none()
-					if ja:
-						ja.status = AgentStatus.skipped if hasattr(AgentStatus, "skipped") else AgentStatus.failed
-						ja.error = "Skipped by user via HITL checkpoint"
-						ja.finished_at = datetime.utcnow()
-						db.commit()
-				continue
-
+			
 			print(f"[Orchestrator] Step {idx + 1}/{len(plan)}: {step}")
 
 			# Get tool plan for this step
@@ -833,78 +764,15 @@ class Orchestrator:
 			elif isinstance(step, dict) and "parallel" in step:
 				# Build per-agent tool plans for parallel batch
 				tool_plan = {}
-				for pname in step["parallel"]:
-					agent_plan = self._get_tool_plan_for_agent(pname)
+				for agent_name in step["parallel"]:
+					agent_plan = self._get_tool_plan_for_agent(agent_name)
 					if agent_plan:
-						tool_plan[pname] = agent_plan
-						print(f"[Orchestrator] LLM selected tools for {pname}: {agent_plan['tools']}")
+						tool_plan[agent_name] = agent_plan
+						print(f"[Orchestrator] LLM selected tools for {agent_name}: {agent_plan['tools']}")
 				if not tool_plan:
 					tool_plan = None  # No plans found for any agent
 
 			self._run_step_sync(step, tool_plan)
-
-			# ── Agent-Level HITL Checkpoint ──────────────────────────────
-			# After each agent completes + summarization, pause for user review
-			# (skip for ReportGenerationAgent, and if user chose "auto")
-			if (
-				not agent_hitl_auto
-				and isinstance(step, str)
-				and step != "ReportGenerationAgent"
-				and getattr(settings, "hitl_mode", "off") == "agent"
-			):
-				remaining = [s for s in plan[idx + 1:] if isinstance(s, str) and s not in skip_agents_set]
-				next_agent = remaining[0] if remaining else None
-				cp_data = self._gather_agent_checkpoint_data(agent_name)
-				recommendations = self._generate_checkpoint_recommendations(agent_name, remaining, cp_data)
-
-				loop = self._ensure_event_loop()
-				try:
-					result = loop.run_until_complete(
-						self.hitl_manager.request_agent_checkpoint(
-							completed_agent=agent_name,
-							agent_index=idx,
-							findings_count=cp_data["findings_count"],
-							findings_by_severity=cp_data["findings_by_severity"],
-							agent_summary=self.cumulative_summary[-1500:] if self.cumulative_summary else "",
-							cumulative_summary=self.cumulative_summary,
-							key_findings=cp_data["key_findings"],
-							next_agent=next_agent,
-							remaining_agents=remaining,
-							recommendations=recommendations,
-						)
-					)
-				except Exception as e:
-					print(f"[Orchestrator] WARNING: Agent checkpoint failed: {e}, auto-proceeding")
-					result = {"action": "proceed"}
-
-				action = result.get("action", "proceed")
-
-				if action == "auto":
-					agent_hitl_auto = True
-					print("[Orchestrator] User chose AUTO — disabling checkpoints for remaining agents")
-				elif action == "abort":
-					print("[Orchestrator] User ABORTED scan at checkpoint")
-					break
-				elif action == "skip_next":
-					if next_agent:
-						skip_agents_set.add(next_agent)
-						print(f"[Orchestrator] User chose to skip next agent: {next_agent}")
-				elif action == "reorder":
-					override = result.get("next_agent_override")
-					if override and override in remaining and override != next_agent:
-						# Move the overridden agent to front of remaining
-						remaining_copy = list(plan[idx + 1:])
-						if override in remaining_copy:
-							remaining_copy.remove(override)
-							remaining_copy.insert(0, override)
-							plan[idx + 1:] = remaining_copy
-							print(f"[Orchestrator] User reordered: next agent is now {override}")
-
-				# Apply any skip_agents from user
-				user_skips = result.get("skip_agents")
-				if isinstance(user_skips, list):
-					skip_agents_set.update(user_skips)
-			# ── End checkpoint ───────────────────────────────────────────
 
 		# Planner-Summarizer: Run final cross-agent analysis before report generation
 		if not self._is_job_cancelled():

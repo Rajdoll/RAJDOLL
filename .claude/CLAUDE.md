@@ -51,6 +51,11 @@ curl -X POST http://localhost:8000/api/scans \
   -H "Content-Type: application/json" \
   -d '{"target": "http://juice-shop:3000"}'
 
+# Start a scan with agent-level HITL checkpoints
+curl -X POST http://localhost:8000/api/scans \
+  -H "Content-Type: application/json" \
+  -d '{"target": "http://juice-shop:3000", "hitl_mode": "agent"}'
+
 # Check scan findings
 curl http://localhost:8000/api/scans/1/findings | jq
 
@@ -87,10 +92,14 @@ POST /api/scans → security_guard.validate_target()
                    → _inject_planner_context(cumulative_summary, task_tree)
                    → agent.execute()
                    → _summarize_agent_and_accumulate(agent_name)
+                   → [HITL] if hitl_mode=="agent": checkpoint → wait for user
+                     User actions: proceed | skip_next | reorder | auto | abort
       Phase 4:   _run_final_analysis() — cross-agent correlation
       Phase 5:   ReportGenerationAgent (always runs, even after circuit breaker)
-  → WebSocket pushes status updates to frontend
+  → WebSocket pushes status updates + checkpoint events to frontend
 ```
+
+See `docs/execution-flow-hitl-v2.md` for detailed flow diagrams.
 
 ### Execution Order (DEFAULT_PLAN)
 
@@ -174,6 +183,10 @@ Defined in `multi_agent_system/models/models.py` (SQLAlchemy):
 - **Finding**: Vulnerability finding (title, severity, WSTG ID, evidence, confidence)
 - **SharedContext**: Key-value store for inter-agent communication (recon results, entry points, auth sessions)
 
+Defined in `multi_agent_system/models/hitl_models.py`:
+- **AgentCheckpoint**: Per-agent HITL checkpoint (findings summary, recommendations, user action/response)
+- **CheckpointAction**: Enum — `pending` | `proceed` | `skip_next` | `reorder` | `auto` | `abort`
+
 ### Key Configuration
 
 `multi_agent_system/core/config.py` — `Settings` dataclass, reads from env vars:
@@ -181,6 +194,29 @@ Defined in `multi_agent_system/models/models.py` (SQLAlchemy):
 - `REACT_MODE` / `REACT_MAX_ITERATIONS`: Enable iterative ReAct loop per test
 - `MIN_TOOLS_PER_AGENT`: Minimum coverage enforcement (default 7)
 - `DISABLE_LLM_PLANNING`: Skip LLM, use all tools with defaults
+- `HITL_MODE`: `off` (default, fully automated) | `agent` (per-agent checkpoints) | `tool` (per-tool approval)
+
+### HITL v2: Agent-Level Checkpoints (Added 2026-03-26)
+
+When `HITL_MODE=agent`, the orchestrator pauses after each agent completes and presents:
+- Findings count + severity breakdown (critical/high/medium/low)
+- Top 10 critical/high key findings
+- LLM-generated cumulative summary
+- Recommendations for next steps
+- Remaining agent queue
+
+User responds via WebSocket frontend with one of 5 actions:
+- **Proceed**: Continue to next agent normally
+- **Skip Next**: Skip the next agent in sequence
+- **Reorder**: Move a specific agent to run next (modifies plan in-place)
+- **Auto-Proceed**: Disable all future checkpoints (run remaining agents automatically)
+- **Abort**: Stop the scan immediately
+
+Can be set globally via `HITL_MODE` env var or per-scan via `hitl_mode` field in `POST /api/scans`.
+
+**Key files**: `hitl_manager.py` (request_agent_checkpoint), `orchestrator.py` (Phase 3 loop), `hitl_models.py` (AgentCheckpoint model), `api/routes/hitl.py` (3 API endpoints), `api/routes/websocket.py` (agent_checkpoint event), `frontend/` (checkpoint panel UI).
+
+**Backups**: Original pre-HITL-v2 files saved in `backups/hitl-v1/`.
 
 ### Key Timeouts
 
@@ -198,6 +234,9 @@ Defined in `multi_agent_system/models/models.py` (SQLAlchemy):
 The job is marked `completed` as long as `ReportGenerationAgent` finishes successfully, even if some agents failed (tool timeouts, MCP issues are expected). The job is only `failed` if the report was NOT generated AND agents failed. This logic is enforced in two places:
 - `orchestrator.py` — `run()` method, end of Phase 3
 - `tasks/tasks.py` — `run_job_task()` (Celery task layer, re-evaluates and overrides)
+
+Job status transitions: `queued` → `running` → [`waiting_checkpoint` ↔ `running`] → `completed` | `failed` | `cancelled`
+- `waiting_checkpoint`: Set when HITL agent checkpoint is pending user response (only when `hitl_mode=="agent"`)
 
 ## Code Patterns
 
@@ -245,7 +284,7 @@ For research evaluation, `off` or `aggressive` is recommended to maximize covera
 - **Never commit `.env`** — it contains API keys. Use `.env.example` as template.
 - Target domains must be whitelisted via `security_guards.py` before scanning.
 - All tool executions are audit-logged.
-- HITL (Human-in-the-Loop) approval is required for destructive operations when enabled.
+- HITL (Human-in-the-Loop) has two modes: `agent` (pause after each agent for review) and `tool` (approve each tool before execution). Set via `HITL_MODE` env var or per-scan `hitl_mode` field.
 
 ## Evaluation Metrics
 
@@ -253,3 +292,18 @@ Target metrics for thesis validation (calculated in `multi_agent_system/evaluati
 - Precision >= 90%, Recall >= 80%, F1-Score >= 85%
 - Task Completion Rate (TCR) >= 70% of WSTG test cases
 - Test targets: DVWA (25 known vulns) and OWASP Juice Shop (100+ challenges)
+
+### Latest Scan Results (Job #2 — 2026-03-26)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Precision (adjusted) | 100% | >= 90% | PASS |
+| Recall | 98.2% (56/57 challenges) | >= 80% | PASS |
+| F1-Score | 99.1% | >= 85% | PASS |
+| TCR | 100% (96/96 WSTG test cases) | >= 70% | PASS |
+| OWASP Top 10 | 90% (9/10) | >= 80% | PASS |
+| Scan Time | 1h 5m | <= 4h | PASS |
+| Agents | 14/14, 0 failures | | PASS |
+| Findings | 102 (23 critical, 36 high, 29 medium) | | |
+
+Missed: SSRF only (no tool implemented). Full report: `multi_agent_system/evaluation/EVALUATION_REPORT_JOB2.md`

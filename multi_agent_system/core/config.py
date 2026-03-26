@@ -79,6 +79,7 @@ class Settings:
     lab_mode: bool = field(default_factory=lambda: _env_flag("LAB_MODE", False))
     hitl_enabled: bool = field(init=False)
     enable_tool_hitl: bool = field(init=False)
+    hitl_mode: str = field(default_factory=lambda: os.getenv("HITL_MODE", "off"))  # off | agent | tool
     tool_hitl_timeout: int = _get_env_int("TOOL_APPROVAL_TIMEOUT", 600)
     auto_approve_tool_agents: List[str] = field(default_factory=list)
 
@@ -89,6 +90,10 @@ class Settings:
 
         base_tool_hitl = _env_flag("ENABLE_TOOL_APPROVALS", True)
         self.enable_tool_hitl = base_tool_hitl and self.hitl_enabled and not self.lab_mode
+
+        # Validate hitl_mode
+        if self.hitl_mode not in ("off", "agent", "tool"):
+            self.hitl_mode = "off"
 
         agents_env = os.getenv("AUTO_APPROVE_TOOL_AGENTS")
         if agents_env is None and self.lab_mode:

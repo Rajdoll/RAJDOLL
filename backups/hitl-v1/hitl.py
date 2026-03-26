@@ -18,9 +18,7 @@ from multi_agent_system.models.hitl_models import (
     ToolApproval,
     ToolApprovalPolicy,
     ToolPolicyMode,
-    ApprovalStatus,
-    AgentCheckpoint,
-    CheckpointAction,
+    ApprovalStatus
 )
 
 router = APIRouter()
@@ -69,14 +67,6 @@ class ToolPolicyRequest(BaseModel):
     risk_tolerance: Optional[str] = "low"
     expires_at: Optional[datetime] = None
     notes: Optional[str] = None
-
-
-class AgentCheckpointResponse(BaseModel):
-    """User's response at an agent-level checkpoint"""
-    action: str  # proceed, skip_next, reorder, auto, abort
-    user_notes: Optional[str] = None
-    next_agent_override: Optional[str] = None  # For reorder action
-    skip_agents: Optional[List[str]] = None     # Agents to skip
 
 # ============================================================================
 # Plan Approval Endpoints
@@ -599,150 +589,4 @@ async def get_hitl_stats(job_id: int):
                 "approved": sum(1 for r in risk_approvals if r.status == ApprovalStatus.approved),
                 "skipped": sum(1 for r in risk_approvals if r.skip_this_test)
             }
-        }
-
-
-# ============================================================================
-# Agent-Level Checkpoint Endpoints (HITL v2)
-# ============================================================================
-
-@router.get("/api/hitl/agent-checkpoint/{job_id}")
-async def get_pending_agent_checkpoint(job_id: int):
-    """
-    Get the current pending agent checkpoint for a job.
-
-    Returns the checkpoint data including agent summary, findings,
-    recommendations, and available actions.
-    """
-    with get_db() as db:
-        checkpoint = (
-            db.query(AgentCheckpoint)
-            .filter(
-                AgentCheckpoint.job_id == job_id,
-                AgentCheckpoint.action == CheckpointAction.pending,
-            )
-            .order_by(AgentCheckpoint.requested_at.desc())
-            .first()
-        )
-
-        if not checkpoint:
-            return {"status": "no_pending", "message": "No pending checkpoint"}
-
-        return {
-            "status": "pending",
-            "checkpoint": {
-                "id": checkpoint.id,
-                "job_id": checkpoint.job_id,
-                "completed_agent": checkpoint.completed_agent,
-                "agent_sequence_index": checkpoint.agent_sequence_index,
-                "findings_count": checkpoint.findings_count,
-                "findings_by_severity": checkpoint.findings_by_severity or {},
-                "agent_summary": checkpoint.agent_summary,
-                "cumulative_summary": checkpoint.cumulative_summary,
-                "key_findings": checkpoint.key_findings or [],
-                "next_agent": checkpoint.next_agent,
-                "remaining_agents": checkpoint.remaining_agents or [],
-                "recommendations": checkpoint.recommendations or [],
-                "requested_at": checkpoint.requested_at.isoformat() if checkpoint.requested_at else None,
-            }
-        }
-
-
-@router.get("/api/hitl/agent-checkpoints/{job_id}")
-async def list_agent_checkpoints(job_id: int):
-    """List all agent checkpoints for a job (history)."""
-    with get_db() as db:
-        checkpoints = (
-            db.query(AgentCheckpoint)
-            .filter(AgentCheckpoint.job_id == job_id)
-            .order_by(AgentCheckpoint.agent_sequence_index)
-            .all()
-        )
-
-        return {
-            "status": "success",
-            "job_id": job_id,
-            "total": len(checkpoints),
-            "checkpoints": [
-                {
-                    "id": cp.id,
-                    "completed_agent": cp.completed_agent,
-                    "index": cp.agent_sequence_index,
-                    "findings_count": cp.findings_count,
-                    "findings_by_severity": cp.findings_by_severity or {},
-                    "action": cp.action.value if cp.action else "pending",
-                    "user_notes": cp.user_notes,
-                    "wait_duration_seconds": cp.wait_duration_seconds,
-                    "requested_at": cp.requested_at.isoformat() if cp.requested_at else None,
-                    "responded_at": cp.responded_at.isoformat() if cp.responded_at else None,
-                }
-                for cp in checkpoints
-            ],
-        }
-
-
-@router.post("/api/hitl/agent-checkpoint/{checkpoint_id}/respond")
-async def respond_to_agent_checkpoint(checkpoint_id: int, body: AgentCheckpointResponse):
-    """
-    Respond to an agent-level checkpoint.
-
-    Actions:
-    - proceed: Continue to the next agent (default order)
-    - skip_next: Skip the next planned agent
-    - reorder: Change which agent runs next (provide next_agent_override)
-    - auto: Disable checkpoints for remaining agents (run fully automated)
-    - abort: Stop the scan entirely
-    """
-    valid_actions = {"proceed", "skip_next", "reorder", "auto", "abort"}
-    if body.action not in valid_actions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid action '{body.action}'. Must be one of: {valid_actions}"
-        )
-
-    with get_db() as db:
-        checkpoint = db.query(AgentCheckpoint).get(checkpoint_id)
-
-        if not checkpoint:
-            raise HTTPException(status_code=404, detail="Checkpoint not found")
-
-        if checkpoint.action != CheckpointAction.pending:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Checkpoint already responded to (action: {checkpoint.action.value})"
-            )
-
-        # Validate reorder action
-        if body.action == "reorder":
-            if not body.next_agent_override:
-                raise HTTPException(
-                    status_code=400,
-                    detail="next_agent_override required for reorder action"
-                )
-            remaining = checkpoint.remaining_agents or []
-            if body.next_agent_override not in remaining:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"'{body.next_agent_override}' not in remaining agents: {remaining}"
-                )
-
-        # Update checkpoint
-        checkpoint.action = CheckpointAction(body.action)
-        checkpoint.user_notes = body.user_notes
-        checkpoint.next_agent_override = body.next_agent_override
-        checkpoint.skip_agents = body.skip_agents
-        checkpoint.responded_at = datetime.utcnow()
-
-        # Calculate wait duration
-        if checkpoint.requested_at:
-            wait = (checkpoint.responded_at - checkpoint.requested_at).total_seconds()
-            checkpoint.wait_duration_seconds = int(wait)
-
-        db.commit()
-
-        return {
-            "status": "success",
-            "checkpoint_id": checkpoint_id,
-            "action": body.action,
-            "message": f"Checkpoint responded: {body.action}",
         }

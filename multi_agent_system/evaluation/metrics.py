@@ -75,24 +75,74 @@ class GroundTruthManager:
         "server_side_include": {"severity": "high", "cvss": 7.2, "category": "WSTG-INPV-08"}
     }
     
-    # OWASP Juice Shop Known Vulnerabilities (~100 total, subset shown)
+    # OWASP Juice Shop Known Vulnerabilities — Automatable Subset
+    # 52 challenges that can be detected by automated scanning tools
+    # Mapped to WSTG 4.2 categories for thesis evaluation
     JUICE_SHOP_GROUND_TRUTH = {
-        # Authentication
-        "admin_section_access": {"severity": "critical", "cvss": 9.1, "category": "WSTG-ATHN-04"},
-        "password_strength": {"severity": "medium", "cvss": 5.3, "category": "WSTG-ATHN-07"},
-        "jwt_secret": {"severity": "critical", "cvss": 9.8, "category": "WSTG-ATHN-06"},
-        
-        # Injection
-        "sqli_products": {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05"},
-        "sqli_login": {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05"},
-        "xss_search": {"severity": "high", "cvss": 7.5, "category": "WSTG-INPV-01"},
-        "xss_tracker": {"severity": "high", "cvss": 7.5, "category": "WSTG-INPV-01"},
-        
-        # Broken Access Control
-        "admin_endpoints": {"severity": "critical", "cvss": 8.8, "category": "WSTG-AUTHZ-02"},
-        "basket_manipulation": {"severity": "high", "cvss": 7.5, "category": "WSTG-AUTHZ-04"},
-        
-        # Add more as needed...
+        # ── 1-Star (Trivial) ──────────────────────────────────────────────
+        "score_board":              {"severity": "info",     "cvss": 3.7, "category": "WSTG-INFO-06", "challenge": "Score Board",              "stars": 1},
+        "bonus_payload_xss":       {"severity": "high",     "cvss": 7.5, "category": "WSTG-INPV-01", "challenge": "Bonus Payload",            "stars": 1},
+        "dom_xss":                 {"severity": "high",     "cvss": 7.5, "category": "WSTG-CLNT-01", "challenge": "DOM XSS",                  "stars": 1},
+        "confidential_document":   {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Confidential Document",    "stars": 1},
+        "error_handling":          {"severity": "low",      "cvss": 3.7, "category": "WSTG-ERRH-01", "challenge": "Error Handling",            "stars": 1},
+        "exposed_metrics":         {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-05", "challenge": "Exposed Metrics",           "stars": 1},
+        "outdated_allowlist":      {"severity": "medium",   "cvss": 5.4, "category": "WSTG-CLNT-04", "challenge": "Outdated Allowlist",        "stars": 1},
+        "zero_stars_feedback":     {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-01", "challenge": "Zero Stars",                "stars": 1},
+
+        # ── 2-Star (Easy) ─────────────────────────────────────────────────
+        "login_admin_sqli":        {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login Admin",               "stars": 2},
+        "password_strength":       {"severity": "medium",   "cvss": 5.3, "category": "WSTG-ATHN-07", "challenge": "Password Strength",         "stars": 2},
+        "security_policy":         {"severity": "info",     "cvss": 3.7, "category": "WSTG-INFO-02", "challenge": "Security Policy",           "stars": 2},
+        "view_basket_idor":        {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-04", "challenge": "View Basket",               "stars": 2},
+        "admin_section":           {"severity": "critical", "cvss": 9.1, "category": "WSTG-ATHZ-02", "challenge": "Admin Section",             "stars": 2},
+        "deprecated_interface":    {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-05", "challenge": "Deprecated Interface",      "stars": 2},
+        "five_star_feedback":      {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-01", "challenge": "Five-Star Feedback",        "stars": 2},
+        "login_mc_safesearch":     {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login MC SafeSearch",       "stars": 2},
+
+        # ── 3-Star (Medium) ───────────────────────────────────────────────
+        "captcha_bypass":          {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-07", "challenge": "CAPTCHA Bypass",            "stars": 3},
+        "csrf":                    {"severity": "high",     "cvss": 8.0, "category": "WSTG-SESS-05", "challenge": "CSRF",                      "stars": 3},
+        "database_schema":         {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Database Schema",           "stars": 3},
+        "forged_feedback":         {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-02", "challenge": "Forged Feedback",           "stars": 3},
+        "login_bender":            {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login Bender",              "stars": 3},
+        "login_jim":               {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login Jim",                 "stars": 3},
+        "manipulate_basket":       {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-09", "challenge": "Manipulate Basket",         "stars": 3},
+        "payback_time":            {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-01", "challenge": "Payback Time",              "stars": 3},
+        "product_tampering":       {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-02", "challenge": "Product Tampering",         "stars": 3},
+        "upload_size":             {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-08", "challenge": "Upload Size",               "stars": 3},
+        "upload_type":             {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-08", "challenge": "Upload Type",               "stars": 3},
+        "xxe_data_access":         {"severity": "high",     "cvss": 8.2, "category": "WSTG-INPV-07", "challenge": "XXE Data Access",           "stars": 3},
+        "admin_registration":      {"severity": "critical", "cvss": 9.1, "category": "WSTG-IDNT-02", "challenge": "Admin Registration",        "stars": 3},
+
+        # ── 4-Star (Hard) ─────────────────────────────────────────────────
+        "access_log":              {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Access Log",                "stars": 4},
+        "christmas_special":       {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Christmas Special",         "stars": 4},
+        "easter_egg":              {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-04", "challenge": "Easter Egg",                "stars": 4},
+        "expired_coupon":          {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-01", "challenge": "Expired Coupon",            "stars": 4},
+        "forgotten_developer":     {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Forgotten Developer Backup","stars": 4},
+        "forgotten_sales":         {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Forgotten Sales Backup",    "stars": 4},
+        "misplaced_signature":     {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-04", "challenge": "Misplaced Signature File",  "stars": 4},
+        "nosql_dos":               {"severity": "high",     "cvss": 7.5, "category": "WSTG-INPV-05", "challenge": "NoSQL DoS",                 "stars": 4},
+        "nosql_exfiltration":      {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "NoSQL Exfiltration",        "stars": 4},
+        "poison_null_byte":        {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Poison Null Byte",          "stars": 4},
+
+        # ── 5-Star (Challenging) ──────────────────────────────────────────
+        "change_bender_password":  {"severity": "high",     "cvss": 8.0, "category": "WSTG-ATHN-09", "challenge": "Change Bender's Password",  "stars": 5},
+        "deluxe_fraud":            {"severity": "high",     "cvss": 7.5, "category": "WSTG-IDNT-02", "challenge": "Deluxe Fraud",              "stars": 5},
+        "email_leak":              {"severity": "high",     "cvss": 7.5, "category": "WSTG-INPV-05", "challenge": "Email Leak",                "stars": 5},
+        "forged_review":           {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-02", "challenge": "Forged Review",             "stars": 5},
+        "forged_signed_jwt":       {"severity": "critical", "cvss": 9.8, "category": "WSTG-CRYP-04", "challenge": "Forged Signed JWT",         "stars": 5},
+        "multiple_likes":          {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-07", "challenge": "Multiple Likes",            "stars": 5},
+        "ssti":                    {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-18", "challenge": "SSTi",                      "stars": 5},
+        "two_factor_auth":         {"severity": "high",     "cvss": 8.0, "category": "WSTG-ATHN-11", "challenge": "Two Factor Authentication", "stars": 5},
+        "vulnerable_library":      {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-01", "challenge": "Vulnerable Library",        "stars": 5},
+
+        # ── 6-Star (Expert) ───────────────────────────────────────────────
+        "forged_coupon":           {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-01", "challenge": "Forged Coupon",             "stars": 6},
+        "ssrf":                    {"severity": "critical", "cvss": 9.0, "category": "WSTG-INPV-19", "challenge": "SSRF",                      "stars": 6},
+        "allowlist_bypass":        {"severity": "medium",   "cvss": 5.4, "category": "WSTG-CLNT-04", "challenge": "Allowlist Bypass",          "stars": 6},
+        "csp_bypass":              {"severity": "high",     "cvss": 7.5, "category": "WSTG-CLNT-12", "challenge": "CSP Bypass",                "stars": 6},
+        "nosql_manipulation":      {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "NoSQL Manipulation",        "stars": 6},
     }
     
     def get_ground_truth(self, target: str) -> Dict[str, Dict]:

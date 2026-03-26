@@ -23,8 +23,6 @@ from ..models.hitl_models import (
     ToolApprovalPolicy,
     ToolPolicyMode,
     ApprovalStatus,
-    AgentCheckpoint,
-    CheckpointAction,
 )
 
 # Import OpenAI for conversational HITL
@@ -920,130 +918,6 @@ RESPONSE FORMAT (JSON):
                 print(f"❌ [HITL Chat] Risk approval error: {e}")
                 return {"error": f"AI processing failed: {str(e)}"}
     
-    # ============================================================
-    # AGENT-LEVEL CHECKPOINT (v2 — per-agent HITL)
-    # ============================================================
-
-    async def request_agent_checkpoint(
-        self,
-        completed_agent: str,
-        agent_index: int,
-        findings_count: int,
-        findings_by_severity: Dict[str, int],
-        agent_summary: str,
-        cumulative_summary: str,
-        key_findings: List[Dict[str, Any]],
-        next_agent: Optional[str],
-        remaining_agents: List[str],
-        recommendations: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Create an agent-level checkpoint and wait for user decision.
-
-        Called by the orchestrator after each agent completes + summarisation.
-        Pauses execution until the user responds via the frontend.
-
-        Returns:
-            {
-                "action": "proceed" | "skip_next" | "reorder" | "auto" | "abort",
-                "next_agent_override": str | None,
-                "skip_agents": list | None,
-                "user_notes": str | None,
-            }
-        """
-        hitl_mode = getattr(settings, "hitl_mode", "off")
-        if hitl_mode != "agent":
-            return {"action": "proceed"}
-
-        # Don't checkpoint after the last agent (ReportGenerationAgent)
-        if not next_agent and not remaining_agents:
-            return {"action": "proceed"}
-
-        with get_db() as db:
-            checkpoint = AgentCheckpoint(
-                job_id=self.job_id,
-                completed_agent=completed_agent,
-                agent_sequence_index=agent_index,
-                findings_count=findings_count,
-                findings_by_severity=findings_by_severity,
-                agent_summary=agent_summary,
-                cumulative_summary=cumulative_summary,
-                key_findings=key_findings[:10] if key_findings else [],
-                next_agent=next_agent,
-                remaining_agents=remaining_agents,
-                recommendations=recommendations,
-                action=CheckpointAction.pending,
-            )
-            db.add(checkpoint)
-            db.commit()
-            db.refresh(checkpoint)
-            checkpoint_id = checkpoint.id
-
-        # Update job status so frontend knows we're waiting
-        with get_db() as db:
-            job = db.query(Job).get(self.job_id)
-            if job:
-                job.status = "waiting_checkpoint"
-                db.commit()
-
-        print(
-            f"🛑 [HITL] Job {self.job_id}: Agent checkpoint after {completed_agent} "
-            f"({findings_count} findings). Waiting for user..."
-        )
-
-        result = await self._wait_for_agent_checkpoint(checkpoint_id, completed_agent)
-
-        # Restore job status
-        with get_db() as db:
-            job = db.query(Job).get(self.job_id)
-            if job and job.status == "waiting_checkpoint":
-                job.status = "running"
-                db.commit()
-
-        return result
-
-    async def _wait_for_agent_checkpoint(
-        self,
-        checkpoint_id: int,
-        agent_name: str,
-        poll_interval: int = 2,
-        timeout: int = 3600,  # 1 hour max wait
-    ) -> Dict[str, Any]:
-        """Poll database for user response to agent checkpoint."""
-        elapsed = 0
-
-        while elapsed < timeout:
-            with get_db() as db:
-                cp = db.query(AgentCheckpoint).get(checkpoint_id)
-                if not cp:
-                    raise Exception(f"Agent checkpoint {checkpoint_id} not found")
-
-                if cp.action != CheckpointAction.pending:
-                    action = cp.action.value
-                    print(f"✅ [HITL] Job {self.job_id}: User chose '{action}' after {agent_name}")
-
-                    return {
-                        "action": action,
-                        "next_agent_override": cp.next_agent_override,
-                        "skip_agents": cp.skip_agents,
-                        "user_notes": cp.user_notes,
-                    }
-
-            await asyncio.sleep(poll_interval)
-            elapsed += poll_interval
-
-        # Timeout — auto-proceed
-        print(f"⚠️ [HITL] Agent checkpoint timeout after {agent_name}, auto-proceeding")
-        with get_db() as db:
-            cp = db.query(AgentCheckpoint).get(checkpoint_id)
-            if cp:
-                cp.action = CheckpointAction.proceed
-                cp.responded_at = datetime.utcnow()
-                cp.wait_duration_seconds = timeout
-                db.commit()
-
-        return {"action": "proceed"}
-
     def disable_hitl(self):
         """Disable HITL for this job (run fully automated)"""
         self.hitl_enabled = False
@@ -1070,10 +944,6 @@ RESPONSE FORMAT (JSON):
             self.hitl_enabled = bool(options["hitl_enabled"])
         if options.get("enable_tool_hitl") is not None:
             self.enable_tool_hitl = bool(options["enable_tool_hitl"])
-        if options.get("hitl_mode") is not None:
-            mode = str(options["hitl_mode"]).strip().lower()
-            if mode in ("off", "agent", "tool"):
-                settings.hitl_mode = mode
         if options.get("auto_approve_agents"):
             extra = options.get("auto_approve_agents")
             if isinstance(extra, list):
