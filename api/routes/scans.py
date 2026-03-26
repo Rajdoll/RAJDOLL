@@ -77,6 +77,7 @@ async def create_scan(req: CreateScanRequest):
 			"full_wstg_coverage": bool(req.full_wstg_coverage),
 			"hitl_enabled": req.hitl_enabled,
 			"enable_tool_hitl": req.enable_tool_hitl,
+			"hitl_mode": req.hitl_mode,
 			"auto_approve_agents": req.auto_approve_agents,
 		}
 	}

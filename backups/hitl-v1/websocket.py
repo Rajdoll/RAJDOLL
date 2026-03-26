@@ -5,7 +5,6 @@ import asyncio
 from datetime import datetime
 from multi_agent_system.core.db import get_db
 from multi_agent_system.models.models import JobAgent, AgentEvent, SharedContext
-from multi_agent_system.models.hitl_models import AgentCheckpoint, CheckpointAction
 
 
 router = APIRouter()
@@ -15,19 +14,9 @@ router = APIRouter()
 async def ws_logs(ws: WebSocket, job_id: int):
 	"""WebSocket endpoint for real-time log streaming"""
 	await ws.accept()
-	# Fast-forward past old events so reconnects don't flood the client
-	with get_db() as db:
-		max_evt = (
-			db.query(AgentEvent.id)
-			.join(JobAgent, AgentEvent.job_agent_id == JobAgent.id)
-			.filter(JobAgent.job_id == job_id)
-			.order_by(AgentEvent.id.desc())
-			.first()
-		)
-		last_event_id = max_evt[0] if max_evt else 0
+	last_event_id = 0
 	last_agent_status = {}  # Track last status per agent to avoid spam
 	sent_agent_statuses = {}  # Track which agent statuses we've already sent
-	last_checkpoint_id = 0  # Avoid sending same checkpoint repeatedly
 	
 	try:
 		# Send initial connection message
@@ -109,33 +98,6 @@ async def ws_logs(ws: WebSocket, job_id: int):
 						})
 				except Exception:
 					pass
-
-				# Agent-Level HITL Checkpoint: notify frontend when waiting
-				try:
-					pending_cp = db.query(AgentCheckpoint).filter(
-						AgentCheckpoint.job_id == job_id,
-						AgentCheckpoint.action == CheckpointAction.pending,
-					).order_by(AgentCheckpoint.requested_at.desc()).first()
-					if pending_cp and pending_cp.id != last_checkpoint_id:
-						last_checkpoint_id = pending_cp.id
-						await ws.send_json({
-							"type": "agent_checkpoint",
-							"data": {
-								"checkpoint_id": pending_cp.id,
-								"completed_agent": pending_cp.completed_agent,
-								"agent_index": pending_cp.agent_sequence_index,
-								"findings_count": pending_cp.findings_count,
-								"findings_by_severity": pending_cp.findings_by_severity or {},
-								"agent_summary": (pending_cp.agent_summary or "")[:2000],
-								"key_findings": pending_cp.key_findings or [],
-								"next_agent": pending_cp.next_agent,
-								"remaining_agents": pending_cp.remaining_agents or [],
-								"recommendations": pending_cp.recommendations or [],
-							}
-						})
-				except Exception as cp_err:
-					import traceback
-					print(f"[WS] Checkpoint query error: {cp_err}\n{traceback.format_exc()}")
 
 	except Exception as e:
 		# Connection closed or error

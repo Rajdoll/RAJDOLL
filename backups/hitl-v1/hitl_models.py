@@ -117,61 +117,6 @@ class RiskApproval(Base):
     alternative_suggested = Column(JSONB, nullable=True)  # Safer alternatives AI suggested
 
 
-class CheckpointAction(str, enum.Enum):
-    """User actions at an agent-level checkpoint"""
-    pending = "pending"          # Waiting for user response
-    proceed = "proceed"          # Continue to next agent (default order)
-    skip_next = "skip_next"      # Skip the next planned agent
-    reorder = "reorder"          # Change agent execution order
-    auto = "auto"                # Disable checkpoints for remaining agents
-    abort = "abort"              # Stop the scan entirely
-
-
-class AgentCheckpoint(Base):
-    """
-    Agent-level HITL checkpoint — pauses between agents for user review.
-
-    After each agent completes, the orchestrator creates a checkpoint with:
-    - Summary of what the agent found
-    - Recommendations for next steps
-    - Action buttons for the user
-
-    This enables an interactive, guided pentest workflow where the human
-    steers the scan based on intermediate results.
-    """
-    __tablename__ = "agent_checkpoints"
-
-    id = Column(Integer, primary_key=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
-
-    # Which agent just completed
-    completed_agent = Column(String(100), nullable=False)
-    agent_sequence_index = Column(Integer, nullable=False)  # Position in execution order
-
-    # Agent results summary
-    findings_count = Column(Integer, default=0)
-    findings_by_severity = Column(JSONB, nullable=True)  # {"critical": 2, "high": 5, ...}
-    agent_summary = Column(Text, nullable=True)           # LLM-generated summary of this agent's findings
-    cumulative_summary = Column(Text, nullable=True)      # Running summary of ALL agents so far
-    key_findings = Column(JSONB, nullable=True)            # Top findings: [{title, severity, wstg}]
-
-    # What comes next
-    next_agent = Column(String(100), nullable=True)        # Default next agent in plan
-    remaining_agents = Column(JSONB, nullable=True)        # List of agents still to run
-    recommendations = Column(JSONB, nullable=True)         # LLM recommendations: [{agent, reason, priority}]
-
-    # User response
-    action = Column(SQLEnum(CheckpointAction), default=CheckpointAction.pending)
-    user_notes = Column(Text, nullable=True)
-    next_agent_override = Column(String(100), nullable=True)  # If user chose reorder
-    skip_agents = Column(JSONB, nullable=True)                # Agents to skip: ["SessionAgent", ...]
-
-    # Timing
-    requested_at = Column(DateTime, default=datetime.utcnow)
-    responded_at = Column(DateTime, nullable=True)
-    wait_duration_seconds = Column(Integer, nullable=True)    # How long user took to respond
-
-
 class ToolPolicyMode(str, enum.Enum):
     """Defines how a policy should influence approvals."""
 
@@ -316,32 +261,4 @@ CREATE INDEX idx_finding_approvals_job ON finding_approvals(job_id);
 CREATE INDEX idx_finding_approvals_status ON finding_approvals(status);
 CREATE INDEX idx_risk_approvals_job ON risk_approvals(job_id);
 CREATE INDEX idx_risk_approvals_status ON risk_approvals(status);
-
--- Agent-level HITL checkpoints (v2)
-CREATE TYPE checkpoint_action AS ENUM ('pending', 'proceed', 'skip_next', 'reorder', 'auto', 'abort');
-
-CREATE TABLE agent_checkpoints (
-    id SERIAL PRIMARY KEY,
-    job_id INTEGER REFERENCES jobs(id) NOT NULL,
-    completed_agent VARCHAR(100) NOT NULL,
-    agent_sequence_index INTEGER NOT NULL,
-    findings_count INTEGER DEFAULT 0,
-    findings_by_severity JSONB,
-    agent_summary TEXT,
-    cumulative_summary TEXT,
-    key_findings JSONB,
-    next_agent VARCHAR(100),
-    remaining_agents JSONB,
-    recommendations JSONB,
-    action checkpoint_action DEFAULT 'pending',
-    user_notes TEXT,
-    next_agent_override VARCHAR(100),
-    skip_agents JSONB,
-    requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    responded_at TIMESTAMP,
-    wait_duration_seconds INTEGER
-);
-
-CREATE INDEX idx_agent_checkpoints_job ON agent_checkpoints(job_id);
-CREATE INDEX idx_agent_checkpoints_pending ON agent_checkpoints(job_id, action) WHERE action = 'pending';
 """
