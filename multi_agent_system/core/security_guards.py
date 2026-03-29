@@ -258,10 +258,17 @@ class SecurityGuardRails:
         return True
     
     def verify_admin_token(self, token: str) -> bool:
-        """Verify admin token (simplified - use proper auth in production)"""
-        # In production: check against database or secrets manager
-        admin_tokens = ["admin_token_placeholder"]
-        return token in admin_tokens
+        """Verify admin token — reads from ADMIN_TOKEN env var."""
+        import os
+        import warnings
+        admin_token = os.getenv("ADMIN_TOKEN")
+        if not admin_token:
+            warnings.warn(
+                "[SecurityGuard] ADMIN_TOKEN env var not set — whitelist management disabled",
+                stacklevel=2,
+            )
+            return False
+        return token == admin_token
     
     async def check_security_policy(self, url: str) -> SecurityPolicy:
         """
