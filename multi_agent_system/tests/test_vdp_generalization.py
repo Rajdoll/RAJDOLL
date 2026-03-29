@@ -40,3 +40,18 @@ class TestWhitelistDefaults:
         from multi_agent_system.core.security_guards import SecurityGuardRails
         guard = SecurityGuardRails()
         assert "juice-shop" not in guard.whitelist_domains
+
+
+class TestContainerNameAllowlist:
+    def test_known_containers_constant_exists(self):
+        """KNOWN_CONTAINERS set must exist in api.routes.logs."""
+        from api.routes.logs import KNOWN_CONTAINERS
+        assert "worker" in KNOWN_CONTAINERS
+        assert "input-mcp" in KNOWN_CONTAINERS
+        assert "auth-mcp" in KNOWN_CONTAINERS
+
+    def test_invalid_container_rejected(self):
+        """container_name not in KNOWN_CONTAINERS must raise HTTPException 400."""
+        from api.routes.logs import KNOWN_CONTAINERS
+        assert "../../etc/passwd" not in KNOWN_CONTAINERS
+        assert "../secret" not in KNOWN_CONTAINERS
