@@ -99,3 +99,30 @@ class TestKnowledgeGraphTarget:
             kg = KnowledgeGraph(job_id=999)
             assert kg.target == ""
             assert "juice-shop" not in kg.target
+
+
+class TestScanCredentialsSchema:
+    def test_scan_credentials_model_exists(self):
+        """ScanCredentials Pydantic model must be importable."""
+        from api.schemas.schemas import ScanCredentials
+        creds = ScanCredentials(username="admin@juice-sh.op", password="admin123")
+        assert creds.username == "admin@juice-sh.op"
+        assert creds.auth_type == "form"  # default
+
+    def test_create_scan_request_accepts_credentials(self):
+        """CreateScanRequest must accept optional credentials and whitelist_domain."""
+        from api.schemas.schemas import CreateScanRequest, ScanCredentials
+        req = CreateScanRequest(
+            target="http://localhost:3000",
+            credentials=ScanCredentials(username="u", password="p"),
+            whitelist_domain="localhost",
+        )
+        assert req.credentials.username == "u"
+        assert req.whitelist_domain == "localhost"
+
+    def test_create_scan_request_credentials_optional(self):
+        """credentials and whitelist_domain are optional."""
+        from api.schemas.schemas import CreateScanRequest
+        req = CreateScanRequest(target="http://localhost:3000")
+        assert req.credentials is None
+        assert req.whitelist_domain is None
