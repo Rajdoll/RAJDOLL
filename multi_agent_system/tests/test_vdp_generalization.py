@@ -69,3 +69,14 @@ class TestSessionServiceCredentials:
         from multi_agent_system.utils.session_service import SessionService
         for username, _ in SessionService.DEFAULT_CREDENTIALS:
             assert "@" not in username, f"App-specific email found: {username}"
+
+
+class TestBaseAgentTargetFallback:
+    def test_no_juice_shop_fallback_in_source(self):
+        """_auto_generate_test_arguments must not contain juice-shop fallback URL."""
+        import inspect
+        from multi_agent_system.agents.base_agent import BaseAgent
+        source = inspect.getsource(BaseAgent._auto_generate_test_arguments)
+        assert "juice-shop" not in source, (
+            "Found hardcoded juice-shop URL in base_agent._auto_generate_test_arguments"
+        )
