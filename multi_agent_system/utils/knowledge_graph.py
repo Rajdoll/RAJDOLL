@@ -182,13 +182,14 @@ class KnowledgeGraph:
         vulns = kg.query_by_type(EntityType.VULNERABILITY)
     """
     
-    def __init__(self, job_id: int):
+    def __init__(self, job_id: int, target: str = ""):
         self.job_id = job_id
+        self.target = target
         self._entities: Dict[str, Entity] = {}
         self._relationships: List[Relationship] = []
         self._adjacency: Dict[str, List[Tuple[str, Relationship]]] = defaultdict(list)
         self._reverse_adjacency: Dict[str, List[Tuple[str, Relationship]]] = defaultdict(list)
-        
+
         # Load existing graph from database
         self._load_from_db()
     
