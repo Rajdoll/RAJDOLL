@@ -26,3 +26,17 @@ class TestAdminToken:
         with patch.dict(os.environ, env, clear=True):
             guard = SecurityGuardRails()
             assert guard.verify_admin_token("anything") is False
+
+
+class TestWhitelistDefaults:
+    def test_default_whitelist_is_empty(self):
+        """Default whitelist must not contain any domain — require explicit add."""
+        from multi_agent_system.core.security_guards import SecurityGuardRails
+        guard = SecurityGuardRails()
+        assert guard.whitelist_domains == []
+
+    def test_juice_shop_not_in_whitelist(self):
+        """juice-shop must not be in whitelist_domains after fix."""
+        from multi_agent_system.core.security_guards import SecurityGuardRails
+        guard = SecurityGuardRails()
+        assert "juice-shop" not in guard.whitelist_domains

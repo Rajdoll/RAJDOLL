@@ -90,18 +90,14 @@ class SecurityGuardRails:
         self._load_default_whitelist()
     
     def _load_default_whitelist(self):
-        """Load default whitelist for development/testing"""
-        self.whitelist_domains = [
-            "localhost",
-            "127.0.0.1",
-            "0.0.0.0",
-            "juice-shop",
-            "owaspjuiceshop",
-            "dvwa",
-            "hackthebox.eu",
-            "pentesterlab.com",
-            # Add production whitelisted domains from environment/database
-        ]
+        """Load whitelist from ALLOWED_DOMAINS env var (comma-separated).
+
+        Default is empty — all targets require explicit whitelist addition
+        via POST /api/whitelist or whitelist_domain in POST /api/scans.
+        """
+        import os
+        env_domains = os.getenv("ALLOWED_DOMAINS", "")
+        self.whitelist_domains = [d.strip() for d in env_domains.split(",") if d.strip()]
     
     async def validate_target(
         self, 
