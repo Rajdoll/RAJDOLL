@@ -50,12 +50,11 @@ class SessionService:
     
     # Common default credentials to try
     DEFAULT_CREDENTIALS = [
-        # Juice Shop default admin
-        ("admin@juice-sh.op", "admin123"),
-        # Common defaults
+        # Generic common defaults only — app-specific credentials go in POST /api/scans
         ("admin", "admin"),
         ("admin", "password"),
         ("admin", "admin123"),
+        ("admin", "123456"),
         ("test", "test"),
         ("user", "user"),
         ("demo", "demo"),
