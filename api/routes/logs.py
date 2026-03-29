@@ -8,6 +8,14 @@ import json
 import subprocess
 from datetime import datetime
 
+# Allowlist of valid short container names (without rajdoll- prefix and -1 suffix)
+KNOWN_CONTAINERS = {
+    "worker", "input-mcp", "auth-mcp", "authorz-mcp", "session-mcp",
+    "config-mcp", "info-mcp", "error-mcp", "identity-mcp", "business-mcp",
+    "client-mcp", "crypto-mcp", "fileupload-mcp", "api-testing-mcp",
+    "katana-mcp", "db", "redis",
+}
+
 router = APIRouter()
 
 # Active WebSocket connections per job_id
@@ -176,6 +184,12 @@ async def websocket_logs_job(websocket: WebSocket, job_id: int):
 @router.get("/api/logs/recent/{container_name}")
 async def get_recent_logs(container_name: str, lines: int = 100):
     """Get recent logs from a container (HTTP endpoint)"""
+    if container_name not in KNOWN_CONTAINERS:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown container '{container_name}'. Valid: {sorted(KNOWN_CONTAINERS)}",
+        )
     try:
         result = subprocess.run(
             ["docker", "logs", "--tail", str(lines), f"rajdoll-{container_name}-1"],
@@ -210,6 +224,12 @@ async def get_recent_logs(container_name: str, lines: int = 100):
 @router.get("/api/logs/search")
 async def search_logs(query: str, container: str = None, level: str = None):
     """Search logs across containers"""
+    if container and container not in KNOWN_CONTAINERS:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown container '{container}'. Valid: {sorted(KNOWN_CONTAINERS)}",
+        )
     try:
         containers = [f"rajdoll-{container}-1"] if container else log_manager.mcp_containers
         
