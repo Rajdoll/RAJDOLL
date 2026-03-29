@@ -80,3 +80,22 @@ class TestBaseAgentTargetFallback:
         assert "juice-shop" not in source, (
             "Found hardcoded juice-shop URL in base_agent._auto_generate_test_arguments"
         )
+
+
+class TestKnowledgeGraphTarget:
+    def test_knowledge_graph_accepts_target_param(self):
+        """KnowledgeGraph.__init__ must accept optional target param."""
+        from multi_agent_system.utils.knowledge_graph import KnowledgeGraph
+        from unittest.mock import patch
+        with patch.object(KnowledgeGraph, '_load_from_db', return_value=None):
+            kg = KnowledgeGraph(job_id=999, target="https://target.bssn.go.id")
+            assert kg.target == "https://target.bssn.go.id"
+
+    def test_knowledge_graph_default_target_is_empty(self):
+        """KnowledgeGraph target defaults to empty string, not juice-shop URL."""
+        from multi_agent_system.utils.knowledge_graph import KnowledgeGraph
+        from unittest.mock import patch
+        with patch.object(KnowledgeGraph, '_load_from_db', return_value=None):
+            kg = KnowledgeGraph(job_id=999)
+            assert kg.target == ""
+            assert "juice-shop" not in kg.target
