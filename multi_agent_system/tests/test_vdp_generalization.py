@@ -55,3 +55,17 @@ class TestContainerNameAllowlist:
         from api.routes.logs import KNOWN_CONTAINERS
         assert "../../etc/passwd" not in KNOWN_CONTAINERS
         assert "../secret" not in KNOWN_CONTAINERS
+
+
+class TestSessionServiceCredentials:
+    def test_juice_shop_creds_not_in_defaults(self):
+        """admin@juice-sh.op must not appear in DEFAULT_CREDENTIALS."""
+        from multi_agent_system.utils.session_service import SessionService
+        usernames = [u for u, _ in SessionService.DEFAULT_CREDENTIALS]
+        assert "admin@juice-sh.op" not in usernames
+
+    def test_default_credentials_are_generic(self):
+        """All DEFAULT_CREDENTIALS must be generic (no app-specific emails)."""
+        from multi_agent_system.utils.session_service import SessionService
+        for username, _ in SessionService.DEFAULT_CREDENTIALS:
+            assert "@" not in username, f"App-specific email found: {username}"
