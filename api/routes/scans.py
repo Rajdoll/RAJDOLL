@@ -26,6 +26,10 @@ router = APIRouter()
 
 @router.post("/scans", response_model=ScanStatusResponse)
 async def create_scan(req: CreateScanRequest):
+	# Auto-add whitelist_domain if provided (convenience for VDP scans)
+	if req.whitelist_domain:
+		security_guard.whitelist_domains.append(req.whitelist_domain)
+
 	# 🔒 SECURITY VALIDATION: Validate target before creating scan
 	try:
 		await security_guard.validate_target(
@@ -53,10 +57,6 @@ async def create_scan(req: CreateScanRequest):
 			source_ip="API_REQUEST"
 		)
 		raise HTTPException(status_code=401, detail=f"Invalid authorization token: {str(e)}")
-
-	# Auto-add whitelist_domain if provided (convenience for VDP scans)
-	if req.whitelist_domain:
-		security_guard.whitelist_domains.append(req.whitelist_domain)
 
 	with get_db() as db:
 		job = Job(target=str(req.target), status=JobStatus.queued)
