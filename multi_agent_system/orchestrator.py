@@ -708,8 +708,14 @@ class Orchestrator:
 			target_url = self._get_target()
 			if target_url:
 				loop = self._ensure_event_loop()
+				# Read per-scan credentials from SharedContext (set by POST /api/scans)
+				scan_creds = self.context_manager.read("scan_credentials")
+				provided_credentials = None
+				if scan_creds and isinstance(scan_creds, dict):
+					provided_credentials = [(scan_creds["username"], scan_creds["password"])]
+
 				success, auth_session = loop.run_until_complete(
-					create_authenticated_session(target_url)
+					create_authenticated_session(target_url, credentials=provided_credentials)
 				)
 				if success:
 					self.context_manager.write("authenticated_session", auth_session)

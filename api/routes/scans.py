@@ -53,13 +53,27 @@ async def create_scan(req: CreateScanRequest):
 			source_ip="API_REQUEST"
 		)
 		raise HTTPException(status_code=401, detail=f"Invalid authorization token: {str(e)}")
-	
+
+	# Auto-add whitelist_domain if provided (convenience for VDP scans)
+	if req.whitelist_domain:
+		security_guard.whitelist_domains.append(req.whitelist_domain)
+
 	with get_db() as db:
 		job = Job(target=str(req.target), status=JobStatus.queued)
 		db.add(job)
 		db.commit()
 		db.refresh(job)
-	
+
+	# Persist scan credentials to SharedContext so orchestrator can use them
+	if req.credentials:
+		from multi_agent_system.utils.shared_context_manager import SharedContextManager
+		ctx = SharedContextManager(job_id=job.id)
+		ctx.write("scan_credentials", {
+			"username": req.credentials.username,
+			"password": req.credentials.password,
+			"auth_type": req.credentials.auth_type,
+		})
+
 	# 📝 AUDIT LOG: Record scan initiation
 	token_hash = hashlib.sha256(req.authorization_token.encode()).hexdigest() if req.authorization_token else None
 	audit_logger.log_scan_started(
