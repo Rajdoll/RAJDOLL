@@ -93,31 +93,60 @@ async function restoreLastScan() {
     }
 }
 
+// ========== CREDENTIALS TOGGLE ==========
+function toggleCredentials() {
+    const section = document.getElementById('credentialsSection');
+    const icon = document.getElementById('credToggleIcon');
+    const isHidden = section.style.display === 'none';
+    section.style.display = isHidden ? 'block' : 'none';
+    icon.textContent = isHidden ? '▼' : '▶';
+}
+
 // ========== SCAN OPERATIONS ==========
 async function handleScanSubmit(e) {
     e.preventDefault();
-    
+
     const targetUrl = document.getElementById('targetUrl').value.trim();
     const scanName = document.getElementById('scanName').value.trim();
-    
+    const credUsername = document.getElementById('credUsername').value.trim();
+    const credPassword = document.getElementById('credPassword').value;
+
     if (!targetUrl) {
         addLog('[ERROR] Target URL is required', 'error');
         return;
     }
-    
+
+    // Auto-extract domain for whitelist
+    let whitelistDomain = null;
+    try {
+        whitelistDomain = new URL(targetUrl).hostname;
+    } catch (_) {}
+
+    // Build credentials payload if provided
+    const credentials = (credUsername && credPassword)
+        ? { username: credUsername, password: credPassword }
+        : null;
+
+    if (credentials) {
+        addLog(`[SYSTEM] Credentials provided for: ${credUsername}`, 'info');
+    }
+
     try {
         startBtn.disabled = true;
         startBtn.innerHTML = '<span class="btn-icon">⏳</span> Initializing...';
         addLog(`[SYSTEM] Initiating scan for ${targetUrl}...`, 'info');
-        
+
+        const payload = {
+            target: targetUrl,
+            full_wstg_coverage: true,
+            ...(whitelistDomain && { whitelist_domain: whitelistDomain }),
+            ...(credentials && { credentials }),
+        };
+
         const response = await fetch(`${API_BASE}/scans`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                target: targetUrl,
-                user_email: "researcher@telkomuniversity.ac.id",
-                full_wstg_coverage: true  // ✅ COMPREHENSIVE MODE: 10x more test cases
-            })
+            body: JSON.stringify(payload)
         });
         
         if (!response.ok) {
