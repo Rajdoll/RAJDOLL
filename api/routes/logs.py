@@ -11,7 +11,7 @@ from datetime import datetime
 # Allowlist of valid short container names (without rajdoll- prefix and -1 suffix)
 KNOWN_CONTAINERS = {
     "worker", "input-mcp", "auth-mcp", "authorz-mcp", "session-mcp",
-    "config-mcp", "info-mcp", "error-mcp", "identity-mcp", "business-mcp",
+    "confdep-mcp", "info-mcp", "error-mcp", "identity-mcp", "biz-mcp",
     "client-mcp", "crypto-mcp", "fileupload-mcp", "api-testing-mcp",
     "katana-mcp", "db", "redis",
 }
@@ -31,11 +31,11 @@ class LogManager:
             "rajdoll-auth-mcp-1",
             "rajdoll-authz-mcp-1",
             "rajdoll-session-mcp-1",
-            "rajdoll-config-mcp-1",
+            "rajdoll-confdep-mcp-1",
             "rajdoll-info-mcp-1",
             "rajdoll-error-mcp-1",
             "rajdoll-identity-mcp-1",
-            "rajdoll-business-mcp-1",
+            "rajdoll-biz-mcp-1",
             "rajdoll-client-mcp-1",
             "rajdoll-crypto-mcp-1",
         ]
