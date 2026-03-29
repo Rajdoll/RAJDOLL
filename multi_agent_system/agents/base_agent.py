@@ -961,7 +961,12 @@ class BaseAgent:
 		# Get discovered endpoints from shared context (from Katana JS crawling)
 		context = self._shared_context_snapshot or {}
 		endpoints = context.get("entry_points", [])
-		target_base = self._target or "http://juice-shop:3000"
+		if not self._target:
+			raise ValueError(
+				f"[{self.__class__.__name__}] Target URL not set. "
+				"Pass target via POST /api/scans before running agents."
+			)
+		target_base = self._target
 
 		# Comprehensive payload sets for each vulnerability type
 		sql_payloads = [
