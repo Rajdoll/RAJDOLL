@@ -107,16 +107,24 @@ class Finding(Base):
     id: Mapped[int] = Column(Integer, primary_key=True)
     job_id: Mapped[int] = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
     agent_name: Mapped[str] = Column(String(128), nullable=False)
-    category: Mapped[str] = Column(String(128), nullable=False)  # OWASP WSTG category id
+    category: Mapped[str] = Column(String(128), nullable=False)
     title: Mapped[str] = Column(String(512), nullable=False)
     severity: Mapped[FindingSeverity] = Column(Enum(FindingSeverity), default=FindingSeverity.info, nullable=False)
     evidence: Mapped[Optional[dict]] = Column(JSON, nullable=True)
     details: Mapped[Optional[str]] = Column(Text, nullable=True)
     created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, nullable=False)
-    # PHASE 2: Confidence scoring fields
-    confidence_score: Mapped[Optional[float]] = Column(Float, nullable=True)  # 0.0 - 1.0
+    # Confidence scoring
+    confidence_score: Mapped[Optional[float]] = Column(Float, nullable=True)
     confidence_level: Mapped[Optional[ConfidenceLevel]] = Column(Enum(ConfidenceLevel), nullable=True)
-    attack_chain_id: Mapped[Optional[str]] = Column(String(64), nullable=True)  # Links findings in same attack chain
+    attack_chain_id: Mapped[Optional[str]] = Column(String(64), nullable=True)
+    # Enrichment columns (populated by EnrichmentService at write time)
+    explanation: Mapped[Optional[str]] = Column(Text, nullable=True)
+    remediation: Mapped[Optional[str]] = Column(Text, nullable=True)
+    cwe_id: Mapped[Optional[str]] = Column(String(20), nullable=True)
+    wstg_id: Mapped[Optional[str]] = Column(String(30), nullable=True)
+    cvss_score_v4: Mapped[Optional[float]] = Column(Float, nullable=True)
+    references: Mapped[Optional[list]] = Column("references", JSON, nullable=True)
+    enrichment_source: Mapped[Optional[str]] = Column(String(20), nullable=True)
 
     job: Mapped[Job] = relationship("Job", back_populates="findings")
 
