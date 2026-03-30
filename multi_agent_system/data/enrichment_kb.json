@@ -1,0 +1,554 @@
+[
+  {
+    "id": "sqli-generic",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["sql injection", "sqli", "sql error", "blind sql", "time-based sql", "union-based"],
+    "wstg_id": "WSTG-INPV-05",
+    "cwe_id": "CWE-89",
+    "cvss_score_v4": 9.3,
+    "explanation": "SQL Injection allows attackers to manipulate backend database queries by injecting malicious SQL syntax through user-supplied inputs. Successful exploitation can lead to unauthorized data access, authentication bypass, data destruction, or full database server compromise.",
+    "remediation": "1. Use parameterized queries or prepared statements for all database interactions.\n2. Apply strict server-side input validation and allowlist filtering.\n3. Enforce least-privilege database accounts (no DROP/ALTER in application accounts).\n4. Enable WAF rules for SQL injection patterns.\n5. Audit and log all database query errors.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/05-Testing_for_SQL_Injection",
+      "https://cwe.mitre.org/data/definitions/89.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "xss-reflected",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["reflected xss", "xss reflected", "cross-site scripting reflected"],
+    "wstg_id": "WSTG-INPV-01",
+    "cwe_id": "CWE-79",
+    "cvss_score_v4": 6.1,
+    "explanation": "Reflected Cross-Site Scripting (XSS) occurs when user-supplied data is immediately echoed back in the HTTP response without sanitization, allowing attackers to inject malicious scripts. Victims clicking crafted links execute attacker-controlled JavaScript in their browser, enabling session hijacking, credential theft, or malicious redirects.",
+    "remediation": "1. Apply context-aware output encoding (HTML entity encoding for HTML context, JS encoding for script context).\n2. Implement a strict Content Security Policy (CSP) header.\n3. Validate and sanitize all user input server-side.\n4. Use modern frameworks that auto-escape output (React, Angular, etc.).\n5. Set HttpOnly and Secure flags on session cookies.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/01-Testing_for_Reflected_Cross_Site_Scripting",
+      "https://cwe.mitre.org/data/definitions/79.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "xss-stored",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["stored xss", "xss stored", "persistent xss", "cross-site scripting stored"],
+    "wstg_id": "WSTG-INPV-02",
+    "cwe_id": "CWE-79",
+    "cvss_score_v4": 8.8,
+    "explanation": "Stored XSS occurs when malicious scripts injected by an attacker are permanently stored on the server and served to all users who view the affected page. Unlike reflected XSS, stored XSS does not require victim interaction with a crafted URL — every visitor is automatically exposed.",
+    "remediation": "1. Sanitize all user input before storage using an allowlist HTML sanitizer (e.g., DOMPurify).\n2. Apply context-aware output encoding when rendering stored data.\n3. Implement a strict Content Security Policy (CSP).\n4. Use parameterized queries to prevent stored payloads from bypassing filters.\n5. Audit all features that store and render user content.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/02-Testing_for_Stored_Cross_Site_Scripting",
+      "https://cwe.mitre.org/data/definitions/79.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "xss-dom",
+    "category_pattern": "Client",
+    "title_keywords": ["dom xss", "dom-based xss", "javascript injection", "dom injection"],
+    "wstg_id": "WSTG-CLNT-01",
+    "cwe_id": "CWE-79",
+    "cvss_score_v4": 6.1,
+    "explanation": "DOM-Based XSS occurs when client-side JavaScript dynamically writes attacker-controlled data to the DOM without sanitization, such as through innerHTML or document.write. The attack executes entirely in the browser without any server interaction, making it harder to detect with server-side controls.",
+    "remediation": "1. Use safe DOM APIs (textContent, createElement) instead of innerHTML or document.write.\n2. Sanitize dynamic data using DOMPurify before rendering.\n3. Implement a strict Content Security Policy (CSP).\n4. Avoid passing URL fragments or query strings directly into DOM sinks.\n5. Conduct JavaScript security code review for all DOM manipulation.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/11-Client-Side_Testing/01-Testing_for_DOM-Based_Cross_Site_Scripting",
+      "https://cwe.mitre.org/data/definitions/79.html"
+    ]
+  },
+  {
+    "id": "ssti",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["ssti", "server-side template injection", "template injection"],
+    "wstg_id": "WSTG-INPV-18",
+    "cwe_id": "CWE-94",
+    "cvss_score_v4": 9.8,
+    "explanation": "Server-Side Template Injection (SSTI) occurs when user input is embedded unsanitized into a server-side template engine. Attackers can exploit template syntax to execute arbitrary code on the server, potentially achieving full Remote Code Execution (RCE) and complete system compromise.",
+    "remediation": "1. Never embed user-supplied data directly into template strings — use template variables instead.\n2. Apply strict input validation and reject template metacharacters ({{, }}, {%, etc.).\n3. Run the application with minimal OS privileges to limit RCE blast radius.\n4. Use sandboxed template environments where available.\n5. Audit all template rendering code for user-controlled input.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server_Side_Template_Injection",
+      "https://cwe.mitre.org/data/definitions/94.html",
+      "https://portswigger.net/research/server-side-template-injection"
+    ]
+  },
+  {
+    "id": "lfi",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["lfi", "local file inclusion", "path traversal", "directory traversal", "../"],
+    "wstg_id": "WSTG-INPV-11",
+    "cwe_id": "CWE-22",
+    "cvss_score_v4": 7.5,
+    "explanation": "Local File Inclusion (LFI) and Path Traversal vulnerabilities allow attackers to read arbitrary files from the server filesystem by manipulating file path parameters. Sensitive files such as /etc/passwd, application configs, and private keys may be exposed, potentially leading to further compromise.",
+    "remediation": "1. Validate and sanitize all file path inputs — reject sequences like ../ and absolute paths.\n2. Use an allowlist of permitted file names or directories.\n3. Resolve file paths to canonical form and verify they remain within the intended base directory.\n4. Run the application process with minimal filesystem permissions.\n5. Disable directory listing on the web server.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/11.1-Testing_for_Local_File_Inclusion",
+      "https://cwe.mitre.org/data/definitions/22.html"
+    ]
+  },
+  {
+    "id": "nosql-injection",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["nosql injection", "nosql", "mongodb injection", "no-sql"],
+    "wstg_id": "WSTG-INPV-05",
+    "cwe_id": "CWE-943",
+    "cvss_score_v4": 8.6,
+    "explanation": "NoSQL Injection allows attackers to manipulate NoSQL database queries (e.g., MongoDB) by injecting query operators through user-supplied input. This can bypass authentication, enumerate data, or cause denial of service through expensive query operations.",
+    "remediation": "1. Validate input types strictly — reject objects/arrays where strings are expected.\n2. Use parameterized queries or ORM query builders that separate data from query logic.\n3. Sanitize inputs to strip NoSQL operator prefixes ($where, $gt, $regex).\n4. Apply schema validation at the database level.\n5. Disable JavaScript execution in the database if not required (e.g., MongoDB --noscripting).",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/05-Testing_for_SQL_Injection",
+      "https://cwe.mitre.org/data/definitions/943.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "hpp",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["http parameter pollution", "hpp", "parameter pollution", "duplicate parameter"],
+    "wstg_id": "WSTG-INPV-04",
+    "cwe_id": "CWE-235",
+    "cvss_score_v4": 5.3,
+    "explanation": "HTTP Parameter Pollution (HPP) occurs when an application accepts multiple values for the same parameter but processes them inconsistently. Attackers can exploit different parsing behaviors between WAF, proxy, and application layers to bypass security controls or manipulate application logic.",
+    "remediation": "1. Define explicit behavior for duplicate parameters — accept only the first or last value consistently.\n2. Implement server-side parameter validation that rejects duplicate parameters.\n3. Ensure WAF and application server parse parameters identically.\n4. Audit all endpoints that process query string or body parameters.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/04-Testing_for_HTTP_Parameter_Pollution",
+      "https://cwe.mitre.org/data/definitions/235.html"
+    ]
+  },
+  {
+    "id": "redos",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["redos", "regex denial", "regular expression denial", "catastrophic backtracking"],
+    "wstg_id": "WSTG-INPV-19",
+    "cwe_id": "CWE-1333",
+    "cvss_score_v4": 5.9,
+    "explanation": "Regular Expression Denial of Service (ReDoS) exploits pathological regex patterns that exhibit exponential backtracking when processing specially crafted inputs. Attackers can cause CPU exhaustion and application unavailability by submitting inputs designed to trigger worst-case regex behavior.",
+    "remediation": "1. Audit all regex patterns for polynomial or exponential worst-case complexity.\n2. Replace vulnerable patterns with non-backtracking alternatives.\n3. Apply input length limits before regex evaluation.\n4. Use regex timeout libraries (e.g., re2) that guarantee linear time matching.\n5. Use static analysis tools (safe-regex, vuln-regex-detector) during code review.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/19-Testing_for_Regular_Expression_Denial_of_Service",
+      "https://cwe.mitre.org/data/definitions/1333.html"
+    ]
+  },
+  {
+    "id": "csrf",
+    "category_pattern": "Input Validation",
+    "title_keywords": ["csrf", "cross-site request forgery", "csrftoken missing"],
+    "wstg_id": "WSTG-SESS-05",
+    "cwe_id": "CWE-352",
+    "cvss_score_v4": 6.5,
+    "explanation": "Cross-Site Request Forgery (CSRF) tricks authenticated users into unknowingly submitting malicious requests to an application they are logged into. Attackers can force state-changing actions (password changes, fund transfers, account settings) without the user's knowledge.",
+    "remediation": "1. Implement synchronizer token pattern — embed unpredictable CSRF tokens in all state-changing requests.\n2. Use SameSite=Strict or SameSite=Lax cookie attribute.\n3. Validate the Origin and Referer headers for sensitive operations.\n4. Require re-authentication for critical actions (password change, fund transfer).\n5. Avoid using GET requests for state-changing operations.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/06-Session_Management_Testing/05-Testing_for_Cross_Site_Request_Forgery",
+      "https://cwe.mitre.org/data/definitions/352.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "brute-force",
+    "category_pattern": "Authentication",
+    "title_keywords": ["brute force", "brute-force", "credential stuffing", "account lockout missing", "rate limit login"],
+    "wstg_id": "WSTG-ATHN-03",
+    "cwe_id": "CWE-307",
+    "cvss_score_v4": 7.5,
+    "explanation": "Missing or weak brute force protection allows attackers to systematically guess credentials through automated login attempts. Without account lockout, CAPTCHA, or rate limiting, attackers can compromise accounts using credential lists or dictionary attacks.",
+    "remediation": "1. Implement account lockout after N failed attempts (e.g., 5-10) with exponential backoff.\n2. Apply rate limiting on authentication endpoints (e.g., 5 requests/minute per IP).\n3. Implement CAPTCHA for repeated failures.\n4. Use multi-factor authentication (MFA) for all accounts.\n5. Monitor and alert on high-volume authentication failures.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/04-Authentication_Testing/03-Testing_for_Weak_Lock_Out_Mechanism",
+      "https://cwe.mitre.org/data/definitions/307.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "weak-password",
+    "category_pattern": "Authentication",
+    "title_keywords": ["weak password", "password policy", "password strength", "default credential", "default password"],
+    "wstg_id": "WSTG-ATHN-07",
+    "cwe_id": "CWE-521",
+    "cvss_score_v4": 7.3,
+    "explanation": "Weak password policies or the use of default credentials allow attackers to easily guess or reuse passwords to gain unauthorized access. Default credentials in administrative interfaces are a common initial access vector for attackers.",
+    "remediation": "1. Enforce minimum password complexity: 12+ characters, mixed case, digits, special chars.\n2. Check new passwords against known-breached password lists (e.g., HaveIBeenPwned API).\n3. Immediately change all default credentials post-installation.\n4. Implement MFA for all privileged accounts.\n5. Store passwords using bcrypt, Argon2, or scrypt with appropriate work factors.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/04-Authentication_Testing/07-Testing_for_Weak_Password_Policy",
+      "https://cwe.mitre.org/data/definitions/521.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "2fa-bypass",
+    "category_pattern": "Authentication",
+    "title_keywords": ["2fa bypass", "mfa bypass", "totp bypass", "two-factor bypass", "otp bypass"],
+    "wstg_id": "WSTG-ATHN-11",
+    "cwe_id": "CWE-287",
+    "cvss_score_v4": 8.1,
+    "explanation": "Two-Factor Authentication (2FA) bypass vulnerabilities allow attackers to circumvent the second authentication factor, reducing security to single-factor. Common bypasses include brute-forcing short OTPs, reusing expired tokens, or skipping the 2FA step entirely through direct URL access.",
+    "remediation": "1. Rate-limit OTP validation attempts (max 3-5 per code).\n2. Enforce OTP expiry (30-60 seconds for TOTP).\n3. Mark OTPs as used immediately after validation to prevent reuse.\n4. Verify 2FA completion server-side before granting access to protected resources.\n5. Alert users on failed 2FA attempts.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/04-Authentication_Testing/11-Testing_Multi-Factor_Authentication",
+      "https://cwe.mitre.org/data/definitions/287.html"
+    ]
+  },
+  {
+    "id": "idor",
+    "category_pattern": "Authorization",
+    "title_keywords": ["idor", "insecure direct object reference", "broken object", "bola", "unauthorized access to"],
+    "wstg_id": "WSTG-ATHZ-04",
+    "cwe_id": "CWE-639",
+    "cvss_score_v4": 8.1,
+    "explanation": "Insecure Direct Object Reference (IDOR) occurs when an application uses user-controllable identifiers to access objects without verifying that the requesting user has permission. Attackers can enumerate IDs to access other users' data, orders, profiles, or administrative functions.",
+    "remediation": "1. Implement server-side authorization checks on every object access.\n2. Use indirect references (UUIDs or tokens) instead of sequential integer IDs.\n3. Apply the principle of least privilege for all data access operations.\n4. Conduct authorization testing as part of QA for every new endpoint.\n5. Log and alert on repeated access to non-owned resources.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/05-Authorization_Testing/04-Testing_for_Insecure_Direct_Object_References",
+      "https://cwe.mitre.org/data/definitions/639.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "privilege-escalation",
+    "category_pattern": "Authorization",
+    "title_keywords": ["privilege escalation", "admin access", "role escalation", "horizontal escalation", "vertical escalation"],
+    "wstg_id": "WSTG-ATHZ-03",
+    "cwe_id": "CWE-269",
+    "cvss_score_v4": 8.8,
+    "explanation": "Privilege escalation vulnerabilities allow attackers to gain elevated permissions beyond what they are authorized for. Vertical escalation grants administrative rights; horizontal escalation allows acting as another user at the same privilege level.",
+    "remediation": "1. Enforce role-based access control (RBAC) with server-side validation for every privileged operation.\n2. Never trust client-supplied role or privilege parameters.\n3. Apply the principle of least privilege.\n4. Audit all administrative functions to ensure proper role checks.\n5. Log all privilege-sensitive operations and alert on anomalies.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/05-Authorization_Testing/03-Testing_for_Privilege_Escalation",
+      "https://cwe.mitre.org/data/definitions/269.html"
+    ]
+  },
+  {
+    "id": "user-spoofing",
+    "category_pattern": "Authorization",
+    "title_keywords": ["user spoofing", "userid manipulation", "user id tampering", "user impersonation"],
+    "wstg_id": "WSTG-ATHZ-02",
+    "cwe_id": "CWE-284",
+    "cvss_score_v4": 8.1,
+    "explanation": "User spoofing vulnerabilities allow attackers to impersonate other users by manipulating user identifiers in requests (e.g., userId, authorId fields). This enables unauthorized actions such as posting as another user, modifying their data, or accessing their resources.",
+    "remediation": "1. Never accept user identity from client-supplied parameters — derive identity exclusively from the authenticated session.\n2. Validate that the requesting user's session identity matches the resource owner server-side.\n3. Audit all endpoints that accept user ID parameters for missing authorization checks.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/05-Authorization_Testing/02-Testing_for_Bypassing_Authorization_Schema",
+      "https://cwe.mitre.org/data/definitions/284.html"
+    ]
+  },
+  {
+    "id": "session-fixation",
+    "category_pattern": "Session",
+    "title_keywords": ["session fixation", "session not regenerated", "session id reuse after login"],
+    "wstg_id": "WSTG-SESS-03",
+    "cwe_id": "CWE-384",
+    "cvss_score_v4": 6.8,
+    "explanation": "Session fixation allows an attacker to set a victim's session ID before authentication and then hijack the session after the victim logs in, since the application does not issue a new session ID post-login. This results in unauthorized account access.",
+    "remediation": "1. Generate a new session ID immediately after successful authentication.\n2. Invalidate the pre-authentication session ID.\n3. Use cryptographically random session IDs with sufficient entropy (128+ bits).\n4. Set session cookies with HttpOnly, Secure, and SameSite attributes.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/06-Session_Management_Testing/03-Testing_for_Session_Fixation",
+      "https://cwe.mitre.org/data/definitions/384.html"
+    ]
+  },
+  {
+    "id": "session-cookie-flags",
+    "category_pattern": "Session",
+    "title_keywords": ["httponly missing", "secure flag missing", "samesite missing", "cookie flag", "session cookie"],
+    "wstg_id": "WSTG-SESS-02",
+    "cwe_id": "CWE-614",
+    "cvss_score_v4": 5.9,
+    "explanation": "Missing cookie security flags expose session tokens to theft. Without HttpOnly, JavaScript can steal cookies via XSS. Without Secure, cookies are transmitted over HTTP. Without SameSite, cookies are sent on cross-site requests enabling CSRF.",
+    "remediation": "1. Set HttpOnly flag on all session cookies to prevent JavaScript access.\n2. Set Secure flag to ensure cookies are only sent over HTTPS.\n3. Set SameSite=Strict or SameSite=Lax to prevent CSRF via cross-site requests.\n4. Regularly rotate session IDs and expire idle sessions.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/06-Session_Management_Testing/02-Testing_for_Cookies_Attributes",
+      "https://cwe.mitre.org/data/definitions/614.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "security-headers-missing",
+    "category_pattern": "Configuration",
+    "title_keywords": ["missing security header", "x-frame-options", "x-content-type", "security headers", "hsts missing", "csp missing header"],
+    "wstg_id": "WSTG-CONF-07",
+    "cwe_id": "CWE-693",
+    "cvss_score_v4": 5.3,
+    "explanation": "Missing HTTP security headers leave the application vulnerable to multiple attack classes. X-Frame-Options prevents clickjacking; X-Content-Type-Options prevents MIME sniffing; HSTS enforces HTTPS; CSP restricts script execution. Their absence increases the attack surface.",
+    "remediation": "1. Add Strict-Transport-Security: max-age=31536000; includeSubDomains; preload\n2. Add X-Frame-Options: DENY or SAMEORIGIN\n3. Add X-Content-Type-Options: nosniff\n4. Add Content-Security-Policy with a restrictive policy\n5. Add Referrer-Policy: strict-origin-when-cross-origin\n6. Add Permissions-Policy to restrict browser features",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/07-Test_HTTP_Strict_Transport_Security",
+      "https://cwe.mitre.org/data/definitions/693.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "directory-listing",
+    "category_pattern": "Configuration",
+    "title_keywords": ["directory listing", "directory traversal exposed", "open directory", "index of /"],
+    "wstg_id": "WSTG-CONF-04",
+    "cwe_id": "CWE-548",
+    "cvss_score_v4": 5.3,
+    "explanation": "Enabled directory listing exposes the file structure of the web server, allowing attackers to discover sensitive files, backup archives, configuration files, and application source code that should not be publicly accessible.",
+    "remediation": "1. Disable directory listing in web server configuration (Apache: Options -Indexes, Nginx: autoindex off).\n2. Remove all sensitive files from web-accessible directories.\n3. Implement access controls for any directories that must be browsable.\n4. Regularly audit web-accessible directories for unexpected files.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
+      "https://cwe.mitre.org/data/definitions/548.html"
+    ]
+  },
+  {
+    "id": "exposed-git",
+    "category_pattern": "Configuration",
+    "title_keywords": ["exposed .git", "git repository exposed", ".git accessible", "git config exposed"],
+    "wstg_id": "WSTG-CONF-04",
+    "cwe_id": "CWE-538",
+    "cvss_score_v4": 7.5,
+    "explanation": "An exposed .git directory allows attackers to download the complete application source code, commit history, hardcoded secrets, API keys, database credentials, and internal infrastructure details. This significantly accelerates further attacks against the application.",
+    "remediation": "1. Block access to .git directories in web server configuration (deny from all).\n2. Use infrastructure-as-code to enforce this at deployment time.\n3. Rotate any secrets that may have been exposed in git history.\n4. Use git-secrets or similar tools to prevent committing secrets.\n5. Review git history for any sensitive data using tools like truffleHog.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
+      "https://cwe.mitre.org/data/definitions/538.html"
+    ]
+  },
+  {
+    "id": "npm-vulnerabilities",
+    "category_pattern": "Configuration",
+    "title_keywords": ["npm vulnerability", "vulnerable dependency", "cve in package", "outdated package", "known vulnerability"],
+    "wstg_id": "WSTG-CONF-02",
+    "cwe_id": "CWE-1395",
+    "cvss_score_v4": 7.0,
+    "explanation": "Using components with known vulnerabilities exposes the application to exploitation of publicly disclosed CVEs. Outdated npm packages may contain security flaws that attackers can exploit using publicly available proof-of-concept code.",
+    "remediation": "1. Run npm audit regularly and remediate high/critical findings immediately.\n2. Implement automated dependency scanning in CI/CD (Dependabot, Snyk, OWASP Dependency-Check).\n3. Update dependencies promptly when security patches are released.\n4. Pin dependency versions and review updates before applying.\n5. Remove unused dependencies to reduce attack surface.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/02-Test_Application_Platform_Configuration",
+      "https://cwe.mitre.org/data/definitions/1395.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Vulnerable_Dependency_Management_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "hidden-endpoints",
+    "category_pattern": "Configuration",
+    "title_keywords": ["hidden endpoint", "exposed admin", "sensitive endpoint", "/ftp", "/metrics", "/admin exposed", "backup file"],
+    "wstg_id": "WSTG-CONF-05",
+    "cwe_id": "CWE-200",
+    "cvss_score_v4": 5.3,
+    "explanation": "Exposed hidden or administrative endpoints allow attackers to access debugging interfaces, metrics, file listings, or backup data that should not be publicly reachable. These endpoints often lack authentication and expose sensitive operational data.",
+    "remediation": "1. Restrict administrative and debug endpoints to internal networks or VPN.\n2. Apply authentication to all sensitive endpoints.\n3. Remove or disable debug/development endpoints in production.\n4. Regularly audit exposed endpoints using crawlers and directory fuzzing.\n5. Implement IP allowlisting for administrative interfaces.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/05-Enumerate_Infrastructure_and_Application_Admin_Interfaces",
+      "https://cwe.mitre.org/data/definitions/200.html"
+    ]
+  },
+  {
+    "id": "clickjacking",
+    "category_pattern": "Client",
+    "title_keywords": ["clickjacking", "x-frame-options missing", "framing allowed", "iframe allowed"],
+    "wstg_id": "WSTG-CLNT-09",
+    "cwe_id": "CWE-1021",
+    "cvss_score_v4": 4.3,
+    "explanation": "Clickjacking allows attackers to embed the target application in an invisible iframe within a malicious page, tricking users into clicking elements they cannot see. This can lead to unintended actions such as unauthorized transactions, account changes, or data submission.",
+    "remediation": "1. Set X-Frame-Options: DENY or SAMEORIGIN response header.\n2. Implement Content-Security-Policy: frame-ancestors 'none' or 'self'.\n3. Use JavaScript frame-busting as a defense-in-depth measure.\n4. Verify that sensitive actions require explicit user confirmation.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/11-Client-Side_Testing/09-Testing_for_Clickjacking",
+      "https://cwe.mitre.org/data/definitions/1021.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "open-redirect",
+    "category_pattern": "Client",
+    "title_keywords": ["open redirect", "unvalidated redirect", "redirect bypass", "redirect to external"],
+    "wstg_id": "WSTG-CLNT-04",
+    "cwe_id": "CWE-601",
+    "cvss_score_v4": 6.1,
+    "explanation": "Open redirect vulnerabilities allow attackers to craft URLs on a trusted domain that redirect victims to attacker-controlled sites. This is commonly exploited in phishing attacks where the trusted domain increases victim confidence in clicking the link.",
+    "remediation": "1. Use an allowlist of permitted redirect destinations.\n2. Avoid using user-supplied data in redirect targets.\n3. Validate that redirect URLs belong to the application domain before redirecting.\n4. Display a warning page for external redirects with explicit user confirmation.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/11-Client-Side_Testing/04-Testing_for_Client_Side_URL_Redirect",
+      "https://cwe.mitre.org/data/definitions/601.html"
+    ]
+  },
+  {
+    "id": "csp-missing-weak",
+    "category_pattern": "Client",
+    "title_keywords": ["csp missing", "csp weak", "content security policy", "csp bypass", "unsafe-inline", "unsafe-eval"],
+    "wstg_id": "WSTG-CLNT-12",
+    "cwe_id": "CWE-693",
+    "cvss_score_v4": 5.3,
+    "explanation": "A missing or weak Content Security Policy (CSP) fails to restrict which resources the browser may load, increasing the impact of XSS and data injection attacks. Directives like unsafe-inline and unsafe-eval negate most CSP protection.",
+    "remediation": "1. Implement a strict CSP: default-src 'self'; script-src 'self'; object-src 'none'.\n2. Eliminate inline scripts and event handlers — use external script files.\n3. Replace eval() and similar dynamic code execution patterns.\n4. Use CSP nonces or hashes for required inline scripts.\n5. Test your CSP with Google CSP Evaluator.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/11-Client-Side_Testing/12-Testing_for_Content_Security_Policy",
+      "https://cwe.mitre.org/data/definitions/693.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "cors-misconfiguration",
+    "category_pattern": "Client",
+    "title_keywords": ["cors misconfiguration", "cors", "access-control-allow-origin", "cors wildcard", "cors any origin"],
+    "wstg_id": "WSTG-CLNT-07",
+    "cwe_id": "CWE-942",
+    "cvss_score_v4": 6.5,
+    "explanation": "CORS misconfiguration allows unauthorized cross-origin requests to read sensitive API responses. Reflecting arbitrary origins or using wildcard (*) with credentials enabled allows attacker-controlled sites to make authenticated requests and read the responses on behalf of victims.",
+    "remediation": "1. Define an explicit allowlist of trusted origins — never reflect arbitrary Origin headers.\n2. Never combine Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true.\n3. Restrict CORS to specific HTTP methods and headers required.\n4. Validate the Origin header server-side against the allowlist.\n5. Apply CORS policies on a per-endpoint basis, not globally.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/11-Client-Side_Testing/07-Testing_Cross_Origin_Resource_Sharing",
+      "https://cwe.mitre.org/data/definitions/942.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "rate-limiting-missing",
+    "category_pattern": "Business Logic",
+    "title_keywords": ["rate limiting missing", "no rate limit", "missing rate limit", "rate limit absent", "unlimited requests"],
+    "wstg_id": "WSTG-BUSL-08",
+    "cwe_id": "CWE-799",
+    "cvss_score_v4": 5.3,
+    "explanation": "Missing rate limiting allows attackers to make unlimited automated requests to application endpoints, enabling brute force attacks, resource exhaustion, data scraping, and abuse of expensive operations (email sending, OTP generation, file processing).",
+    "remediation": "1. Implement rate limiting on all sensitive endpoints (login, registration, OTP, API).\n2. Apply per-IP and per-user rate limits with exponential backoff for repeat offenders.\n3. Return HTTP 429 Too Many Requests with Retry-After headers.\n4. Implement CAPTCHA for endpoints vulnerable to automated abuse.\n5. Use API gateway or WAF rate limiting as defense-in-depth.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/08-Test_Upload_of_Unexpected_File_Types",
+      "https://cwe.mitre.org/data/definitions/799.html"
+    ]
+  },
+  {
+    "id": "coupon-forgery",
+    "category_pattern": "Business Logic",
+    "title_keywords": ["coupon forgery", "discount abuse", "coupon bypass", "expired coupon", "coupon manipulation"],
+    "wstg_id": "WSTG-BUSL-09",
+    "cwe_id": "CWE-840",
+    "cvss_score_v4": 5.4,
+    "explanation": "Business logic flaws in coupon or discount systems allow attackers to forge, reuse, or abuse discount codes beyond their intended parameters — using expired coupons, applying codes multiple times, or manipulating discount values. This causes direct financial losses.",
+    "remediation": "1. Validate coupon codes server-side — check expiry, usage limits, and user eligibility.\n2. Mark coupons as used atomically in the database to prevent race conditions.\n3. Bind coupons to specific user accounts where applicable.\n4. Log and monitor coupon usage for anomalous patterns.\n5. Implement server-side validation of all discount calculations — never trust client-computed prices.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/09-Test_Upload_of_Malicious_Files",
+      "https://cwe.mitre.org/data/definitions/840.html"
+    ]
+  },
+  {
+    "id": "negative-quantity",
+    "category_pattern": "Business Logic",
+    "title_keywords": ["negative quantity", "negative value", "negative price", "integer overflow order"],
+    "wstg_id": "WSTG-BUSL-05",
+    "cwe_id": "CWE-840",
+    "cvss_score_v4": 6.5,
+    "explanation": "Business logic vulnerabilities allowing negative quantities or prices let attackers manipulate order totals to receive refunds or products for free. These flaws arise when input validation enforces only format but not business rules.",
+    "remediation": "1. Validate that all quantity and price inputs are positive integers or decimals.\n2. Apply minimum/maximum bounds on all numeric business parameters.\n3. Perform total calculation server-side — never trust client-computed prices.\n4. Implement sanity checks before processing orders (total must be > 0).",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/05-Test_Number_of_Times_a_Function_Can_Be_Used_Limits",
+      "https://cwe.mitre.org/data/definitions/840.html"
+    ]
+  },
+  {
+    "id": "user-enumeration",
+    "category_pattern": "Identity Management",
+    "title_keywords": ["user enumeration", "username enumeration", "account enumeration", "email enumeration"],
+    "wstg_id": "WSTG-IDMG-04",
+    "cwe_id": "CWE-204",
+    "cvss_score_v4": 5.3,
+    "explanation": "User enumeration allows attackers to determine valid usernames or email addresses by observing differences in application responses (different error messages, response times, or HTTP status codes for valid vs. invalid accounts). This information is used to target credential attacks.",
+    "remediation": "1. Return identical error messages for failed login attempts regardless of whether the username exists.\n2. Normalize response times for valid and invalid account lookups.\n3. Return the same response for registered and unregistered email addresses in password reset flows.\n4. Implement rate limiting and CAPTCHA on authentication endpoints.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/03-Identity_Management_Testing/04-Testing_for_Account_Enumeration_and_Guessable_User_Account",
+      "https://cwe.mitre.org/data/definitions/204.html"
+    ]
+  },
+  {
+    "id": "mass-assignment",
+    "category_pattern": "Identity Management",
+    "title_keywords": ["mass assignment", "parameter binding", "role injection", "admin role injection", "registration mass"],
+    "wstg_id": "WSTG-IDMG-03",
+    "cwe_id": "CWE-915",
+    "cvss_score_v4": 8.8,
+    "explanation": "Mass assignment vulnerabilities occur when an application automatically binds all request parameters to model properties without filtering, allowing attackers to set fields that should not be user-controllable — such as role, isAdmin, or accountBalance — during registration or update operations.",
+    "remediation": "1. Use an explicit allowlist of permitted fields for model binding — never bind all request parameters automatically.\n2. Validate that sensitive fields (role, isAdmin, verified) cannot be set via user-supplied data.\n3. Apply separate DTOs for user input vs. internal models.\n4. Audit all registration, update, and profile API endpoints for unintended field binding.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/03-Identity_Management_Testing/03-Test_Account_Provisioning_Process",
+      "https://cwe.mitre.org/data/definitions/915.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "weak-tls",
+    "category_pattern": "Cryptography",
+    "title_keywords": ["weak tls", "ssl vulnerability", "tls 1.0", "tls 1.1", "weak cipher", "ssl weak", "tls misconfiguration"],
+    "wstg_id": "WSTG-CRYP-01",
+    "cwe_id": "CWE-326",
+    "cvss_score_v4": 5.9,
+    "explanation": "Weak TLS configurations expose encrypted communications to interception through protocol downgrade attacks or exploitation of weak cipher suites. TLS 1.0 and 1.1 are deprecated and contain known vulnerabilities including POODLE and BEAST.",
+    "remediation": "1. Disable TLS 1.0 and TLS 1.1 — support TLS 1.2 and TLS 1.3 only.\n2. Disable weak cipher suites (RC4, DES, 3DES, export-grade ciphers).\n3. Enable Perfect Forward Secrecy (ECDHE cipher suites).\n4. Configure HSTS with a long max-age.\n5. Test configuration with SSL Labs and achieve A+ rating.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security",
+      "https://cwe.mitre.org/data/definitions/326.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "weak-hashing",
+    "category_pattern": "Cryptography",
+    "title_keywords": ["weak hash", "md5", "sha1 password", "weak password hash", "plaintext password", "unsalted hash"],
+    "wstg_id": "WSTG-CRYP-04",
+    "cwe_id": "CWE-916",
+    "cvss_score_v4": 7.5,
+    "explanation": "Using weak or unsalted hashing algorithms (MD5, SHA-1) for password storage makes hashes trivially reversible using rainbow tables or GPU-based cracking. Passwords stored with weak hashes are effectively compromised if the database is breached.",
+    "remediation": "1. Replace MD5/SHA-1 password hashes with bcrypt, Argon2id, or scrypt.\n2. Use appropriate work factors: bcrypt cost >= 12, Argon2id with recommended parameters.\n3. Always use a unique per-password salt (handled automatically by bcrypt/Argon2).\n4. Implement a password migration strategy to re-hash existing passwords on next login.\n5. Never store passwords in plaintext or with reversible encryption.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/04-Testing_for_Weak_Encryption",
+      "https://cwe.mitre.org/data/definitions/916.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "stack-trace-exposure",
+    "category_pattern": "Error Handling",
+    "title_keywords": ["stack trace", "error disclosure", "exception exposed", "debug information", "verbose error"],
+    "wstg_id": "WSTG-ERRH-01",
+    "cwe_id": "CWE-209",
+    "cvss_score_v4": 4.3,
+    "explanation": "Stack traces and verbose error messages expose internal implementation details including file paths, framework versions, database schemas, and code structure. This information greatly assists attackers in planning targeted attacks against the application.",
+    "remediation": "1. Configure the application to display generic error messages to end users in production.\n2. Log detailed errors server-side to a secure, centralized logging system.\n3. Disable debug mode in production environments.\n4. Implement a global exception handler that catches all unhandled exceptions and returns sanitized responses.\n5. Review all error responses for information leakage before deployment.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/08-Testing_for_Error_Handling/01-Testing_for_Improper_Error_Handling",
+      "https://cwe.mitre.org/data/definitions/209.html"
+    ]
+  },
+  {
+    "id": "file-upload-unrestricted",
+    "category_pattern": "File Upload",
+    "title_keywords": ["file upload", "unrestricted upload", "malicious upload", "webshell upload", "executable upload"],
+    "wstg_id": "WSTG-BUSL-08",
+    "cwe_id": "CWE-434",
+    "cvss_score_v4": 9.8,
+    "explanation": "Unrestricted file upload allows attackers to upload malicious files including web shells, executables, or malware. If the server executes uploaded files, this leads to Remote Code Execution. Even without execution, uploaded files can serve as malware distribution or phishing attack infrastructure.",
+    "remediation": "1. Validate file type using magic bytes (file signature), not just extension or MIME type.\n2. Use an allowlist of permitted file types — reject all others.\n3. Store uploaded files outside the web root or in a dedicated storage service.\n4. Rename uploaded files with random names — never use user-supplied filenames.\n5. Scan uploaded files with antivirus before serving.\n6. Serve uploaded files with Content-Disposition: attachment to prevent browser execution.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/08-Test_Upload_of_Unexpected_File_Types",
+      "https://cwe.mitre.org/data/definitions/434.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "information-disclosure",
+    "category_pattern": "Information Gathering",
+    "title_keywords": ["information disclosure", "sensitive information", "technology disclosure", "version disclosure", "server header"],
+    "wstg_id": "WSTG-INFO-02",
+    "cwe_id": "CWE-200",
+    "cvss_score_v4": 4.3,
+    "explanation": "Information disclosure exposes details about the application's technology stack, version numbers, internal architecture, or sensitive data. This information assists attackers in identifying known CVEs and crafting targeted exploits.",
+    "remediation": "1. Remove version information from HTTP response headers (Server, X-Powered-By).\n2. Configure error pages to not reveal technology stack details.\n3. Disable server signature in web server configuration.\n4. Review API responses for unintentionally exposed internal data.\n5. Regularly audit HTTP headers and responses for information leakage.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
+      "https://cwe.mitre.org/data/definitions/200.html"
+    ]
+  },
+  {
+    "id": "api-missing-auth",
+    "category_pattern": "API Testing",
+    "title_keywords": ["api unauthenticated", "api missing authentication", "api endpoint exposed", "unauthenticated api", "api no auth"],
+    "wstg_id": "WSTG-ATHZ-01",
+    "cwe_id": "CWE-306",
+    "cvss_score_v4": 9.1,
+    "explanation": "API endpoints lacking authentication controls allow any user or automated scanner to access sensitive data or perform privileged operations without credentials. This is a critical vulnerability in REST APIs where endpoints may inadvertently expose business logic or user data.",
+    "remediation": "1. Apply authentication requirements to all API endpoints that handle sensitive data or operations.\n2. Use API gateway to enforce authentication centrally.\n3. Implement JWT or OAuth 2.0 bearer token validation on every request.\n4. Audit all API endpoints for missing authentication using automated scanning.\n5. Apply deny-by-default access control — require explicit grant of access.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/05-Authorization_Testing/01-Testing_Directory_Traversal_File_Include",
+      "https://cwe.mitre.org/data/definitions/306.html",
+      "https://owasp.org/www-project-api-security/"
+    ]
+  }
+]
