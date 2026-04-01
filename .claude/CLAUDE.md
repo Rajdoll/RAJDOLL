@@ -192,7 +192,7 @@ pytest multi_agent_system/tests/test_new_architecture.py -v
 3. **Thinking models incompatible**: Qwen 3-4B-thinking outputs `<think>` tags that break `json_schema` enforcement. Use non-thinking Qwen 3-4B only.
 4. **`_orchestrator_had_plan` regression risk**: Must be `True` only when `tool_plan` is actually populated. Fixed 2026-03-18 — see `orchestrator.py` comments.
 5. **`test_new_architecture.py` baseline failures**: 8 tests require a live DB/Docker environment — expected to fail without containers. Infrastructure tests are in `test_vdp_generalization.py` (15 tests, no DB needed).
-6. **Director Mode DB migration pending (2026-04-01)**: `checkpoint_type`, `directive`, `planned_tools` columns on `agent_checkpoints` and `is_high_risk_review` on `tool_approvals` have not been applied. Director Mode will crash on first PRE-AGENT checkpoint until the migration runs. SQL in `hitl_models.py` comment block. Run: `docker exec rajdoll-db-1 psql -U rajdoll -d rajdoll -f /path/to/migration.sql`.
+6. **Director Mode DB migration applied (2026-04-01)**: `skip_current` added to `checkpointaction` enum (note: PostgreSQL names it without underscore), `checkpoint_type`/`directive`/`planned_tools` added to `agent_checkpoints`, `is_high_risk_review` added to `tool_approvals`. If rebuilding from scratch: SQL is in `hitl_models.py` comment block — use `ALTER TYPE checkpointaction` (not `checkpoint_action`).
 
 ---
 
