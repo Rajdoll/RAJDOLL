@@ -495,10 +495,12 @@ class Orchestrator:
 			return "proceed"
 
 		action = result.get("action", "proceed")
-		directive_commands = result.get("directive_commands", [])
-		if directive_commands:
-			self._pending_director_directives[agent_name] = directive_commands
-			print(f"[Orchestrator] Director directive for {agent_name}: {directive_commands}")
+		# Only store directives when the agent will actually run
+		if action == "proceed":
+			directive_commands = result.get("directive_commands", [])
+			if directive_commands:
+				self._pending_director_directives[agent_name] = directive_commands
+				print(f"[Orchestrator] Director directive for {agent_name}: {directive_commands}")
 		return action
 
 	def _convert_llm_plan_to_execution_plan(self, llm_plan: Dict[str, Any]) -> List[Any]:
