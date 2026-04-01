@@ -27,7 +27,6 @@ from ..models.hitl_models import (
     CheckpointAction,
 )
 
-from ..utils.directive_parser import parse_directive_commands
 
 # Import OpenAI for conversational HITL
 try:
@@ -1071,9 +1070,8 @@ RESPONSE FORMAT (JSON):
         with get_db() as db:
             cp = db.query(AgentCheckpoint).get(checkpoint_id)
             if cp and cp.directive:
-                import json as _json
                 try:
-                    directive_commands = _json.loads(cp.directive)
+                    directive_commands = json.loads(cp.directive)
                 except Exception:
                     directive_commands = []
 
