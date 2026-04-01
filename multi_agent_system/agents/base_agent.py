@@ -1087,10 +1087,10 @@ class BaseAgent:
 		"""
 		args = self._merge_planned_arguments(tool_name, args)
 		# HIGH_RISK Director tool review — fires when hitl_mode == "agent"
-		from ..core.config import HIGH_RISK_TOOLS, settings as _settings
+		from ..core.config import HIGH_RISK_TOOLS
 		if (
 			tool_name in HIGH_RISK_TOOLS
-			and getattr(_settings, "hitl_mode", "off") == "agent"
+			and getattr(settings, "hitl_mode", "off") == "agent"
 			and self.agent_name not in self._auto_approve_agents
 			and not getattr(self, "disable_hitl", False)
 		):
