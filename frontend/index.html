@@ -283,6 +283,76 @@
                 </div>
             </section>
 
+            <!-- Director PRE-AGENT checkpoint panel -->
+            <section class="panel checkpoint-panel" id="pre-agent-panel" style="display:none; border-left: 4px solid #f39c12;">
+                <div class="panel-header">
+                    <span class="panel-icon">🎯</span>
+                    <h2>NEXT: <span id="pre-agent-name"></span></h2>
+                    <span class="checkpoint-badge">DIRECTOR CHECKPOINT</span>
+                </div>
+                <div class="panel-body">
+                    <div class="panel-section">
+                        <strong>Planned tools:</strong>
+                        <ul id="pre-agent-tools-list" style="margin:8px 0; padding-left:20px;"></ul>
+                    </div>
+                    <div class="panel-section">
+                        <strong>Context:</strong>
+                        <p id="pre-agent-summary" style="max-height:80px;overflow:auto;font-size:0.85em;color:var(--text-muted);margin:6px 0;"></p>
+                    </div>
+                    <div class="panel-section">
+                        <strong>Director instruction (optional):</strong>
+                        <textarea id="pre-agent-directive" rows="4" style="width:100%;font-family:monospace;background:var(--bg-secondary,#1a1a2e);color:var(--text-primary,#e0e0e0);border:1px solid #444;border-radius:4px;padding:8px;margin-top:6px;"
+                          placeholder="FOCUS: /api/admin&#10;SKIP: run_sqlmap&#10;DEPTH: shallow&#10;NOTE: Admin panel at /administration"></textarea>
+                        <div id="pre-agent-directive-errors" style="color:#ff4444;font-size:0.85em;margin-top:4px;"></div>
+                        <small style="color:var(--text-muted);">Commands: FOCUS | SKIP | INCLUDE | EXCLUDE | DEPTH | NOTE &nbsp;
+                          <a href="#" onclick="showDirectiveHelp();return false;" style="color:var(--accent,#00d4ff);">[?]</a>
+                        </small>
+                    </div>
+                    <div class="checkpoint-actions" style="margin-top:12px;">
+                        <button onclick="respondPreAgent('proceed', false)" class="btn btn-primary">
+                            <span class="btn-icon">▶</span> Approve
+                        </button>
+                        <button onclick="respondPreAgent('proceed', true)" class="btn btn-warning" id="btn-approve-directive">
+                            <span class="btn-icon">🎯</span> Approve with Directive
+                        </button>
+                        <button onclick="respondPreAgent('skip_current', false)" class="btn btn-info">
+                            <span class="btn-icon">⏭</span> Skip Agent
+                        </button>
+                        <button onclick="respondPreAgent('abort', false)" class="btn btn-danger">
+                            <span class="btn-icon">⊗</span> Abort Scan
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- HIGH_RISK Tool Argument Review panel -->
+            <section class="panel checkpoint-panel" id="high-risk-panel" style="display:none; border-left: 4px solid #e74c3c;">
+                <div class="panel-header">
+                    <span class="panel-icon">⚠️</span>
+                    <h2>HIGH_RISK TOOL: <span id="high-risk-tool-name"></span></h2>
+                    <span class="checkpoint-badge" style="background:#e74c3c;">DIRECTOR REVIEW</span>
+                </div>
+                <div class="panel-body">
+                    <p style="color:var(--text-muted);margin-bottom:8px;">Agent: <strong id="high-risk-agent-name"></strong></p>
+                    <div class="panel-section">
+                        <strong>Generated arguments:</strong>
+                        <pre id="high-risk-args-display" style="background:var(--bg-secondary,#1a1a2e);padding:10px;border-radius:4px;margin:8px 0;overflow:auto;max-height:200px;font-size:0.85em;"></pre>
+                        <textarea id="high-risk-args-edit" rows="6" style="width:100%;font-family:monospace;display:none;background:var(--bg-secondary,#1a1a2e);color:var(--text-primary,#e0e0e0);border:1px solid #444;border-radius:4px;padding:8px;"></textarea>
+                    </div>
+                    <div class="checkpoint-actions" style="margin-top:12px;">
+                        <button onclick="respondHighRisk('approve')" class="btn btn-primary">
+                            <span class="btn-icon">▶</span> Run as-is
+                        </button>
+                        <button onclick="toggleHighRiskEdit()" class="btn btn-warning" id="btn-edit-args">
+                            <span class="btn-icon">✎</span> Edit &amp; Run
+                        </button>
+                        <button onclick="respondHighRisk('skip')" class="btn btn-info">
+                            <span class="btn-icon">⊘</span> Skip this tool
+                        </button>
+                    </div>
+                </div>
+            </section>
+
             <!-- Logs Section -->
             <section class="panel logs-panel" id="logsPanel" style="display:none;">
                 <div class="panel-header">

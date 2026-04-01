@@ -503,6 +503,10 @@ function _createWebSocket() {
                     updateExecutionMonitor(data);
                 } else if (data.type === 'agent_checkpoint') {
                     showAgentCheckpoint(data);
+                } else if (data.type === 'pre_agent_checkpoint') {
+                    showPreAgentCheckpoint(data.data);
+                } else if (data.type === 'high_risk_tool_approval') {
+                    showHighRiskReview(data.data);
                 }
             } catch (error) {
                 console.error('[WebSocket] Message parse error:', error);
@@ -621,6 +625,8 @@ function clearLogs() {
 // ========== AGENT HITL CHECKPOINT ==========
 
 let currentCheckpointId = null;
+let _preAgentCheckpointId = null;
+let _highRiskApprovalId = null;
 
 function showAgentCheckpoint(data) {
     const panel = document.getElementById('checkpointPanel');
@@ -737,6 +743,174 @@ async function respondToCheckpoint(action, overrides = {}) {
     } catch (err) {
         addLog(`[HITL] Network error: ${err.message}`, 'error');
     }
+}
+
+// ========== DIRECTOR PRE-AGENT CHECKPOINT ==========
+
+const _VALID_COMMANDS = ['FOCUS', 'SKIP', 'INCLUDE', 'EXCLUDE', 'DEPTH', 'NOTE'];
+const _VALID_DEPTH = ['shallow', 'normal', 'deep'];
+
+function validateDirectiveText(text) {
+    const errors = [];
+    if (!text.trim()) return errors;
+    const lines = text.trim().split('\n').filter(l => l.trim());
+    if (lines.length > 5) errors.push('Too many commands (max 5)');
+    lines.forEach((line, i) => {
+        line = line.trim();
+        if (!line) return;
+        if (!line.includes(':')) { errors.push(`Line ${i+1}: missing colon`); return; }
+        const [cmd, ...rest] = line.split(':');
+        const cmdUpper = cmd.trim().toUpperCase();
+        const value = rest.join(':').trim();
+        if (!_VALID_COMMANDS.includes(cmdUpper)) errors.push(`Line ${i+1}: unknown command '${cmdUpper}'`);
+        if (!value) errors.push(`Line ${i+1}: empty value for ${cmdUpper}`);
+        if (cmdUpper === 'DEPTH' && !_VALID_DEPTH.includes(value.toLowerCase()))
+            errors.push(`Line ${i+1}: DEPTH must be shallow, normal, or deep`);
+    });
+    return errors;
+}
+
+function showPreAgentCheckpoint(d) {
+    _preAgentCheckpointId = d.checkpoint_id;
+
+    document.getElementById('pre-agent-name').textContent = d.next_agent || '';
+    document.getElementById('pre-agent-summary').textContent = d.cumulative_summary || 'No prior findings.';
+
+    const toolsList = document.getElementById('pre-agent-tools-list');
+    toolsList.innerHTML = '';
+    const highRiskTools = ['run_sqlmap', 'test_xss_dalfox', 'run_nikto', 'run_nmap', 'test_tls_configuration'];
+    (d.planned_tools || []).forEach(t => {
+        const li = document.createElement('li');
+        const isHR = highRiskTools.includes(t);
+        li.innerHTML = isHR
+            ? `<span style="color:#e74c3c">⚠ <strong>${t}</strong> [HIGH_RISK]</span>`
+            : `<span>${t}</span>`;
+        toolsList.appendChild(li);
+    });
+
+    document.getElementById('pre-agent-directive').value = '';
+    document.getElementById('pre-agent-directive-errors').textContent = '';
+    document.getElementById('pre-agent-panel').style.display = 'block';
+    document.getElementById('high-risk-panel').style.display = 'none';
+
+    document.getElementById('pre-agent-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    addLog(`[HITL] PRE-AGENT checkpoint: about to run ${d.next_agent}. Awaiting Director...`, 'warning');
+}
+
+async function respondPreAgent(action, useDirective) {
+    if (!_preAgentCheckpointId) return;
+    let directiveText = null;
+    if (useDirective) {
+        directiveText = document.getElementById('pre-agent-directive').value;
+        const errors = validateDirectiveText(directiveText);
+        const errEl = document.getElementById('pre-agent-directive-errors');
+        if (errors.length > 0) {
+            errEl.textContent = errors.join(' | ');
+            return;
+        }
+        errEl.textContent = '';
+    }
+    const body = { action, user_notes: null };
+    if (directiveText && directiveText.trim()) body.directive_text = directiveText;
+    try {
+        const resp = await fetch(`/api/hitl/pre-agent-checkpoint/${_preAgentCheckpointId}/respond`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (resp.ok) {
+            addLog(`[HITL] Director: ${action} for pre-agent checkpoint`, 'success');
+            document.getElementById('pre-agent-panel').style.display = 'none';
+            _preAgentCheckpointId = null;
+        } else {
+            const err = await resp.json();
+            document.getElementById('pre-agent-directive-errors').textContent =
+                'Error: ' + (err.detail || JSON.stringify(err));
+        }
+    } catch (e) {
+        addLog(`[HITL] Pre-agent respond error: ${e.message}`, 'error');
+    }
+}
+
+// ========== DIRECTOR HIGH_RISK TOOL REVIEW ==========
+
+function showHighRiskReview(d) {
+    _highRiskApprovalId = d.approval_id;
+
+    document.getElementById('high-risk-tool-name').textContent = d.tool_name || '';
+    document.getElementById('high-risk-agent-name').textContent = d.agent_name || '';
+    const argsJson = JSON.stringify(d.generated_args || {}, null, 2);
+    document.getElementById('high-risk-args-display').textContent = argsJson;
+    document.getElementById('high-risk-args-edit').value = argsJson;
+    document.getElementById('high-risk-args-edit').style.display = 'none';
+    document.getElementById('high-risk-args-display').style.display = 'block';
+    document.getElementById('btn-edit-args').textContent = '✎ Edit & Run';
+    document.getElementById('high-risk-panel').style.display = 'block';
+    document.getElementById('pre-agent-panel').style.display = 'none';
+
+    document.getElementById('high-risk-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    addLog(`[HITL] HIGH_RISK tool paused: ${d.tool_name} (${d.agent_name}). Review required.`, 'warning');
+}
+
+function toggleHighRiskEdit() {
+    const display = document.getElementById('high-risk-args-display');
+    const edit = document.getElementById('high-risk-args-edit');
+    const btn = document.getElementById('btn-edit-args');
+    if (edit.style.display === 'none') {
+        display.style.display = 'none';
+        edit.style.display = 'block';
+        btn.textContent = '✓ Confirm edits';
+    } else {
+        try { JSON.parse(edit.value); } catch(e) {
+            alert('Invalid JSON: ' + e.message); return;
+        }
+        display.textContent = edit.value;
+        display.style.display = 'block';
+        edit.style.display = 'none';
+        btn.textContent = '✎ Edit & Run';
+    }
+}
+
+async function respondHighRisk(action) {
+    if (!_highRiskApprovalId) return;
+    const body = { action };
+    if (document.getElementById('high-risk-args-edit').style.display !== 'none') {
+        const editVal = document.getElementById('high-risk-args-edit').value;
+        try {
+            body.action = 'edit';
+            body.approved_arguments = JSON.parse(editVal);
+        } catch(e) { alert('Invalid JSON: ' + e.message); return; }
+    }
+    try {
+        const resp = await fetch(`/api/hitl/tool-approval/${_highRiskApprovalId}/director-review`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (resp.ok) {
+            addLog(`[HITL] Director: ${body.action} for HIGH_RISK tool`, 'success');
+            document.getElementById('high-risk-panel').style.display = 'none';
+            _highRiskApprovalId = null;
+        } else {
+            const err = await resp.json();
+            addLog(`[HITL] HIGH_RISK respond error: ${err.detail || JSON.stringify(err)}`, 'error');
+        }
+    } catch (e) {
+        addLog(`[HITL] HIGH_RISK respond error: ${e.message}`, 'error');
+    }
+}
+
+function showDirectiveHelp() {
+    alert(
+        'Director Directive Commands:\n\n' +
+        'FOCUS: <path>      — Focus agent on specific endpoint\n' +
+        'SKIP: <tool_name>  — Skip a planned tool\n' +
+        'INCLUDE: <url>     — Add URL to agent scope\n' +
+        'EXCLUDE: <pattern> — Exclude URL pattern\n' +
+        'DEPTH: shallow|normal|deep  — Set scan intensity\n' +
+        'NOTE: <text>       — Inject context note\n\n' +
+        'Max 5 commands. One per line.'
+    );
 }
 
 // Bind checkpoint action buttons
