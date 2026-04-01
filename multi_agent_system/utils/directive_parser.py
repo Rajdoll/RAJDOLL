@@ -56,7 +56,7 @@ def parse_directive_commands(text: str) -> list[dict]:
             raise ValueError(
                 f"Invalid DEPTH value {value!r}. Must be one of: {sorted(VALID_DEPTH_VALUES)}"
             )
-        commands.append({"cmd": cmd, "value": value})
+        commands.append({"cmd": cmd, "value": value.lower() if cmd == "DEPTH" else value})
 
     if len(commands) > MAX_COMMANDS:
         raise ValueError(f"Too many commands ({len(commands)}). Maximum is {MAX_COMMANDS}.")

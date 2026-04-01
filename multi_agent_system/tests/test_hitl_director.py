@@ -4,6 +4,7 @@ from multi_agent_system.utils.directive_parser import (
     parse_directive_commands,
     validate_skip_tools,
     format_for_llm,
+    get_skip_tools,
 )
 
 
@@ -86,3 +87,35 @@ def test_format_for_llm_full():
     assert "Skip tool: run_sqlmap" in result
     assert "Scan intensity: shallow" in result
     assert "Note: Admin at /administration" in result
+
+
+def test_get_skip_tools():
+    cmds = [
+        {"cmd": "SKIP", "value": "run_sqlmap"},
+        {"cmd": "FOCUS", "value": "/api/admin"},
+        {"cmd": "SKIP", "value": "run_nikto"},
+    ]
+    result = get_skip_tools(cmds)
+    assert result == {"run_sqlmap", "run_nikto"}
+
+
+def test_get_skip_tools_empty():
+    cmds = [{"cmd": "FOCUS", "value": "/api/admin"}]
+    assert get_skip_tools(cmds) == set()
+
+
+def test_parse_max_commands_enforced():
+    text = "\n".join([f"NOTE: line {i}" for i in range(6)])
+    with pytest.raises(ValueError, match="Too many commands"):
+        parse_directive_commands(text)
+
+
+def test_parse_line_too_long():
+    long_line = "FOCUS: " + "x" * 200
+    with pytest.raises(ValueError, match="exceeds"):
+        parse_directive_commands(long_line)
+
+
+def test_parse_depth_normalized_to_lowercase():
+    cmds = parse_directive_commands("DEPTH: Shallow")
+    assert cmds[0]["value"] == "shallow"
