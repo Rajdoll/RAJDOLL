@@ -20,6 +20,14 @@ VALID_COMMANDS: frozenset[str] = frozenset({
 VALID_DEPTH_VALUES: frozenset[str] = frozenset({"shallow", "normal", "deep"})
 MAX_COMMANDS = 5
 MAX_LINE_LENGTH = 200
+_FORMATTERS = {
+    "FOCUS":   lambda v: f"- Focus testing on: {v}",
+    "SKIP":    lambda v: f"- Skip tool: {v}",
+    "INCLUDE": lambda v: f"- Include target URL: {v}",
+    "EXCLUDE": lambda v: f"- Exclude URL pattern: {v}",
+    "DEPTH":   lambda v: f"- Scan intensity: {v}",
+    "NOTE":    lambda v: f"- Note: {v}",
+}
 
 
 def parse_directive_commands(text: str) -> list[dict]:
@@ -40,7 +48,7 @@ def parse_directive_commands(text: str) -> list[dict]:
         if not line:
             continue
         if len(line) > MAX_LINE_LENGTH:
-            raise ValueError(f"Line exceeds {MAX_LINE_LENGTH} characters: {line[:50]!r}...")
+            raise ValueError(f"Line exceeds {MAX_LINE_LENGTH} characters: {line[:50]!r}")
         if ":" not in line:
             raise ValueError(f"Invalid directive line (missing colon): {line!r}")
         cmd_part, _, value = line.partition(":")
@@ -80,14 +88,6 @@ def format_for_llm(commands: list[dict]) -> str:
     if not commands:
         return ""
     lines = ["[DIRECTOR INSTRUCTIONS]"]
-    _FORMATTERS = {
-        "FOCUS":   lambda v: f"- Focus testing on: {v}",
-        "SKIP":    lambda v: f"- Skip tool: {v}",
-        "INCLUDE": lambda v: f"- Include target URL: {v}",
-        "EXCLUDE": lambda v: f"- Exclude URL pattern: {v}",
-        "DEPTH":   lambda v: f"- Scan intensity: {v}",
-        "NOTE":    lambda v: f"- Note: {v}",
-    }
     for c in commands:
         formatter = _FORMATTERS.get(c["cmd"])
         if formatter:
