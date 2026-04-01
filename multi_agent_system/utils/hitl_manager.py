@@ -27,6 +27,8 @@ from ..models.hitl_models import (
     CheckpointAction,
 )
 
+from ..utils.directive_parser import parse_directive_commands
+
 # Import OpenAI for conversational HITL
 try:
     from openai import AsyncOpenAI
@@ -1001,6 +1003,161 @@ RESPONSE FORMAT (JSON):
                 db.commit()
 
         return result
+
+    async def request_pre_agent_checkpoint(
+        self,
+        next_agent: str,
+        agent_index: int,
+        planned_tools: List[str],
+        cumulative_summary: str,
+        remaining_agents: List[str],
+    ) -> Dict[str, Any]:
+        """Create a PRE-AGENT checkpoint and wait for director input.
+
+        Called by the orchestrator BEFORE an agent runs. Pauses execution until
+        the user approves (with optional directive) or skips/aborts.
+
+        Returns:
+            {
+                "action": "proceed" | "skip_current" | "abort",
+                "directive_commands": list[dict],
+                "user_notes": str | None,
+            }
+        """
+        hitl_mode = getattr(settings, "hitl_mode", "off")
+        if hitl_mode != "agent":
+            return {"action": "proceed", "directive_commands": [], "user_notes": None}
+
+        if next_agent in ("ReconnaissanceAgent", "ReportGenerationAgent"):
+            return {"action": "proceed", "directive_commands": [], "user_notes": None}
+
+        with get_db() as db:
+            checkpoint = AgentCheckpoint(
+                job_id=self.job_id,
+                completed_agent="(pre-agent)",
+                agent_sequence_index=agent_index,
+                next_agent=next_agent,
+                remaining_agents=remaining_agents,
+                planned_tools=planned_tools,
+                cumulative_summary=cumulative_summary,
+                checkpoint_type="pre_agent",
+                action=CheckpointAction.pending,
+            )
+            db.add(checkpoint)
+            db.commit()
+            db.refresh(checkpoint)
+            checkpoint_id = checkpoint.id
+
+        with get_db() as db:
+            job = db.query(Job).get(self.job_id)
+            if job:
+                job.status = "waiting_checkpoint"
+                db.commit()
+
+        print(
+            f"🎯 [HITL Director] Job {self.job_id}: PRE-AGENT checkpoint "
+            f"for {next_agent} (index {agent_index}). Waiting for director..."
+        )
+
+        result = await self._wait_for_agent_checkpoint(checkpoint_id, f"pre-{next_agent}")
+
+        with get_db() as db:
+            job = db.query(Job).get(self.job_id)
+            if job and job.status == "waiting_checkpoint":
+                job.status = "running"
+                db.commit()
+
+        directive_commands: List[Dict[str, Any]] = []
+        with get_db() as db:
+            cp = db.query(AgentCheckpoint).get(checkpoint_id)
+            if cp and cp.directive:
+                import json as _json
+                try:
+                    directive_commands = _json.loads(cp.directive)
+                except Exception:
+                    directive_commands = []
+
+        action = result.get("action", "proceed")
+        if action not in ("proceed", "skip_current", "abort"):
+            action = "proceed"
+
+        return {
+            "action": action,
+            "directive_commands": directive_commands,
+            "user_notes": result.get("user_notes"),
+        }
+
+    async def request_tool_arg_review(
+        self,
+        agent_name: str,
+        tool_name: str,
+        server: str,
+        generated_args: Dict[str, Any],
+        timeout: int = 600,
+    ) -> Dict[str, Any]:
+        """Pause before a HIGH_RISK tool and allow Director to edit arguments.
+
+        Creates a ToolApproval record (is_high_risk_review=True), waits for the
+        user to approve/edit/skip via the API, then returns the final args.
+
+        Returns:
+            {"approved": bool, "arguments": dict}
+            approved=False means skip this tool entirely.
+        """
+        hitl_mode = getattr(settings, "hitl_mode", "off")
+        if hitl_mode not in ("agent", "tool"):
+            return {"approved": True, "arguments": generated_args}
+
+        with get_db() as db:
+            approval = ToolApproval(
+                job_id=self.job_id,
+                agent_name=agent_name,
+                tool_name=tool_name,
+                server=server,
+                arguments=generated_args,
+                reason="HIGH_RISK tool — Director review required before execution",
+                status=ApprovalStatus.pending,
+                is_high_risk_review=True,
+            )
+            db.add(approval)
+            db.commit()
+            db.refresh(approval)
+            approval_id = approval.id
+
+        print(
+            f"⚠️  [HITL Director] Job {self.job_id}: HIGH_RISK tool '{tool_name}' "
+            f"paused for Director review (approval_id={approval_id})"
+        )
+
+        elapsed = 0
+        poll_interval = 2
+        while elapsed < timeout:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+            with get_db() as db:
+                ap = db.query(ToolApproval).get(approval_id)
+                if not ap:
+                    break
+                if ap.status == ApprovalStatus.pending:
+                    continue
+                if ap.status in (ApprovalStatus.approved, ApprovalStatus.modified):
+                    final_args = ap.approved_arguments or generated_args
+                    print(f"✅ [HITL Director] Tool '{tool_name}' approved (args modified: {ap.approved_arguments is not None})")
+                    return {"approved": True, "arguments": final_args}
+                if ap.status == ApprovalStatus.rejected:
+                    print(f"🚫 [HITL Director] Tool '{tool_name}' skipped by Director")
+                    return {"approved": False, "arguments": generated_args}
+
+        # Timeout: run as-is
+        print(f"⏱️  [HITL Director] Tool '{tool_name}' timeout — running with original args")
+        with get_db() as db:
+            ap = db.query(ToolApproval).get(approval_id)
+            if ap and ap.status == ApprovalStatus.pending:
+                ap.status = ApprovalStatus.approved
+                ap.approved_arguments = generated_args
+                ap.auto_decision = True
+                db.commit()
+        return {"approved": True, "arguments": generated_args}
 
     async def _wait_for_agent_checkpoint(
         self,
