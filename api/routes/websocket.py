@@ -172,8 +172,8 @@ async def ws_logs(ws: WebSocket, job_id: int):
 								"reason": pending_ap.reason,
 							}
 						})
-				except Exception:
-					pass
+				except Exception as hr_err:
+					print(f"[WS] HIGH_RISK approval query error: {hr_err}")
 
 	except Exception as e:
 		# Connection closed or error

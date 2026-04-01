@@ -3,6 +3,8 @@ HITL (Human-In-The-Loop) API Routes
 
 Endpoints for plan approval, finding verification, and risk management
 """
+import json
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -788,7 +790,6 @@ async def respond_to_pre_agent_checkpoint(checkpoint_id: int, body: PreAgentDire
         except ValueError as e:
             raise HTTPException(400, f"Invalid directive: {e}")
 
-    import json
     with get_db() as db:
         checkpoint = db.query(AgentCheckpoint).get(checkpoint_id)
         if not checkpoint:
@@ -829,7 +830,7 @@ async def respond_to_high_risk_tool(approval_id: int, body: HighRiskToolArgReque
     if body.action not in valid_actions:
         raise HTTPException(400, f"Invalid action. Must be one of: {valid_actions}")
 
-    if body.action == "edit" and not body.approved_arguments:
+    if body.action == "edit" and body.approved_arguments is None:
         raise HTTPException(400, "approved_arguments required when action == 'edit'")
 
     with get_db() as db:
