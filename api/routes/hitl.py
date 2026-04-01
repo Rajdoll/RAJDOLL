@@ -78,6 +78,20 @@ class AgentCheckpointResponse(BaseModel):
     next_agent_override: Optional[str] = None  # For reorder action
     skip_agents: Optional[List[str]] = None     # Agents to skip
 
+
+class PreAgentDirectiveRequest(BaseModel):
+    """Director's response to a PRE-AGENT checkpoint."""
+    action: str                              # proceed, skip_current, abort
+    directive_text: Optional[str] = None    # Raw multi-line directive commands (validated server-side)
+    user_notes: Optional[str] = None
+
+
+class HighRiskToolArgRequest(BaseModel):
+    """Director's response to a HIGH_RISK tool argument review."""
+    action: str                                      # approve, edit, skip
+    approved_arguments: Optional[Dict[str, Any]] = None
+    user_notes: Optional[str] = None
+
 # ============================================================================
 # Plan Approval Endpoints
 # ============================================================================
@@ -746,3 +760,101 @@ async def respond_to_agent_checkpoint(checkpoint_id: int, body: AgentCheckpointR
             "action": body.action,
             "message": f"Checkpoint responded: {body.action}",
         }
+
+
+# ============================================================================
+# Director Mode Endpoints (HITL v3)
+# ============================================================================
+
+@router.post("/api/hitl/pre-agent-checkpoint/{checkpoint_id}/respond")
+async def respond_to_pre_agent_checkpoint(checkpoint_id: int, body: PreAgentDirectiveRequest):
+    """
+    Director responds to a PRE-AGENT checkpoint.
+
+    Actions:
+    - proceed: Run the agent (optional directive applied)
+    - skip_current: Skip this agent
+    - abort: Stop the scan
+    """
+    valid_actions = {"proceed", "skip_current", "abort"}
+    if body.action not in valid_actions:
+        raise HTTPException(400, f"Invalid action '{body.action}'. Must be one of: {valid_actions}")
+
+    directive_commands: list = []
+    if body.directive_text and body.directive_text.strip():
+        try:
+            from multi_agent_system.utils.directive_parser import parse_directive_commands
+            directive_commands = parse_directive_commands(body.directive_text)
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid directive: {e}")
+
+    import json
+    with get_db() as db:
+        checkpoint = db.query(AgentCheckpoint).get(checkpoint_id)
+        if not checkpoint:
+            raise HTTPException(404, "Checkpoint not found")
+        if getattr(checkpoint, "checkpoint_type", "post_agent") != "pre_agent":
+            raise HTTPException(400, "This endpoint is for pre_agent checkpoints only")
+        if checkpoint.action != CheckpointAction.pending:
+            raise HTTPException(400, f"Checkpoint already responded to (action: {checkpoint.action.value})")
+
+        checkpoint.action = CheckpointAction(body.action)
+        checkpoint.user_notes = body.user_notes
+        checkpoint.directive = json.dumps(directive_commands) if directive_commands else None
+        checkpoint.responded_at = datetime.utcnow()
+        if checkpoint.requested_at:
+            wait = (checkpoint.responded_at - checkpoint.requested_at).total_seconds()
+            checkpoint.wait_duration_seconds = int(wait)
+        db.commit()
+
+    return {
+        "status": "success",
+        "checkpoint_id": checkpoint_id,
+        "action": body.action,
+        "directive_commands": directive_commands,
+    }
+
+
+@router.post("/api/hitl/tool-approval/{approval_id}/director-review")
+async def respond_to_high_risk_tool(approval_id: int, body: HighRiskToolArgRequest):
+    """
+    Director responds to a HIGH_RISK tool argument review.
+
+    Actions:
+    - approve: Run with original LLM-generated arguments
+    - edit: Run with approved_arguments (must be provided)
+    - skip: Skip this tool entirely
+    """
+    valid_actions = {"approve", "edit", "skip"}
+    if body.action not in valid_actions:
+        raise HTTPException(400, f"Invalid action. Must be one of: {valid_actions}")
+
+    if body.action == "edit" and not body.approved_arguments:
+        raise HTTPException(400, "approved_arguments required when action == 'edit'")
+
+    with get_db() as db:
+        approval = db.query(ToolApproval).get(approval_id)
+        if not approval:
+            raise HTTPException(404, "Tool approval not found")
+        if not getattr(approval, "is_high_risk_review", False):
+            raise HTTPException(400, "This endpoint is for HIGH_RISK Director reviews only")
+        if approval.status != ApprovalStatus.pending:
+            raise HTTPException(400, f"Approval already resolved (status: {approval.status.value})")
+
+        if body.action == "approve":
+            approval.status = ApprovalStatus.approved
+            approval.approved_arguments = approval.arguments
+        elif body.action == "edit":
+            approval.status = ApprovalStatus.modified
+            approval.approved_arguments = body.approved_arguments
+        elif body.action == "skip":
+            approval.status = ApprovalStatus.rejected
+        approval.user_notes = body.user_notes
+        approval.responded_at = datetime.utcnow()
+        db.commit()
+
+    return {
+        "status": "success",
+        "approval_id": approval_id,
+        "action": body.action,
+    }
