@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RAJDOLL Security Assessment Report — {{ target }}</title>
+<style>
+  @page {
+    margin: 2cm 2.2cm;
+    size: A4;
+    @top-right {
+      content: "CONFIDENTIAL";
+      font-size: 8pt;
+      color: #c62828;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    @bottom-center {
+      content: "RAJDOLL Security Assessment · " string(target-header) " · Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #9e9e9e;
+    }
+  }
+  @page cover { @bottom-center { content: none; } @top-right { content: none; } }
+
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #212121; line-height: 1.55; margin: 0; }
+
+  /* ── Cover ─────────────────────────────────────────── */
+  .cover { page: cover; page-break-after: always; text-align: center; padding-top: 80px; }
+  .cover-logo { font-size: 52pt; font-weight: 900; color: #1565c0; letter-spacing: -2px; margin: 0; }
+  .cover-sub  { font-size: 14pt; color: #546e7a; margin: 6px 0 60px; letter-spacing: 1px; text-transform: uppercase; }
+  .cover-meta { font-size: 11pt; color: #37474f; line-height: 2; }
+  .cover-meta td { padding: 2px 12px; }
+  .cover-meta td:first-child { text-align: right; color: #78909c; }
+  .cover-badge {
+    display: inline-block; margin-top: 50px;
+    background: #c62828; color: white; font-size: 9pt;
+    font-weight: bold; letter-spacing: 2px; padding: 5px 18px;
+    border-radius: 3px;
+  }
+  .risk-badge {
+    display: inline-block; padding: 6px 20px; border-radius: 4px;
+    font-size: 12pt; font-weight: bold; color: white; margin: 16px 0;
+  }
+
+  /* ── Typography ─────────────────────────────────────── */
+  h1 { font-size: 16pt; color: #1565c0; border-bottom: 2px solid #1565c0; padding-bottom: 4px; margin-top: 28px; page-break-after: avoid; }
+  h2 { font-size: 12pt; color: #263238; margin-top: 18px; page-break-after: avoid; }
+  h3 { font-size: 10pt; color: #37474f; margin-top: 14px; page-break-after: avoid; }
+  a  { color: #1565c0; text-decoration: none; }
+
+  /* ── Tables ─────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.5pt; }
+  th { background: #1565c0; color: white; padding: 7px 10px; text-align: left; font-weight: bold; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f5f8ff; }
+
+  /* ── Severity badges ────────────────────────────────── */
+  .sev-CRITICAL { background: #b71c1c; color: white; }
+  .sev-HIGH     { background: #e65100; color: white; }
+  .sev-MEDIUM   { background: #f9a825; color: #212121; }
+  .sev-LOW      { background: #2e7d32; color: white; }
+  .sev-INFO     { background: #1565c0; color: white; }
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 3px;
+    font-size: 8pt; font-weight: bold; white-space: nowrap;
+  }
+
+  /* ── Source badges ──────────────────────────────────── */
+  .src-kb       { background: #0277bd; color: white; font-size: 7.5pt; padding: 1px 6px; border-radius: 2px; font-weight: bold; }
+  .src-llm      { background: #6a1b9a; color: white; font-size: 7.5pt; padding: 1px 6px; border-radius: 2px; font-weight: bold; }
+  .src-fallback { background: #546e7a; color: white; font-size: 7.5pt; padding: 1px 6px; border-radius: 2px; }
+
+  /* ── Finding card ───────────────────────────────────── */
+  .finding {
+    border: 1px solid #bdbdbd; border-radius: 4px;
+    margin: 18px 0; page-break-inside: avoid;
+    overflow: hidden;
+  }
+  .finding-header {
+    padding: 10px 14px; border-bottom: 1px solid #bdbdbd;
+    display: table; width: 100%; box-sizing: border-box;
+  }
+  .finding-ref   { display: table-cell; color: #78909c; font-size: 8.5pt; vertical-align: middle; }
+  .finding-sev   { display: table-cell; text-align: right; vertical-align: middle; }
+  .finding-title { padding: 10px 14px 6px; font-size: 12pt; font-weight: bold; color: #1a237e; }
+  .finding-meta  { padding: 2px 14px 10px; font-size: 8.5pt; color: #546e7a; }
+  .finding-section { padding: 8px 14px; border-top: 1px solid #eeeeee; }
+  .finding-section h3 { margin: 0 0 6px; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px; color: #546e7a; }
+  .finding-section p  { margin: 0; font-size: 9.5pt; }
+
+  /* ── Code / Evidence ────────────────────────────────── */
+  .evidence-block {
+    background: #f3f4f6; border-left: 3px solid #1565c0;
+    padding: 8px 12px; font-family: 'Courier New', Courier, monospace;
+    font-size: 8pt; line-height: 1.4; white-space: pre-wrap;
+    word-break: break-all; overflow-wrap: break-word;
+    max-height: 200px; overflow: hidden;
+  }
+
+  /* ── Remediation ────────────────────────────────────── */
+  .remediation-text { font-size: 9.5pt; white-space: pre-line; line-height: 1.6; }
+
+  /* ── Refs list ──────────────────────────────────────── */
+  .refs-list { list-style: none; padding: 0; margin: 4px 0 0; }
+  .refs-list li { font-size: 8.5pt; padding: 1px 0; }
+  .refs-list li::before { content: "· "; color: #1565c0; }
+
+  /* ── Stats row ──────────────────────────────────────── */
+  .sev-grid { display: table; width: 100%; border-collapse: separate; border-spacing: 8px; margin: 12px 0; }
+  .sev-cell { display: table-cell; text-align: center; background: #f5f5f5; border-radius: 4px; padding: 10px 4px; }
+  .sev-num  { font-size: 22pt; font-weight: 900; line-height: 1; }
+  .sev-lbl  { font-size: 8pt; color: #546e7a; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ── Dividers / misc ─────────────────────────────────── */
+  .section-break { page-break-before: always; }
+  .disclaimer {
+    margin-top: 30px; padding: 10px 14px;
+    background: #fff8e1; border-left: 4px solid #ffc107;
+    font-size: 8.5pt; color: #5d4037;
+  }
+  .toc-item { padding: 2px 0; font-size: 9.5pt; }
+  .toc-item span { float: right; color: #9e9e9e; }
+
+  /* string for header */
+  .target-str { string-set: target-header content(); }
+</style>
+</head>
+<body>
+
+{# ═══════════════════════════════════════════════════════ COVER ═══ #}
+<div class="cover">
+  <p class="cover-logo">RAJDOLL</p>
+  <p class="cover-sub">Multi-Agent Security Assessment</p>
+  <table class="cover-meta" style="margin: 0 auto;">
+    <tr><td>Target</td><td><strong>{{ target }}</strong><span class="target-str">{{ target }}</span></td></tr>
+    <tr><td>Scan Date</td><td>{{ scan_date }}</td></tr>
+    <tr><td>Duration</td><td>{{ scan_duration }}</td></tr>
+    <tr><td>Total Findings</td><td><strong>{{ total_findings }}</strong></td></tr>
+    <tr><td>Framework</td><td>OWASP WSTG 4.2</td></tr>
+  </table>
+  <div><span class="cover-badge">CONFIDENTIAL</span></div>
+</div>
+
+{# ══════════════════════════════════════════════ EXECUTIVE SUMMARY ═ #}
+<h1>1. Executive Summary</h1>
+
+{% set crit = sev_counts.get('CRITICAL', 0) %}
+{% set high = sev_counts.get('HIGH', 0) %}
+{% if crit > 0 %}
+  {% set overall_color = '#b71c1c' %}{% set overall_label = 'CRITICAL RISK' %}
+{% elif high > 0 %}
+  {% set overall_color = '#e65100' %}{% set overall_label = 'HIGH RISK' %}
+{% elif sev_counts.get('MEDIUM', 0) > 0 %}
+  {% set overall_color = '#f9a825' %}{% set overall_label = 'MEDIUM RISK' %}
+{% else %}
+  {% set overall_color = '#2e7d32' %}{% set overall_label = 'LOW RISK' %}
+{% endif %}
+<p>Overall Risk Rating: <span class="risk-badge" style="background:{{ overall_color }}">{{ overall_label }}</span></p>
+
+<div class="sev-grid">
+  <div class="sev-cell">
+    <div class="sev-num" style="color:#b71c1c">{{ sev_counts.get('CRITICAL', 0) }}</div>
+    <div class="sev-lbl">Critical</div>
+  </div>
+  <div class="sev-cell">
+    <div class="sev-num" style="color:#e65100">{{ sev_counts.get('HIGH', 0) }}</div>
+    <div class="sev-lbl">High</div>
+  </div>
+  <div class="sev-cell">
+    <div class="sev-num" style="color:#f57f17">{{ sev_counts.get('MEDIUM', 0) }}</div>
+    <div class="sev-lbl">Medium</div>
+  </div>
+  <div class="sev-cell">
+    <div class="sev-num" style="color:#2e7d32">{{ sev_counts.get('LOW', 0) }}</div>
+    <div class="sev-lbl">Low</div>
+  </div>
+  <div class="sev-cell">
+    <div class="sev-num" style="color:#1565c0">{{ sev_counts.get('INFO', 0) }}</div>
+    <div class="sev-lbl">Info</div>
+  </div>
+</div>
+
+{% if final_analysis %}
+<h2>Key Findings Narrative</h2>
+<p style="font-size:9.5pt; white-space: pre-line;">{{ final_analysis }}</p>
+{% endif %}
+
+{% if top_findings %}
+<h2>Top Critical / High Findings</h2>
+<table>
+  <tr><th>#</th><th>Finding</th><th>Severity</th><th>CVSS 4.0</th></tr>
+  {% for f in top_findings %}
+  <tr>
+    <td>{{ loop.index }}</td>
+    <td><strong>{{ f.title }}</strong><br><span style="color:#546e7a;font-size:8.5pt">{{ f.category }}</span></td>
+    <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+    <td>{% if f.cvss_score_v4 %}{{ "%.1f"|format(f.cvss_score_v4) }}{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{# ═══════════════════════════════════════════════ SCOPE & METHODOLOGY #}
+<h1 class="section-break">2. Scope &amp; Methodology</h1>
+
+<table>
+  <tr><td style="width:160px;color:#546e7a;font-weight:bold">Target</td><td>{{ target }}</td></tr>
+  <tr><td style="color:#546e7a;font-weight:bold">Scan Date</td><td>{{ scan_date }}</td></tr>
+  <tr><td style="color:#546e7a;font-weight:bold">Duration</td><td>{{ scan_duration }}</td></tr>
+  <tr><td style="color:#546e7a;font-weight:bold">Framework</td><td>OWASP Web Security Testing Guide v4.2</td></tr>
+  <tr><td style="color:#546e7a;font-weight:bold">Engine</td><td>RAJDOLL Multi-Agent Penetration Testing System</td></tr>
+  <tr><td style="color:#546e7a;font-weight:bold">Agents</td><td>{{ agents | length }} agents ({{ agents | selectattr('status', 'equalto', 'completed') | list | length }} completed)</td></tr>
+</table>
+
+<h2>Agents Executed</h2>
+<table>
+  <tr><th>Agent</th><th>Status</th><th>Duration</th></tr>
+  {% for a in agents %}
+  <tr>
+    <td>{{ a.agent_name }}</td>
+    <td>
+      {% if a.status == 'completed' %}<span style="color:#2e7d32">&#10003; {{ a.status }}</span>
+      {% elif a.status == 'failed' %}<span style="color:#b71c1c">&#10007; {{ a.status }}</span>
+      {% else %}<span style="color:#546e7a">{{ a.status }}</span>{% endif %}
+    </td>
+    <td>{{ a.duration or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+{# ══════════════════════════════════════════════════ RISK OVERVIEW ══ #}
+<h1 class="section-break">3. Risk Overview</h1>
+
+<h2>Findings by Severity</h2>
+<table>
+  <tr><th>Severity</th><th>Count</th><th>% of Total</th></tr>
+  {% for sev in ['CRITICAL','HIGH','MEDIUM','LOW','INFO'] %}
+  {% set cnt = sev_counts.get(sev, 0) %}
+  <tr>
+    <td><span class="badge sev-{{ sev }}">{{ sev }}</span></td>
+    <td>{{ cnt }}</td>
+    <td>{% if total_findings > 0 %}{{ "%.1f"|format(cnt / total_findings * 100) }}%{% else %}0%{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Findings by WSTG Category</h2>
+<table>
+  <tr><th>WSTG Category</th><th>Count</th></tr>
+  {% for wstg_cat, cnt in wstg_categories.items() | sort %}
+  <tr><td>{{ wstg_cat or 'Uncategorized' }}</td><td>{{ cnt }}</td></tr>
+  {% endfor %}
+</table>
+
+{# ═════════════════════════════════════════════ DETAILED FINDINGS ═══ #}
+<h1 class="section-break">4. Detailed Findings</h1>
+<p style="font-size:9pt;color:#546e7a">Sorted by severity (Critical → High → Medium → Low → Info). {{ total_findings }} findings total.</p>
+
+{% for f in findings %}
+<div class="finding">
+  <div class="finding-header">
+    <div class="finding-ref">{{ f.ref }}</div>
+    <div class="finding-sev"><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></div>
+  </div>
+  <div class="finding-title">{{ f.title }}</div>
+  <div class="finding-meta">
+    {%- if f.wstg_id %}<strong>{{ f.wstg_id }}</strong>{% endif %}
+    {%- if f.cwe_id %} &nbsp;·&nbsp; <strong>{{ f.cwe_id }}</strong>{% endif %}
+    {%- if f.cvss_score_v4 %} &nbsp;·&nbsp; CVSS 4.0: <strong>{{ "%.1f"|format(f.cvss_score_v4) }}</strong>{% endif %}
+    &nbsp;·&nbsp; Discovered by: <em>{{ f.agent_name }}</em>
+    &nbsp;
+    {% if f.enrichment_source == 'static_kb' %}<span class="src-kb">KB</span>
+    {% elif f.enrichment_source == 'llm' %}<span class="src-llm">AI</span>
+    {% else %}<span class="src-fallback">—</span>{% endif %}
+  </div>
+
+  {% if f.explanation %}
+  <div class="finding-section">
+    <h3>Description</h3>
+    <p>{{ f.explanation }}</p>
+  </div>
+  {% endif %}
+
+  <div class="finding-section">
+    <h3>Evidence</h3>
+    <div class="evidence-block">{{ f.evidence }}</div>
+  </div>
+
+  {% if f.remediation %}
+  <div class="finding-section">
+    <h3>Remediation</h3>
+    <div class="remediation-text">{{ f.remediation }}</div>
+  </div>
+  {% endif %}
+
+  {% if f.references %}
+  <div class="finding-section">
+    <h3>References</h3>
+    <ul class="refs-list">
+      {% for ref in f.references %}
+      <li><a href="{{ ref }}">{{ ref }}</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{# ══════════════════════════════════════════════════ APPENDICES ═════ #}
+<h1 class="section-break">Appendix A — Methodology</h1>
+<p>
+  RAJDOLL employs a <strong>Planner–Summarizer Sequential</strong> orchestration pattern.
+  After an initial reconnaissance phase, a local large language model (Qwen 3-4B via LM Studio)
+  generates a tailored testing strategy. Each of the 14 specialized agents then executes
+  sequentially, invoking security tools through JSON-RPC 2.0 MCP servers
+  (SQLMap, Dalfox, Nmap, Nikto, and 60+ additional tools).
+  After each agent, findings are summarized and accumulated into a growing context that informs
+  subsequent agents. A final cross-agent analysis correlates findings before the report is generated.
+  All testing was performed under explicit authorization. This assessment follows
+  OWASP Web Security Testing Guide (WSTG) v4.2.
+</p>
+
+<h1>Appendix B — Tool Inventory</h1>
+<table>
+  <tr><th>MCP Server</th><th>Port</th><th>Domain</th></tr>
+  <tr><td>info-mcp</td><td>9001</td><td>Information Gathering</td></tr>
+  <tr><td>auth-mcp</td><td>9002</td><td>Authentication Testing</td></tr>
+  <tr><td>authorz-mcp</td><td>9003</td><td>Authorization Testing</td></tr>
+  <tr><td>session-mcp</td><td>9004</td><td>Session Management</td></tr>
+  <tr><td>input-mcp</td><td>9005</td><td>Input Validation (SQLi, XSS, LFI, SSTI, NoSQL…)</td></tr>
+  <tr><td>error-mcp</td><td>9006</td><td>Error Handling</td></tr>
+  <tr><td>crypto-mcp</td><td>9007</td><td>Weak Cryptography</td></tr>
+  <tr><td>client-mcp</td><td>9008</td><td>Client-Side Testing</td></tr>
+  <tr><td>biz-mcp</td><td>9009</td><td>Business Logic</td></tr>
+  <tr><td>confdep-mcp</td><td>9010</td><td>Configuration &amp; Deployment</td></tr>
+  <tr><td>identity-mcp</td><td>9011</td><td>Identity Management</td></tr>
+  <tr><td>fileupload-mcp</td><td>9012</td><td>File Upload</td></tr>
+  <tr><td>api-testing-mcp</td><td>9013</td><td>API Testing</td></tr>
+  <tr><td>katana-mcp</td><td>9015</td><td>Web Crawling (Katana)</td></tr>
+</table>
+
+<h1>Appendix C — Enrichment Statistics</h1>
+<p>
+  Finding enrichment is performed by a hybrid system: a static knowledge base covers common
+  OWASP WSTG vulnerability patterns (instant, deterministic); an LLM (Qwen 3-4B) handles
+  novel findings; a safe fallback ensures every finding has remediation guidance.
+</p>
+<table>
+  <tr><th>Source</th><th>Count</th><th>%</th><th>Description</th></tr>
+  <tr>
+    <td><span class="src-kb">KB</span> Static Knowledge Base</td>
+    <td>{{ enrichment_stats.get('static_kb', 0) }}</td>
+    <td>{% if total_findings > 0 %}{{ "%.1f"|format(enrichment_stats.get('static_kb', 0) / total_findings * 100) }}%{% else %}0%{% endif %}</td>
+    <td>Matched from curated WSTG vulnerability patterns</td>
+  </tr>
+  <tr>
+    <td><span class="src-llm">AI</span> LLM Enrichment</td>
+    <td>{{ enrichment_stats.get('llm', 0) }}</td>
+    <td>{% if total_findings > 0 %}{{ "%.1f"|format(enrichment_stats.get('llm', 0) / total_findings * 100) }}%{% else %}0%{% endif %}</td>
+    <td>Generated by Qwen 3-4B (novel findings)</td>
+  </tr>
+  <tr>
+    <td><span class="src-fallback">—</span> Fallback</td>
+    <td>{{ enrichment_stats.get('fallback', 0) }}</td>
+    <td>{% if total_findings > 0 %}{{ "%.1f"|format(enrichment_stats.get('fallback', 0) / total_findings * 100) }}%{% else %}0%{% endif %}</td>
+    <td>Generic guidance (LLM unavailable)</td>
+  </tr>
+</table>
+
+<div class="disclaimer">
+  <strong>Disclaimer:</strong> This report was generated automatically by RAJDOLL.
+  All findings should be verified manually before remediation actions are taken.
+  This document is classified <strong>CONFIDENTIAL</strong> and intended solely for the
+  authorized recipient.
+</div>
+
+</body>
+</html>
