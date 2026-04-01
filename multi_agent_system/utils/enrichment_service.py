@@ -25,6 +25,53 @@ def _load_kb() -> list[dict]:
 
 _KB_ENTRIES = _load_kb()
 
+# WSTG code prefix → friendly category name used in KB entries
+_WSTG_PREFIX_MAP: dict[str, str] = {
+    "WSTG-INFO":   "Information Gathering",
+    "WSTG-CONF":   "Configuration",
+    "WSTG-CONFIG": "Configuration",
+    "WSTG-ATHN":   "Authentication",
+    "WSTG-ATHZ":   "Authorization",
+    "WSTG-SESS":   "Session",
+    "WSTG-INPV":   "Input Validation",
+    "WSTG-ERRH":   "Error Handling",
+    "WSTG-CRYP":   "Cryptography",
+    "WSTG-CLNT":   "Client",
+    "WSTG-BUSL":   "Business Logic",
+    "WSTG-IDMG":   "Identity Management",
+    "WSTG-IDNT":   "Identity Management",
+}
+
+
+def _category_candidates(category: str) -> list[str]:
+    """Expand a category value into all forms that could match a KB category_pattern.
+
+    Handles both friendly names ('Authentication') and WSTG codes ('WSTG-ATHN-06').
+    For WSTG codes, adds progressively shorter prefixes + mapped friendly name so that
+    KB entries using either notation will match.
+
+    Examples:
+        'WSTG-ATHN-06' → ['wstg-athn-06', 'wstg-athn', 'authentication']
+        'WSTG-INPV-05' → ['wstg-inpv-05', 'wstg-inpv', 'input validation']
+        'Authentication' → ['authentication']
+    """
+    cat = (category or "").strip()
+    candidates: list[str] = [cat.lower()]
+    upper = cat.upper()
+    if upper.startswith("WSTG-"):
+        parts = upper.split("-")
+        # Walk from longest prefix to shortest, collect unique entries
+        seen: set[str] = set()
+        for n in range(len(parts), 1, -1):
+            prefix = "-".join(parts[:n])
+            if prefix not in seen:
+                seen.add(prefix)
+                candidates.append(prefix.lower())
+                friendly = _WSTG_PREFIX_MAP.get(prefix)
+                if friendly and friendly.lower() not in candidates:
+                    candidates.append(friendly.lower())
+    return candidates
+
 
 @dataclass
 class EnrichmentResult:
@@ -43,13 +90,14 @@ class StaticKBMatcher:
     @staticmethod
     def match(category: str, title: str) -> Optional[EnrichmentResult]:
         """Return EnrichmentResult if KB has a matching entry, else None."""
-        category_lower = (category or "").lower()
+        candidates = _category_candidates(category)
         title_lower = (title or "").lower()
 
         for entry in _KB_ENTRIES:
             cat_pat = entry.get("category_pattern", "").lower()
             keywords = [k.lower() for k in entry.get("title_keywords", [])]
-            if cat_pat and cat_pat not in category_lower:
+            # cat_pat must appear as a substring in at least one candidate string
+            if cat_pat and not any(cat_pat in cand for cand in candidates):
                 continue
             if not any(kw in title_lower for kw in keywords):
                 continue

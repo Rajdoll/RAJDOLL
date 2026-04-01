@@ -1,8 +1,15 @@
 [
   {
     "id": "sqli-generic",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["sql injection", "sqli", "sql error", "blind sql", "time-based sql", "union-based"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "sql injection",
+      "sqli",
+      "sql error",
+      "blind sql",
+      "time-based sql",
+      "union-based"
+    ],
     "wstg_id": "WSTG-INPV-05",
     "cwe_id": "CWE-89",
     "cvss_score_v4": 9.3,
@@ -16,8 +23,12 @@
   },
   {
     "id": "xss-reflected",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["reflected xss", "xss reflected", "cross-site scripting reflected"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "reflected xss",
+      "xss reflected",
+      "cross-site scripting reflected"
+    ],
     "wstg_id": "WSTG-INPV-01",
     "cwe_id": "CWE-79",
     "cvss_score_v4": 6.1,
@@ -31,8 +42,13 @@
   },
   {
     "id": "xss-stored",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["stored xss", "xss stored", "persistent xss", "cross-site scripting stored"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "stored xss",
+      "xss stored",
+      "persistent xss",
+      "cross-site scripting stored"
+    ],
     "wstg_id": "WSTG-INPV-02",
     "cwe_id": "CWE-79",
     "cvss_score_v4": 8.8,
@@ -46,8 +62,13 @@
   },
   {
     "id": "xss-dom",
-    "category_pattern": "Client",
-    "title_keywords": ["dom xss", "dom-based xss", "javascript injection", "dom injection"],
+    "category_pattern": "WSTG-CLNT",
+    "title_keywords": [
+      "dom xss",
+      "dom-based xss",
+      "javascript injection",
+      "dom injection"
+    ],
     "wstg_id": "WSTG-CLNT-01",
     "cwe_id": "CWE-79",
     "cvss_score_v4": 6.1,
@@ -60,8 +81,12 @@
   },
   {
     "id": "ssti",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["ssti", "server-side template injection", "template injection"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "ssti",
+      "server-side template injection",
+      "template injection"
+    ],
     "wstg_id": "WSTG-INPV-18",
     "cwe_id": "CWE-94",
     "cvss_score_v4": 9.8,
@@ -75,8 +100,14 @@
   },
   {
     "id": "lfi",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["lfi", "local file inclusion", "path traversal", "directory traversal", "../"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "lfi",
+      "local file inclusion",
+      "path traversal",
+      "directory traversal",
+      "../"
+    ],
     "wstg_id": "WSTG-INPV-11",
     "cwe_id": "CWE-22",
     "cvss_score_v4": 7.5,
@@ -89,8 +120,13 @@
   },
   {
     "id": "nosql-injection",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["nosql injection", "nosql", "mongodb injection", "no-sql"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "nosql injection",
+      "nosql",
+      "mongodb injection",
+      "no-sql"
+    ],
     "wstg_id": "WSTG-INPV-05",
     "cwe_id": "CWE-943",
     "cvss_score_v4": 8.6,
@@ -104,8 +140,13 @@
   },
   {
     "id": "hpp",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["http parameter pollution", "hpp", "parameter pollution", "duplicate parameter"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "http parameter pollution",
+      "hpp",
+      "parameter pollution",
+      "duplicate parameter"
+    ],
     "wstg_id": "WSTG-INPV-04",
     "cwe_id": "CWE-235",
     "cvss_score_v4": 5.3,
@@ -118,8 +159,13 @@
   },
   {
     "id": "redos",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["redos", "regex denial", "regular expression denial", "catastrophic backtracking"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "redos",
+      "regex denial",
+      "regular expression denial",
+      "catastrophic backtracking"
+    ],
     "wstg_id": "WSTG-INPV-19",
     "cwe_id": "CWE-1333",
     "cvss_score_v4": 5.9,
@@ -132,8 +178,12 @@
   },
   {
     "id": "csrf",
-    "category_pattern": "Input Validation",
-    "title_keywords": ["csrf", "cross-site request forgery", "csrftoken missing"],
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "csrf",
+      "cross-site request forgery",
+      "csrftoken missing"
+    ],
     "wstg_id": "WSTG-SESS-05",
     "cwe_id": "CWE-352",
     "cvss_score_v4": 6.5,
@@ -147,8 +197,16 @@
   },
   {
     "id": "brute-force",
-    "category_pattern": "Authentication",
-    "title_keywords": ["brute force", "brute-force", "credential stuffing", "account lockout missing", "rate limit login"],
+    "category_pattern": "WSTG-ATHN",
+    "title_keywords": [
+      "brute force",
+      "brute-force",
+      "credential stuffing",
+      "account lockout missing",
+      "rate limit login",
+      "account lockout",
+      "no lockout"
+    ],
     "wstg_id": "WSTG-ATHN-03",
     "cwe_id": "CWE-307",
     "cvss_score_v4": 7.5,
@@ -162,8 +220,14 @@
   },
   {
     "id": "weak-password",
-    "category_pattern": "Authentication",
-    "title_keywords": ["weak password", "password policy", "password strength", "default credential", "default password"],
+    "category_pattern": "WSTG-ATHN",
+    "title_keywords": [
+      "weak password",
+      "password policy",
+      "password strength",
+      "default credential",
+      "default password"
+    ],
     "wstg_id": "WSTG-ATHN-07",
     "cwe_id": "CWE-521",
     "cvss_score_v4": 7.3,
@@ -177,8 +241,14 @@
   },
   {
     "id": "2fa-bypass",
-    "category_pattern": "Authentication",
-    "title_keywords": ["2fa bypass", "mfa bypass", "totp bypass", "two-factor bypass", "otp bypass"],
+    "category_pattern": "WSTG-ATHN",
+    "title_keywords": [
+      "2fa bypass",
+      "mfa bypass",
+      "totp bypass",
+      "two-factor bypass",
+      "otp bypass"
+    ],
     "wstg_id": "WSTG-ATHN-11",
     "cwe_id": "CWE-287",
     "cvss_score_v4": 8.1,
@@ -191,8 +261,14 @@
   },
   {
     "id": "idor",
-    "category_pattern": "Authorization",
-    "title_keywords": ["idor", "insecure direct object reference", "broken object", "bola", "unauthorized access to"],
+    "category_pattern": "WSTG-ATHZ",
+    "title_keywords": [
+      "idor",
+      "insecure direct object reference",
+      "broken object",
+      "bola",
+      "unauthorized access to"
+    ],
     "wstg_id": "WSTG-ATHZ-04",
     "cwe_id": "CWE-639",
     "cvss_score_v4": 8.1,
@@ -206,8 +282,14 @@
   },
   {
     "id": "privilege-escalation",
-    "category_pattern": "Authorization",
-    "title_keywords": ["privilege escalation", "admin access", "role escalation", "horizontal escalation", "vertical escalation"],
+    "category_pattern": "WSTG-ATHZ",
+    "title_keywords": [
+      "privilege escalation",
+      "admin access",
+      "role escalation",
+      "horizontal escalation",
+      "vertical escalation"
+    ],
     "wstg_id": "WSTG-ATHZ-03",
     "cwe_id": "CWE-269",
     "cvss_score_v4": 8.8,
@@ -220,8 +302,13 @@
   },
   {
     "id": "user-spoofing",
-    "category_pattern": "Authorization",
-    "title_keywords": ["user spoofing", "userid manipulation", "user id tampering", "user impersonation"],
+    "category_pattern": "WSTG-ATHZ",
+    "title_keywords": [
+      "user spoofing",
+      "userid manipulation",
+      "user id tampering",
+      "user impersonation"
+    ],
     "wstg_id": "WSTG-ATHZ-02",
     "cwe_id": "CWE-284",
     "cvss_score_v4": 8.1,
@@ -234,8 +321,12 @@
   },
   {
     "id": "session-fixation",
-    "category_pattern": "Session",
-    "title_keywords": ["session fixation", "session not regenerated", "session id reuse after login"],
+    "category_pattern": "WSTG-SESS",
+    "title_keywords": [
+      "session fixation",
+      "session not regenerated",
+      "session id reuse after login"
+    ],
     "wstg_id": "WSTG-SESS-03",
     "cwe_id": "CWE-384",
     "cvss_score_v4": 6.8,
@@ -248,8 +339,14 @@
   },
   {
     "id": "session-cookie-flags",
-    "category_pattern": "Session",
-    "title_keywords": ["httponly missing", "secure flag missing", "samesite missing", "cookie flag", "session cookie"],
+    "category_pattern": "WSTG-SESS",
+    "title_keywords": [
+      "httponly missing",
+      "secure flag missing",
+      "samesite missing",
+      "cookie flag",
+      "session cookie"
+    ],
     "wstg_id": "WSTG-SESS-02",
     "cwe_id": "CWE-614",
     "cvss_score_v4": 5.9,
@@ -263,8 +360,15 @@
   },
   {
     "id": "security-headers-missing",
-    "category_pattern": "Configuration",
-    "title_keywords": ["missing security header", "x-frame-options", "x-content-type", "security headers", "hsts missing", "csp missing header"],
+    "category_pattern": "WSTG-CONF",
+    "title_keywords": [
+      "missing security header",
+      "x-frame-options",
+      "x-content-type",
+      "security headers",
+      "hsts missing",
+      "csp missing header"
+    ],
     "wstg_id": "WSTG-CONF-07",
     "cwe_id": "CWE-693",
     "cvss_score_v4": 5.3,
@@ -278,8 +382,13 @@
   },
   {
     "id": "directory-listing",
-    "category_pattern": "Configuration",
-    "title_keywords": ["directory listing", "directory traversal exposed", "open directory", "index of /"],
+    "category_pattern": "WSTG-CONF",
+    "title_keywords": [
+      "directory listing",
+      "directory traversal exposed",
+      "open directory",
+      "index of /"
+    ],
     "wstg_id": "WSTG-CONF-04",
     "cwe_id": "CWE-548",
     "cvss_score_v4": 5.3,
@@ -292,8 +401,13 @@
   },
   {
     "id": "exposed-git",
-    "category_pattern": "Configuration",
-    "title_keywords": ["exposed .git", "git repository exposed", ".git accessible", "git config exposed"],
+    "category_pattern": "WSTG-CONF",
+    "title_keywords": [
+      "exposed .git",
+      "git repository exposed",
+      ".git accessible",
+      "git config exposed"
+    ],
     "wstg_id": "WSTG-CONF-04",
     "cwe_id": "CWE-538",
     "cvss_score_v4": 7.5,
@@ -306,8 +420,14 @@
   },
   {
     "id": "npm-vulnerabilities",
-    "category_pattern": "Configuration",
-    "title_keywords": ["npm vulnerability", "vulnerable dependency", "cve in package", "outdated package", "known vulnerability"],
+    "category_pattern": "WSTG-CONF",
+    "title_keywords": [
+      "npm vulnerability",
+      "vulnerable dependency",
+      "cve in package",
+      "outdated package",
+      "known vulnerability"
+    ],
     "wstg_id": "WSTG-CONF-02",
     "cwe_id": "CWE-1395",
     "cvss_score_v4": 7.0,
@@ -321,8 +441,16 @@
   },
   {
     "id": "hidden-endpoints",
-    "category_pattern": "Configuration",
-    "title_keywords": ["hidden endpoint", "exposed admin", "sensitive endpoint", "/ftp", "/metrics", "/admin exposed", "backup file"],
+    "category_pattern": "WSTG-CONF",
+    "title_keywords": [
+      "hidden endpoint",
+      "exposed admin",
+      "sensitive endpoint",
+      "/ftp",
+      "/metrics",
+      "/admin exposed",
+      "backup file"
+    ],
     "wstg_id": "WSTG-CONF-05",
     "cwe_id": "CWE-200",
     "cvss_score_v4": 5.3,
@@ -335,8 +463,13 @@
   },
   {
     "id": "clickjacking",
-    "category_pattern": "Client",
-    "title_keywords": ["clickjacking", "x-frame-options missing", "framing allowed", "iframe allowed"],
+    "category_pattern": "WSTG-CLNT",
+    "title_keywords": [
+      "clickjacking",
+      "x-frame-options missing",
+      "framing allowed",
+      "iframe allowed"
+    ],
     "wstg_id": "WSTG-CLNT-09",
     "cwe_id": "CWE-1021",
     "cvss_score_v4": 4.3,
@@ -350,8 +483,13 @@
   },
   {
     "id": "open-redirect",
-    "category_pattern": "Client",
-    "title_keywords": ["open redirect", "unvalidated redirect", "redirect bypass", "redirect to external"],
+    "category_pattern": "WSTG-CLNT",
+    "title_keywords": [
+      "open redirect",
+      "unvalidated redirect",
+      "redirect bypass",
+      "redirect to external"
+    ],
     "wstg_id": "WSTG-CLNT-04",
     "cwe_id": "CWE-601",
     "cvss_score_v4": 6.1,
@@ -364,8 +502,15 @@
   },
   {
     "id": "csp-missing-weak",
-    "category_pattern": "Client",
-    "title_keywords": ["csp missing", "csp weak", "content security policy", "csp bypass", "unsafe-inline", "unsafe-eval"],
+    "category_pattern": "WSTG-CLNT",
+    "title_keywords": [
+      "csp missing",
+      "csp weak",
+      "content security policy",
+      "csp bypass",
+      "unsafe-inline",
+      "unsafe-eval"
+    ],
     "wstg_id": "WSTG-CLNT-12",
     "cwe_id": "CWE-693",
     "cvss_score_v4": 5.3,
@@ -379,8 +524,14 @@
   },
   {
     "id": "cors-misconfiguration",
-    "category_pattern": "Client",
-    "title_keywords": ["cors misconfiguration", "cors", "access-control-allow-origin", "cors wildcard", "cors any origin"],
+    "category_pattern": "WSTG-CLNT",
+    "title_keywords": [
+      "cors misconfiguration",
+      "cors",
+      "access-control-allow-origin",
+      "cors wildcard",
+      "cors any origin"
+    ],
     "wstg_id": "WSTG-CLNT-07",
     "cwe_id": "CWE-942",
     "cvss_score_v4": 6.5,
@@ -394,8 +545,14 @@
   },
   {
     "id": "rate-limiting-missing",
-    "category_pattern": "Business Logic",
-    "title_keywords": ["rate limiting missing", "no rate limit", "missing rate limit", "rate limit absent", "unlimited requests"],
+    "category_pattern": "WSTG-BUSL",
+    "title_keywords": [
+      "rate limiting missing",
+      "no rate limit",
+      "missing rate limit",
+      "rate limit absent",
+      "unlimited requests"
+    ],
     "wstg_id": "WSTG-BUSL-08",
     "cwe_id": "CWE-799",
     "cvss_score_v4": 5.3,
@@ -408,8 +565,14 @@
   },
   {
     "id": "coupon-forgery",
-    "category_pattern": "Business Logic",
-    "title_keywords": ["coupon forgery", "discount abuse", "coupon bypass", "expired coupon", "coupon manipulation"],
+    "category_pattern": "WSTG-BUSL",
+    "title_keywords": [
+      "coupon forgery",
+      "discount abuse",
+      "coupon bypass",
+      "expired coupon",
+      "coupon manipulation"
+    ],
     "wstg_id": "WSTG-BUSL-09",
     "cwe_id": "CWE-840",
     "cvss_score_v4": 5.4,
@@ -422,8 +585,13 @@
   },
   {
     "id": "negative-quantity",
-    "category_pattern": "Business Logic",
-    "title_keywords": ["negative quantity", "negative value", "negative price", "integer overflow order"],
+    "category_pattern": "WSTG-BUSL",
+    "title_keywords": [
+      "negative quantity",
+      "negative value",
+      "negative price",
+      "integer overflow order"
+    ],
     "wstg_id": "WSTG-BUSL-05",
     "cwe_id": "CWE-840",
     "cvss_score_v4": 6.5,
@@ -436,8 +604,13 @@
   },
   {
     "id": "user-enumeration",
-    "category_pattern": "Identity Management",
-    "title_keywords": ["user enumeration", "username enumeration", "account enumeration", "email enumeration"],
+    "category_pattern": "WSTG-IDNT",
+    "title_keywords": [
+      "user enumeration",
+      "username enumeration",
+      "account enumeration",
+      "email enumeration"
+    ],
     "wstg_id": "WSTG-IDMG-04",
     "cwe_id": "CWE-204",
     "cvss_score_v4": 5.3,
@@ -450,8 +623,14 @@
   },
   {
     "id": "mass-assignment",
-    "category_pattern": "Identity Management",
-    "title_keywords": ["mass assignment", "parameter binding", "role injection", "admin role injection", "registration mass"],
+    "category_pattern": "WSTG-IDNT",
+    "title_keywords": [
+      "mass assignment",
+      "parameter binding",
+      "role injection",
+      "admin role injection",
+      "registration mass"
+    ],
     "wstg_id": "WSTG-IDMG-03",
     "cwe_id": "CWE-915",
     "cvss_score_v4": 8.8,
@@ -465,8 +644,16 @@
   },
   {
     "id": "weak-tls",
-    "category_pattern": "Cryptography",
-    "title_keywords": ["weak tls", "ssl vulnerability", "tls 1.0", "tls 1.1", "weak cipher", "ssl weak", "tls misconfiguration"],
+    "category_pattern": "WSTG-CRYP",
+    "title_keywords": [
+      "weak tls",
+      "ssl vulnerability",
+      "tls 1.0",
+      "tls 1.1",
+      "weak cipher",
+      "ssl weak",
+      "tls misconfiguration"
+    ],
     "wstg_id": "WSTG-CRYP-01",
     "cwe_id": "CWE-326",
     "cvss_score_v4": 5.9,
@@ -480,8 +667,15 @@
   },
   {
     "id": "weak-hashing",
-    "category_pattern": "Cryptography",
-    "title_keywords": ["weak hash", "md5", "sha1 password", "weak password hash", "plaintext password", "unsalted hash"],
+    "category_pattern": "WSTG-CRYP",
+    "title_keywords": [
+      "weak hash",
+      "md5",
+      "sha1 password",
+      "weak password hash",
+      "plaintext password",
+      "unsalted hash"
+    ],
     "wstg_id": "WSTG-CRYP-04",
     "cwe_id": "CWE-916",
     "cvss_score_v4": 7.5,
@@ -495,8 +689,14 @@
   },
   {
     "id": "stack-trace-exposure",
-    "category_pattern": "Error Handling",
-    "title_keywords": ["stack trace", "error disclosure", "exception exposed", "debug information", "verbose error"],
+    "category_pattern": "WSTG-ERRH",
+    "title_keywords": [
+      "stack trace",
+      "error disclosure",
+      "exception exposed",
+      "debug information",
+      "verbose error"
+    ],
     "wstg_id": "WSTG-ERRH-01",
     "cwe_id": "CWE-209",
     "cvss_score_v4": 4.3,
@@ -509,8 +709,14 @@
   },
   {
     "id": "file-upload-unrestricted",
-    "category_pattern": "File Upload",
-    "title_keywords": ["file upload", "unrestricted upload", "malicious upload", "webshell upload", "executable upload"],
+    "category_pattern": "WSTG-BUSL",
+    "title_keywords": [
+      "file upload",
+      "unrestricted upload",
+      "malicious upload",
+      "webshell upload",
+      "executable upload"
+    ],
     "wstg_id": "WSTG-BUSL-08",
     "cwe_id": "CWE-434",
     "cvss_score_v4": 9.8,
@@ -524,8 +730,14 @@
   },
   {
     "id": "information-disclosure",
-    "category_pattern": "Information Gathering",
-    "title_keywords": ["information disclosure", "sensitive information", "technology disclosure", "version disclosure", "server header"],
+    "category_pattern": "WSTG-INFO",
+    "title_keywords": [
+      "information disclosure",
+      "sensitive information",
+      "technology disclosure",
+      "version disclosure",
+      "server header"
+    ],
     "wstg_id": "WSTG-INFO-02",
     "cwe_id": "CWE-200",
     "cvss_score_v4": 4.3,
@@ -538,8 +750,14 @@
   },
   {
     "id": "api-missing-auth",
-    "category_pattern": "API Testing",
-    "title_keywords": ["api unauthenticated", "api missing authentication", "api endpoint exposed", "unauthenticated api", "api no auth"],
+    "category_pattern": "WSTG-APIT",
+    "title_keywords": [
+      "api unauthenticated",
+      "api missing authentication",
+      "api endpoint exposed",
+      "unauthenticated api",
+      "api no auth"
+    ],
     "wstg_id": "WSTG-ATHZ-01",
     "cwe_id": "CWE-306",
     "cvss_score_v4": 9.1,
