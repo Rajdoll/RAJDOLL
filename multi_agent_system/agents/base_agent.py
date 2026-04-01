@@ -18,6 +18,7 @@ from ..utils.shared_context_manager import SharedContextManager
 # PHASE 2: New architectural components
 from ..utils.knowledge_graph import KnowledgeGraph, Entity, EntityType, RelationType
 from ..utils.confidence_scorer import ConfidenceScorer, ConfidenceScore, Evidence, EvidenceType
+from ..utils.enrichment_service import EnrichmentService
 
 # Timeouts aligned with job_total_timeout (3600s) to prevent cascading delays
 AGENT_EXECUTION_TIMEOUT = 2700  # 45 minutes per agent (leaves room for other phases within 1hr job timeout)
@@ -329,6 +330,10 @@ class BaseAgent:
 					planning_context["previous_findings_summary"] = cum_summary[-3000:]  # Last 3k chars
 				if task_tree_ctx:
 					planning_context["testing_status"] = task_tree_ctx
+				# Director instructions from pre-agent checkpoint
+				director_text = self._shared_context_snapshot.get("director_instructions_text", "")
+				if director_text:
+					planning_context["director_instructions"] = director_text
 
 				# LLM planning enabled: Ask LLM for adaptive tool selection
 				print(f"📋 {self.agent_name}: Available tools for LLM planning: {available_tools}", file=sys.stderr, flush=True)
@@ -458,25 +463,42 @@ class BaseAgent:
 		self.context_manager.write(key, value)
 
 	def add_finding(self, category: str, title: str, severity: str = "info", evidence: dict | None = None, details: str | None = None) -> None:
+		import json, sys
 		# Sanitize evidence to prevent unhashable type errors
 		if evidence is not None:
 			try:
 				# Convert evidence to JSON-safe format
-				import json
-				# Test if evidence is JSON-serializable
 				json.dumps(evidence)
 			except (TypeError, ValueError) as e:
 				# If not serializable, convert to string representation
 				evidence = {"raw": str(evidence), "error": f"Evidence not JSON-serializable: {e}"}
 		with get_db() as db:
-			db.add(Finding(job_id=self.job_id, agent_name=self.agent_name, category=category, title=title, severity=severity, evidence=evidence, details=details))
+			finding = Finding(job_id=self.job_id, agent_name=self.agent_name, category=category, title=title, severity=severity, evidence=evidence, details=details)
+			db.add(finding)
 			try:
 				db.commit()
 			except IntegrityError:
 				# Duplicate finding - skip silently (happens during Celery retries)
 				db.rollback()
-				import sys
 				print(f"⚠️  {self.agent_name}: Duplicate finding skipped: {title}", file=sys.stderr, flush=True)
+				return
+			db.refresh(finding)
+			# Enrich finding after successful write — EnrichmentService.enrich() never raises
+			enrichment = EnrichmentService.enrich(category, title, severity, evidence or {})
+			try:
+				db.query(Finding).filter(Finding.id == finding.id).update({
+					"explanation": enrichment.explanation,
+					"remediation": enrichment.remediation,
+					"cwe_id": enrichment.cwe_id,
+					"wstg_id": enrichment.wstg_id,
+					"cvss_score_v4": enrichment.cvss_score_v4,
+					"references": enrichment.references,
+					"enrichment_source": enrichment.source,
+				})
+				db.commit()
+			except Exception as enrich_err:
+				db.rollback()
+				print(f"⚠️  {self.agent_name}: Enrichment DB update failed for '{title}': {enrich_err}", file=sys.stderr, flush=True)
 
 	def add_finding_with_confidence(
 		self, 
@@ -868,6 +890,17 @@ class BaseAgent:
 		"""Centralized gating logic for MCP tools."""
 		import sys
 
+		# Director SKIP check — runs before all other checks
+		directive_key = f"director_directive_{self.agent_name}"
+		directives = self._shared_context_snapshot.get(directive_key, [])
+		if directives:
+			from ..utils.directive_parser import get_skip_tools
+			skip_tools = get_skip_tools(directives)
+			if tool_name in skip_tools:
+				self.log("info", f"Skipping {tool_name} — Director SKIP instruction")
+				print(f"🎯 {self.agent_name}: Tool {tool_name} SKIPPED — Director instruction", file=sys.stderr, flush=True)
+				return False
+
 		failures = self._tool_failures.get(tool_name, 0)
 		if failures >= self._circuit_breaker_limit:
 			self.log("warning", "Circuit breaker: skipping tool due to repeated failures", {"tool": tool_name, "failures": failures})
@@ -1053,6 +1086,27 @@ class BaseAgent:
 		Returns a dict with ``approved`` flag and (optionally) sanitized ``arguments``.
 		"""
 		args = self._merge_planned_arguments(tool_name, args)
+		# HIGH_RISK Director tool review — fires when hitl_mode == "agent"
+		from ..core.config import HIGH_RISK_TOOLS, settings as _settings
+		if (
+			tool_name in HIGH_RISK_TOOLS
+			and getattr(_settings, "hitl_mode", "off") == "agent"
+			and self.agent_name not in self._auto_approve_agents
+			and not getattr(self, "disable_hitl", False)
+		):
+			if not self.hitl_manager:
+				self.hitl_manager = HITLManager(self.job_id, overrides=self._hitl_overrides)
+			decision = await self.hitl_manager.request_tool_arg_review(
+				agent_name=self.agent_name,
+				tool_name=tool_name,
+				server=server,
+				generated_args=args,
+			)
+			if not decision.get("approved", True):
+				self.log("warning", f"HIGH_RISK tool {tool_name} skipped by Director")
+				return {"approved": False, "arguments": args}
+			return {"approved": True, "arguments": decision.get("arguments", args)}
+
 		if self.agent_name in self._auto_approve_agents:
 			return {"approved": True, "arguments": args}
 		if getattr(self, "disable_hitl", False):
