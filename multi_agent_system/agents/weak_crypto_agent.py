@@ -206,23 +206,39 @@ Write to shared_context:
         self.log_tool_execution_plan()
 
         parsed = urlparse(target)
-        host = parsed.netloc or parsed.hostname or target
+        host = parsed.hostname or parsed.netloc or target
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        is_http_only = parsed.scheme == "http"
 
-        # TLS configuration
+        # Immediately flag HTTP-only targets — absence of TLS is itself a finding
+        if is_http_only:
+            self.add_finding(
+                "WSTG-CRYP-03",
+                "Application does not enforce HTTPS — all traffic transmitted in plaintext",
+                severity="high",
+                evidence={"target": target, "scheme": parsed.scheme, "port": port,
+                          "impact": "Credentials, session tokens, and sensitive data transmitted unencrypted"},
+            )
+
+        # TLS configuration (only meaningful for HTTPS targets)
         if self.should_run_tool("test_tls_configuration"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="weak-cryptography-testing",
-                        tool="test_tls_configuration",
-                        args={"host": host, "port": 443}, auth_session=auth_data)
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    summary = res.get("data", {}).get("summary", {})
-                    if summary:
-                        self.add_finding("WSTG-CRYP", "TLS configuration issues found", severity="medium", evidence={"sample": list(summary.items())[:3]})
-            except Exception as e:
-                self.log("warning", f"test_tls_configuration failed: {e}")
+            if is_http_only:
+                self.log("info", "Skipping testssl.sh — target is HTTP-only (finding already recorded)")
+            else:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="weak-cryptography-testing",
+                            tool="test_tls_configuration",
+                            args={"host": host, "port": port}, auth_session=auth_data)
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        summary = res.get("data", {}).get("summary", {})
+                        if summary:
+                            self.add_finding("WSTG-CRYP-01", "TLS configuration issues found", severity="medium",
+                                             evidence={"sample": list(summary.items())[:3]})
+                except Exception as e:
+                    self.log("warning", f"test_tls_configuration failed: {e}")
 
         # Cleartext info over HTTP
         if self.should_run_tool("test_cleartext_info"):
@@ -235,8 +251,16 @@ Write to shared_context:
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
-                    if data.get("http_reachable") and (data.get("password_field_on_http") or data.get("form_posts_to_http")):
-                        self.add_finding("WSTG-CRYP", "Sensitive info over HTTP", severity="high", evidence=data)
+                    # Flag cleartext transmission if HTTP-reachable and either:
+                    # - a password field is detected (traditional apps), OR
+                    # - the target itself is HTTP-only (covers SPAs without detectable forms)
+                    if data.get("http_reachable") and (
+                        data.get("password_field_on_http")
+                        or data.get("form_posts_to_http")
+                        or is_http_only
+                    ):
+                        self.add_finding("WSTG-CRYP-03", "Sensitive data transmitted over unencrypted HTTP",
+                                         severity="high", evidence=data)
             except Exception as e:
                 self.log("warning", f"test_cleartext_info failed: {e}")
 
