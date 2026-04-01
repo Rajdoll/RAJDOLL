@@ -768,5 +768,28 @@
       "https://cwe.mitre.org/data/definitions/306.html",
       "https://owasp.org/www-project-api-security/"
     ]
+  },
+  {
+    "id": "ssrf-generic",
+    "category_pattern": "WSTG-INPV",
+    "title_keywords": [
+      "ssrf",
+      "server-side request forgery",
+      "internal request",
+      "cloud metadata",
+      "open redirect ssrf",
+      "ssrfmap",
+      "internal network access"
+    ],
+    "wstg_id": "WSTG-INPV-19",
+    "cwe_id": "CWE-918",
+    "cvss_score_v4": 8.6,
+    "explanation": "Server-Side Request Forgery (SSRF) allows attackers to induce the server to make HTTP requests to an arbitrary destination, including internal services, cloud metadata endpoints (e.g., http://169.254.169.254/), or localhost. Successful exploitation can expose AWS/GCP/Azure instance credentials, internal network topology, or enable pivoting to otherwise unreachable services. In environments with IMDSv1 enabled, a single SSRF request can yield cloud provider credentials with full account access.",
+    "remediation": "1. Validate and allowlist all user-supplied URLs against a strict allowlist of permitted domains/IPs.\n2. Block requests to RFC-1918 private address ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), loopback (127.0.0.0/8), and link-local (169.254.0.0/16).\n3. Enforce IMDSv2 (token-required) on all cloud instances — IMDSv1 is trivially exploitable via SSRF.\n4. Use an egress proxy or firewall to restrict outbound connections from the application server.\n5. Do not forward raw HTTP responses from server-side fetches to the client; strip sensitive headers.\n6. Apply network segmentation so the application server cannot reach internal admin services.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/19-Testing_for_Server-Side_Request_Forgery",
+      "https://cwe.mitre.org/data/definitions/918.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html"
+    ]
   }
 ]
