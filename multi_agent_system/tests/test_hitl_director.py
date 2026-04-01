@@ -142,3 +142,23 @@ def test_format_for_llm_include_exclude():
 def test_validate_skip_tools_empty_inputs():
     errors = validate_skip_tools([], available_tools=[])
     assert errors == []
+
+
+def test_parse_include_command():
+    cmds = parse_directive_commands("INCLUDE: http://juice-shop:3000/api/Users/1")
+    assert cmds == [{"cmd": "INCLUDE", "value": "http://juice-shop:3000/api/Users/1"}]
+
+
+def test_parse_exclude_command():
+    cmds = parse_directive_commands("EXCLUDE: /api/products")
+    assert cmds == [{"cmd": "EXCLUDE", "value": "/api/products"}]
+
+
+def test_high_risk_tools_config():
+    from multi_agent_system.core.config import HIGH_RISK_TOOLS
+    assert "run_sqlmap" in HIGH_RISK_TOOLS
+    assert "test_xss_dalfox" in HIGH_RISK_TOOLS
+    assert "run_nikto" in HIGH_RISK_TOOLS
+    assert "run_nmap" in HIGH_RISK_TOOLS
+    assert "test_tls_configuration" in HIGH_RISK_TOOLS
+    assert isinstance(HIGH_RISK_TOOLS, frozenset)
