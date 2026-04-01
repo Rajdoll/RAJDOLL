@@ -24,7 +24,7 @@ from ..utils.enrichment_service import EnrichmentService
 AGENT_EXECUTION_TIMEOUT = 2700  # 45 minutes per agent (leaves room for other phases within 1hr job timeout)
 LLM_PLANNING_TIMEOUT = 120      # 2 minutes for LLM planning (Qwen 3-4B responds in 15-60s)
 TOOL_EXECUTION_TIMEOUT = 600    # 10 minutes per tool (sufficient for SQLMap; was 1800s which let stuck tools block everything)
-MAX_LLM_RETRIES = 2             # Maximum LLM retry attempts (worst case: 240s vs 900s)
+MAX_LLM_RETRIES = 1             # No retry on timeout — LM Studio is single-threaded; a 2nd attempt immediately after a 120s timeout wastes another 120s with identical outcome
 MAX_TOOLS_PER_AGENT = 50        # Allow comprehensive testing (was 5)
 
 # Global concurrency limit for LLM planning across agents.
