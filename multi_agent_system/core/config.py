@@ -102,3 +102,12 @@ class Settings:
 
 
 settings = Settings()
+
+# Tools that require Director approval before execution (when hitl_mode == "agent")
+HIGH_RISK_TOOLS: frozenset[str] = frozenset({
+    "run_sqlmap",
+    "test_xss_dalfox",
+    "run_nikto",
+    "run_nmap",
+    "test_tls_configuration",
+})
