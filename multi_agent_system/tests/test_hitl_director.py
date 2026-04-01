@@ -119,3 +119,26 @@ def test_parse_line_too_long():
 def test_parse_depth_normalized_to_lowercase():
     cmds = parse_directive_commands("DEPTH: Shallow")
     assert cmds[0]["value"] == "shallow"
+
+
+def test_parse_line_exactly_at_limit_is_allowed():
+    from multi_agent_system.utils.directive_parser import MAX_LINE_LENGTH
+    line = "FOCUS: " + "x" * (MAX_LINE_LENGTH - len("FOCUS: "))
+    assert len(line) == MAX_LINE_LENGTH
+    cmds = parse_directive_commands(line)
+    assert cmds[0]["cmd"] == "FOCUS"
+
+
+def test_format_for_llm_include_exclude():
+    cmds = [
+        {"cmd": "INCLUDE", "value": "http://example.com/admin"},
+        {"cmd": "EXCLUDE", "value": "/api/products"},
+    ]
+    result = format_for_llm(cmds)
+    assert "Include target URL: http://example.com/admin" in result
+    assert "Exclude URL pattern: /api/products" in result
+
+
+def test_validate_skip_tools_empty_inputs():
+    errors = validate_skip_tools([], available_tools=[])
+    assert errors == []
