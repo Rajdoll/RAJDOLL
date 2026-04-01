@@ -122,6 +122,7 @@ class CheckpointAction(str, enum.Enum):
     pending = "pending"          # Waiting for user response
     proceed = "proceed"          # Continue to next agent (default order)
     skip_next = "skip_next"      # Skip the next planned agent
+    skip_current = "skip_current"   # new — skip the agent ABOUT TO RUN (pre-agent only)
     reorder = "reorder"          # Change agent execution order
     auto = "auto"                # Disable checkpoints for remaining agents
     abort = "abort"              # Stop the scan entirely
@@ -170,6 +171,11 @@ class AgentCheckpoint(Base):
     requested_at = Column(DateTime, default=datetime.utcnow)
     responded_at = Column(DateTime, nullable=True)
     wait_duration_seconds = Column(Integer, nullable=True)    # How long user took to respond
+
+    # Director Mode extensions (v3)
+    checkpoint_type = Column(String(20), default="post_agent", nullable=False, server_default="post_agent")
+    directive = Column(Text, nullable=True)          # JSON-serialized parsed directive commands
+    planned_tools = Column(JSONB, nullable=True)     # Tool list shown at PRE-AGENT checkpoint
 
 
 class ToolPolicyMode(str, enum.Enum):
@@ -220,6 +226,7 @@ class ToolApproval(Base):
     auto_decision = Column(Boolean, default=False)
     batch_key = Column(String(255), nullable=True)
     policy_id = Column(Integer, ForeignKey("tool_approval_policies.id"), nullable=True)
+    is_high_risk_review = Column(Boolean, default=False)  # True = HIGH_RISK Director review
 
 # Migration SQL (run this in PostgreSQL)
 """
@@ -344,4 +351,15 @@ CREATE TABLE agent_checkpoints (
 
 CREATE INDEX idx_agent_checkpoints_job ON agent_checkpoints(job_id);
 CREATE INDEX idx_agent_checkpoints_pending ON agent_checkpoints(job_id, action) WHERE action = 'pending';
+
+-- Director Mode v3 migrations (run after initial HITL tables exist)
+ALTER TYPE checkpoint_action ADD VALUE IF NOT EXISTS 'skip_current';
+
+ALTER TABLE agent_checkpoints
+    ADD COLUMN IF NOT EXISTS checkpoint_type VARCHAR(20) NOT NULL DEFAULT 'post_agent',
+    ADD COLUMN IF NOT EXISTS directive TEXT,
+    ADD COLUMN IF NOT EXISTS planned_tools JSONB;
+
+ALTER TABLE tool_approvals
+    ADD COLUMN IF NOT EXISTS is_high_risk_review BOOLEAN DEFAULT FALSE;
 """
