@@ -103,6 +103,7 @@ class Orchestrator:
 		# Planner-Summarizer state (HackSynth / PentestGPT pattern)
 		self.cumulative_summary: str = ""
 		self._llm_summarizer: Optional[SimpleLLMClient] = None
+		self._pending_director_directives: Dict[str, list] = {}
 		
 		# CRITICAL FIX: Write target URL to shared context at initialization
 		# This ensures all agents have access to the actual target URL
@@ -206,7 +207,7 @@ class Orchestrator:
 			self._refresh_shared_context_cache()
 			# Build shared_context snapshot and inject planner context (cumulative summary + task tree)
 			shared_ctx = self._aggregate_shared_context()
-			shared_ctx = self._inject_planner_context(shared_ctx)
+			shared_ctx = self._inject_planner_context(shared_ctx, agent_name=agent_name)
 			target = self._get_target()
 			loop.run_until_complete(asyncio.wait_for(agent.execute(target=target, shared_context=shared_ctx), timeout=AGENT_EXECUTION_TIMEOUT))
 			status = AgentStatus.completed
@@ -416,6 +417,89 @@ class Orchestrator:
 		with get_db() as db:
 			job = db.query(Job).get(self.job_id)
 			return job.target if job else None
+
+	def _wait_for_target(self, target: str, max_wait: int = 300, poll: int = 10) -> bool:
+		"""Poll target until it responds or max_wait seconds elapse.
+
+		Called before each agent (except Recon and Report) so that a target
+		crash mid-scan doesn't silently produce 0-finding agents.
+
+		Returns True if target is reachable, False if max_wait exceeded.
+		"""
+		import time
+		import urllib.request
+
+		try:
+			urllib.request.urlopen(target, timeout=5).close()
+			return True  # fast path — target already up
+		except Exception:
+			pass
+
+		print(f"[Orchestrator] ⚠  Target {target} unreachable — waiting up to {max_wait}s for recovery...")
+		deadline = time.time() + max_wait
+		waited = 0
+		while time.time() < deadline:
+			time.sleep(poll)
+			waited += poll
+			try:
+				urllib.request.urlopen(target, timeout=5).close()
+				print(f"[Orchestrator] ✅ Target {target} recovered after {waited}s — resuming scan")
+				return True
+			except Exception:
+				print(f"[Orchestrator] Still waiting for target... ({waited}s elapsed)")
+
+		print(f"[Orchestrator] WARNING: Target still unreachable after {max_wait}s — proceeding anyway")
+		return False
+
+	def _run_pre_agent_checkpoint(
+		self,
+		agent_name: str,
+		agent_index: int,
+		plan: list,
+	) -> str:
+		"""Run PRE-AGENT Director checkpoint. Returns "proceed", "skip_current", or "abort".
+
+		On "proceed", stores directive_commands in self._pending_director_directives[agent_name].
+		"""
+		if getattr(settings, "hitl_mode", "off") != "agent":
+			return "proceed"
+		if agent_name in ("ReconnaissanceAgent", "ReportGenerationAgent"):
+			return "proceed"
+
+		remaining_after = [
+			s for s in plan[agent_index + 1:]
+			if isinstance(s, str) and s != agent_name
+		]
+		planned_tools = []
+		tool_plan = self._get_tool_plan_for_agent(agent_name)
+		if tool_plan:
+			for t in tool_plan.get("tools", []):
+				if isinstance(t, str):
+					planned_tools.append(t)
+				elif isinstance(t, dict) and t.get("tool"):
+					planned_tools.append(t["tool"])
+
+		loop = self._ensure_event_loop()
+		try:
+			result = loop.run_until_complete(
+				self.hitl_manager.request_pre_agent_checkpoint(
+					next_agent=agent_name,
+					agent_index=agent_index,
+					planned_tools=planned_tools,
+					cumulative_summary=self.cumulative_summary or "",
+					remaining_agents=remaining_after,
+				)
+			)
+		except Exception as e:
+			print(f"[Orchestrator] WARNING: Pre-agent checkpoint failed: {e}, auto-proceeding")
+			return "proceed"
+
+		action = result.get("action", "proceed")
+		directive_commands = result.get("directive_commands", [])
+		if directive_commands:
+			self._pending_director_directives[agent_name] = directive_commands
+			print(f"[Orchestrator] Director directive for {agent_name}: {directive_commands}")
+		return action
 
 	def _convert_llm_plan_to_execution_plan(self, llm_plan: Dict[str, Any]) -> List[Any]:
 		"""Convert LLM testing plan to orchestrator execution plan.
@@ -630,15 +714,20 @@ class Orchestrator:
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
-	def _inject_planner_context(self, shared_ctx: Dict[str, Any]) -> Dict[str, Any]:
-		"""Inject cumulative summary + task tree into the shared context dict
-		that will be passed to the next agent."""
+	def _inject_planner_context(self, shared_ctx: Dict[str, Any], agent_name: Optional[str] = None) -> Dict[str, Any]:
+		"""Inject cumulative summary + task tree + director directives into shared context."""
+		from .utils.directive_parser import format_for_llm
 		ctx = dict(shared_ctx)
 		if self.cumulative_summary:
 			ctx["cumulative_summary"] = self.cumulative_summary
 		task_tree = build_task_tree(self.job_id)
 		if task_tree:
 			ctx["task_tree"] = task_tree
+		if agent_name:
+			directives = self._pending_director_directives.get(agent_name, [])
+			if directives:
+				ctx[f"director_directive_{agent_name}"] = directives
+				ctx["director_instructions_text"] = format_for_llm(directives)
 		return ctx
 
 	def _get_tool_plan_for_agent(self, agent_name: str) -> Optional[Dict[str, Any]]:
@@ -846,6 +935,33 @@ class Orchestrator:
 						print(f"[Orchestrator] LLM selected tools for {pname}: {agent_plan['tools']}")
 				if not tool_plan:
 					tool_plan = None  # No plans found for any agent
+
+			# Target health check — wait for target to recover before starting
+			# each agent (skip Recon which must always run, and Report which
+			# doesn't need the target to be live).
+			if isinstance(step, str) and step not in ("ReconnaissanceAgent", "ReportGenerationAgent"):
+				target_url = self._get_target()
+				if target_url:
+					self._wait_for_target(target_url)
+
+			# ── Director PRE-AGENT Checkpoint ──────────────────────────
+			if isinstance(step, str) and step not in ("ReconnaissanceAgent", "ReportGenerationAgent") and not agent_hitl_auto:
+				pre_action = self._run_pre_agent_checkpoint(step, idx, plan)
+				if pre_action == "abort":
+					print("[Orchestrator] Director ABORTED scan at pre-agent checkpoint")
+					break
+				if pre_action == "skip_current":
+					print(f"[Orchestrator] Director SKIPPED {step}")
+					with get_db() as db:
+						ja = db.query(JobAgent).filter(
+							JobAgent.job_id == self.job_id, JobAgent.agent_name == step
+						).one_or_none()
+						if ja:
+							ja.status = AgentStatus.skipped if hasattr(AgentStatus, "skipped") else AgentStatus.failed
+							ja.error = "Skipped by Director at pre-agent checkpoint"
+							ja.finished_at = datetime.utcnow()
+							db.commit()
+					continue
 
 			self._run_step_sync(step, tool_plan)
 
