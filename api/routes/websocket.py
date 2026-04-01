@@ -28,6 +28,7 @@ async def ws_logs(ws: WebSocket, job_id: int):
 	last_agent_status = {}  # Track last status per agent to avoid spam
 	sent_agent_statuses = {}  # Track which agent statuses we've already sent
 	last_checkpoint_id = 0  # Avoid sending same checkpoint repeatedly
+	last_tool_approval_id = 0  # Avoid sending same HIGH_RISK approval repeatedly
 	
 	try:
 		# Send initial connection message
@@ -118,24 +119,61 @@ async def ws_logs(ws: WebSocket, job_id: int):
 					).order_by(AgentCheckpoint.requested_at.desc()).first()
 					if pending_cp and pending_cp.id != last_checkpoint_id:
 						last_checkpoint_id = pending_cp.id
-						await ws.send_json({
-							"type": "agent_checkpoint",
-							"data": {
-								"checkpoint_id": pending_cp.id,
-								"completed_agent": pending_cp.completed_agent,
-								"agent_index": pending_cp.agent_sequence_index,
-								"findings_count": pending_cp.findings_count,
-								"findings_by_severity": pending_cp.findings_by_severity or {},
-								"agent_summary": (pending_cp.agent_summary or "")[:2000],
-								"key_findings": pending_cp.key_findings or [],
-								"next_agent": pending_cp.next_agent,
-								"remaining_agents": pending_cp.remaining_agents or [],
-								"recommendations": pending_cp.recommendations or [],
-							}
-						})
+						cp_type = getattr(pending_cp, "checkpoint_type", "post_agent") or "post_agent"
+						if cp_type == "pre_agent":
+							await ws.send_json({
+								"type": "pre_agent_checkpoint",
+								"data": {
+									"checkpoint_id": pending_cp.id,
+									"next_agent": pending_cp.next_agent,
+									"agent_index": pending_cp.agent_sequence_index,
+									"planned_tools": pending_cp.planned_tools or [],
+									"cumulative_summary": (pending_cp.cumulative_summary or "")[:1000],
+									"remaining_agents": pending_cp.remaining_agents or [],
+								}
+							})
+						else:
+							await ws.send_json({
+								"type": "agent_checkpoint",
+								"data": {
+									"checkpoint_id": pending_cp.id,
+									"completed_agent": pending_cp.completed_agent,
+									"agent_index": pending_cp.agent_sequence_index,
+									"findings_count": pending_cp.findings_count,
+									"findings_by_severity": pending_cp.findings_by_severity or {},
+									"agent_summary": (pending_cp.agent_summary or "")[:2000],
+									"key_findings": pending_cp.key_findings or [],
+									"next_agent": pending_cp.next_agent,
+									"remaining_agents": pending_cp.remaining_agents or [],
+									"recommendations": pending_cp.recommendations or [],
+								}
+							})
 				except Exception as cp_err:
 					import traceback
 					print(f"[WS] Checkpoint query error: {cp_err}\n{traceback.format_exc()}")
+
+				# HIGH_RISK Tool Approval: notify Director when tool is paused
+				try:
+					from multi_agent_system.models.hitl_models import ToolApproval, ApprovalStatus
+					pending_ap = db.query(ToolApproval).filter(
+						ToolApproval.job_id == job_id,
+						ToolApproval.status == ApprovalStatus.pending,
+						ToolApproval.is_high_risk_review == True,
+					).order_by(ToolApproval.requested_at.desc()).first()
+					if pending_ap and pending_ap.id != last_tool_approval_id:
+						last_tool_approval_id = pending_ap.id
+						await ws.send_json({
+							"type": "high_risk_tool_approval",
+							"data": {
+								"approval_id": pending_ap.id,
+								"tool_name": pending_ap.tool_name,
+								"agent_name": pending_ap.agent_name,
+								"generated_args": pending_ap.arguments or {},
+								"reason": pending_ap.reason,
+							}
+						})
+				except Exception:
+					pass
 
 	except Exception as e:
 		# Connection closed or error
