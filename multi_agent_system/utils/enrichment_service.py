@@ -210,17 +210,25 @@ class EnrichmentService:
 
     @staticmethod
     def enrich(category: str, title: str, severity: str, evidence: dict) -> EnrichmentResult:
-        """Main entry point — try KB, then LLM, then safe fallback. Never raises."""
+        """Main entry point — try KB, then LLM (if enabled), then safe fallback. Never raises.
+
+        LLM enrichment is disabled by default (ENRICHMENT_LLM_ENABLED=false) because the local
+        LLM is already busy with agent planning/summarization during scans, causing timeouts and
+        slowing down all agents. The static KB covers 39 vulnerability types (~90% of findings).
+        Enable only for post-scan enrichment or when the LLM has dedicated capacity.
+        """
         # 1. Try static KB
         kb_result = StaticKBMatcher.match(category, title)
         if kb_result is not None:
             return kb_result
 
-        # 2. Try LLM
-        try:
-            return LLMEnricher.enrich(category, title, severity, evidence)
-        except Exception as e:
-            print(f"[EnrichmentService] LLM enrichment failed ({e}), using fallback", file=sys.stderr)
+        # 2. Try LLM only if explicitly enabled
+        llm_enabled = os.getenv("ENRICHMENT_LLM_ENABLED", "false").lower() in ("1", "true", "yes")
+        if llm_enabled:
+            try:
+                return LLMEnricher.enrich(category, title, severity, evidence)
+            except Exception as e:
+                print(f"[EnrichmentService] LLM enrichment failed ({e}), using fallback", file=sys.stderr)
 
         # 3. Safe fallback
         return EnrichmentService._safe_fallback(severity)
