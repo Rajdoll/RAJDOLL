@@ -1528,11 +1528,8 @@ async def test_ssrf_comprehensive(url: str, param: Optional[str] = None, auth_se
         ssrfmap_report = await run_ssrfmap_scan(url, param)
 
         if ssrfmap_report.get("status") == "error":
-            return {
-                "status": "error",
-                "message": ssrfmap_report.get("message", "SSRFmap execution failed"),
-                "data": {"ssrfmap": ssrfmap_report}
-            }
+            # SSRFmap failed (binary missing, no param, timeout) — fall back to manual testing
+            return await _test_ssrf_manual_backup(url, param, auth_session)
 
         findings = ssrfmap_report.get("findings", [])
         vulnerable = bool(findings)
