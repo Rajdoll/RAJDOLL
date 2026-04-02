@@ -32,7 +32,7 @@ services:
       - katana-mcp
   worker:
     build: .
-    command: ["celery", "-A", "multi_agent_system.tasks.celery_app.celery_app", "worker", "-l", "INFO"]
+    command: ["celery", "-A", "multi_agent_system.tasks.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=1"]
     env_file:
       - .env
     extra_hosts:
