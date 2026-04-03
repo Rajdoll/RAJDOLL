@@ -237,5 +237,11 @@ services:
     environment:
       - LOG_LEVEL=INFO
 
-  # NOTE: Juice Shop removed - use external container (owaspjuiceshop) instead
-  # Target URL should be: http://host.docker.internal:3000 or configure network
+  juice-shop:
+    image: bkimminich/juice-shop
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+
+  # NOTE: juice-shop is now managed here with auto-restart.
+  # Scan target: http://juice-shop:3000 (internal) or http://localhost:3000 (host)
