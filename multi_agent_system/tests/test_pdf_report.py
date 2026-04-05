@@ -20,7 +20,8 @@ def test_md_converts_ordered_list():
     from api.routes.pdf_report import _md
     result = str(_md("1. First step\n2. Second step"))
     assert "<ol>" in result
-    assert "<li>First step</li>" in result
+    assert "<li>" in result
+    assert "First step" in result
     assert "1." not in result
 
 
@@ -35,3 +36,9 @@ def test_md_returns_markup_instance():
     from markupsafe import Markup
     result = _md("hello")
     assert isinstance(result, Markup)
+
+
+def test_md_nl2br_converts_newlines():
+    from api.routes.pdf_report import _md
+    result = str(_md("line one\nline two"))
+    assert "<br" in result   # nl2br extension converts \n to <br />
