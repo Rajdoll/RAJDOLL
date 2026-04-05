@@ -194,7 +194,7 @@
 
 {% if final_analysis %}
 <h2>Key Findings Narrative</h2>
-<p style="font-size:9.5pt; white-space: pre-line;">{{ final_analysis }}</p>
+<div class="narrative">{{ final_analysis | md }}</div>
 {% endif %}
 
 {% if top_findings %}
@@ -283,13 +283,13 @@
     &nbsp;
     {% if f.enrichment_source == 'static_kb' %}<span class="src-kb">KB</span>
     {% elif f.enrichment_source == 'llm' %}<span class="src-llm">AI</span>
-    {% else %}<span class="src-fallback">—</span>{% endif %}
+    {% else %}<span class="src-fallback">GEN</span>{% endif %}
   </div>
 
   {% if f.explanation %}
   <div class="finding-section">
     <h3>Description</h3>
-    <p>{{ f.explanation }}</p>
+    <div>{{ f.explanation | md }}</div>
   </div>
   {% endif %}
 
@@ -301,7 +301,7 @@
   {% if f.remediation %}
   <div class="finding-section">
     <h3>Remediation</h3>
-    <div class="remediation-text">{{ f.remediation }}</div>
+    <div class="remediation-text">{{ f.remediation | md }}</div>
   </div>
   {% endif %}
 
