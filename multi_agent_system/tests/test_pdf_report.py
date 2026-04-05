@@ -50,7 +50,7 @@ def test_md_filter_registered_on_env():
     from jinja2 import Environment, FileSystemLoader, select_autoescape
     from api.routes.pdf_report import _md
 
-    template_dir = Path("multi_agent_system/templates")
+    template_dir = Path(__file__).resolve().parent.parent / "templates"
     env = Environment(
         loader=FileSystemLoader(str(template_dir)),
         autoescape=select_autoescape(["html"]),
@@ -69,7 +69,7 @@ def test_template_renders_markdown_fields():
     from jinja2 import Environment, FileSystemLoader, select_autoescape
     from api.routes.pdf_report import _md
 
-    template_path = Path("multi_agent_system/templates/report.html.j2")
+    template_path = Path(__file__).resolve().parent.parent / "templates" / "report.html.j2"
     env = Environment(
         loader=FileSystemLoader(str(template_path.parent)),
         autoescape=select_autoescape(["html"]),
