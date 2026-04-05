@@ -98,7 +98,19 @@
   }
 
   /* ── Remediation ────────────────────────────────────── */
-  .remediation-text { font-size: 9.5pt; white-space: pre-line; line-height: 1.6; }
+  .remediation-text { font-size: 9.5pt; line-height: 1.6; }
+
+  /* ── Markdown-rendered content ──────────────────────── */
+  .narrative { font-size: 9.5pt; line-height: 1.6; }
+
+  .finding-section ol, .finding-section ul,
+  .narrative ol, .narrative ul {
+    margin: 4px 0; padding-left: 18px; font-size: 9.5pt;
+  }
+  .finding-section li, .narrative li { margin: 2px 0; }
+  .finding-section p,  .narrative p  { margin: 0 0 6px; }
+  .finding-section strong, .narrative strong { font-weight: bold; }
+  .finding-section em,     .narrative em     { font-style: italic; }
 
   /* ── Refs list ──────────────────────────────────────── */
   .refs-list { list-style: none; padding: 0; margin: 4px 0 0; }
