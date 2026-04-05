@@ -15,6 +15,17 @@ from typing import Dict, Any, List
 from multi_agent_system.core.db import get_db
 from multi_agent_system.models.models import Job, Finding, JobAgent, SharedContext
 
+import markdown as _markdown
+from markupsafe import Markup
+
+
+def _md(text) -> Markup:
+    """Convert markdown text to safe HTML for Jinja2 templates."""
+    if not text:
+        return Markup("")
+    return Markup(_markdown.markdown(str(text), extensions=["nl2br"]))
+
+
 router = APIRouter()
 
 _TEMPLATE_PATH = Path(__file__).parent.parent.parent / "multi_agent_system" / "templates" / "report.html.j2"
@@ -59,7 +70,11 @@ def _scan_duration(job: Job) -> str:
 def _agent_duration(agent: JobAgent) -> str:
     if agent.started_at and agent.finished_at:
         delta = (agent.finished_at - agent.started_at).total_seconds()
+        if delta < 1:
+            return "< 1s"
         m, s = divmod(int(delta), 60)
+        if m == 0:
+            return f"{s}s"
         return f"{m}m {s}s"
     return "—"
 
