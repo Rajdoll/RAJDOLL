@@ -20,7 +20,10 @@ from markupsafe import Markup
 
 
 def _md(text) -> Markup:
-    """Convert markdown text to safe HTML for Jinja2 templates."""
+    """Convert markdown text to safe HTML for Jinja2 templates.
+
+    Input must be trusted (internal LLM/KB output only — not user HTTP input).
+    """
     if not text:
         return Markup("")
     return Markup(_markdown.markdown(str(text), extensions=["nl2br"]))
