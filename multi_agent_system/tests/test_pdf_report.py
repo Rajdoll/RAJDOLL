@@ -42,3 +42,22 @@ def test_md_nl2br_converts_newlines():
     from api.routes.pdf_report import _md
     result = str(_md("line one\nline two"))
     assert "<br" in result   # nl2br extension converts \n to <br />
+
+
+def test_md_filter_registered_on_env():
+    """Verify _md is registered as a Jinja2 filter so templates can use | md."""
+    from pathlib import Path
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    from api.routes.pdf_report import _md
+
+    template_dir = Path("multi_agent_system/templates")
+    env = Environment(
+        loader=FileSystemLoader(str(template_dir)),
+        autoescape=select_autoescape(["html"]),
+    )
+    env.filters["md"] = _md
+    assert "md" in env.filters
+    # Verify filter works inside a template expression
+    tmpl = env.from_string("{{ text | md }}")
+    result = tmpl.render(text="**bold**")
+    assert "<strong>bold</strong>" in result

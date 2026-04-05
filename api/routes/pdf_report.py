@@ -188,6 +188,7 @@ def _render_pdf(job_id: int) -> bytes:
         loader=FileSystemLoader(str(_TEMPLATE_PATH.parent)),
         autoescape=select_autoescape(["html"]),
     )
+    env.filters["md"] = _md
     template = env.get_template(_TEMPLATE_PATH.name)
     html_content = template.render(
         job_id=job_id,
