@@ -381,3 +381,21 @@ class TestReportTemplate:
         )
 
         assert "Out-of-Scope Discovery" not in html
+
+
+# ── Report context assembly (pdf_report._render_pdf) ────
+
+class TestReportContextAssembly:
+    def test_render_pdf_has_scope_whitelist(self):
+        """_render_pdf must pass scope_whitelist to template.render()."""
+        import inspect
+        from api.routes.pdf_report import _render_pdf
+        source = inspect.getsource(_render_pdf)
+        assert "scope_whitelist" in source
+
+    def test_render_pdf_has_oos_findings(self):
+        """_render_pdf must pass oos_findings to template.render()."""
+        import inspect
+        from api.routes.pdf_report import _render_pdf
+        source = inspect.getsource(_render_pdf)
+        assert "oos_findings" in source
