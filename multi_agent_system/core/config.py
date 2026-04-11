@@ -82,7 +82,7 @@ class Settings:
     hitl_mode: str = field(default_factory=lambda: os.getenv("HITL_MODE", "off"))  # off | agent | tool
     tool_hitl_timeout: int = _get_env_int("TOOL_APPROVAL_TIMEOUT", 600)
     auto_approve_tool_agents: List[str] = field(default_factory=list)
-
+    scan_profile: str = field(default_factory=lambda: os.getenv("SCAN_PROFILE", "lab"))
 
     def __post_init__(self):
         base_hitl = _env_flag("HITL_ENABLED", True)
@@ -110,4 +110,21 @@ HIGH_RISK_TOOLS: frozenset[str] = frozenset({
     "run_nikto",
     "run_nmap",
     "test_tls_configuration",
+})
+
+# Scan profile defaults — determines safe defaults when not explicitly set per-scan
+# "lab"  → HITL=off, ADAPTIVE=aggressive (Juice Shop / CI)
+# "vdp"  → HITL=agent, ADAPTIVE=balanced (real target VDP)
+SCAN_PROFILE_DEFAULTS: dict[str, dict[str, str]] = {
+    "lab": {"hitl_mode": "off", "adaptive_mode": "aggressive"},
+    "vdp": {"hitl_mode": "agent", "adaptive_mode": "balanced"},
+}
+
+# Tools that violate single-target scope by design.
+# Hard-disabled regardless of LLM planner choice or Director directive.
+SCOPE_VIOLATION_TOOLS: frozenset[str] = frozenset({
+    "enumerate_active_subdomains",       # amass/subfinder/DNS brute
+    "test_subdomain_takeover",            # CNAME takeover check
+    "comprehensive_domain_recon",         # umbrella: DNS + WHOIS + subdomain
+    "enumerate_applications",             # vhost/application enumeration
 })
