@@ -156,3 +156,81 @@ class TestShouldRunToolScopeGate:
         from multi_agent_system.agents.base_agent import BaseAgent
         source = inspect.getsource(BaseAgent.should_run_tool)
         assert "SCOPE_VIOLATION_TOOLS" in source
+
+
+from urllib.parse import urlparse
+
+
+# ── _extract_hostname utility ────────────────────────────
+
+def _extract_hostname(value):
+    """Standalone copy of the extraction logic for testing."""
+    if not value:
+        return None
+    try:
+        v = str(value)
+        parsed = urlparse(v if "://" in v else f"http://{v}")
+        return (parsed.hostname or "").lower() or None
+    except Exception:
+        return None
+
+
+class TestExtractHostname:
+    def test_full_url(self):
+        assert _extract_hostname("https://target.bssn.go.id/login") == "target.bssn.go.id"
+
+    def test_url_with_port(self):
+        assert _extract_hostname("https://target.bssn.go.id:8443/admin") == "target.bssn.go.id"
+
+    def test_bare_hostname(self):
+        assert _extract_hostname("target.bssn.go.id") == "target.bssn.go.id"
+
+    def test_empty_returns_none(self):
+        assert _extract_hostname("") is None
+        assert _extract_hostname(None) is None
+
+
+# ── URL arg scope check ─────────────────────────────────
+
+class TestUrlArgScopeCheck:
+    URL_ARG_NAMES = ("url", "target_url", "target", "base_url", "domain", "host")
+
+    def _check_args_in_scope(self, guard, args):
+        """Return True if all URL-like args are in scope."""
+        for arg_name in self.URL_ARG_NAMES:
+            if arg_name not in args:
+                continue
+            host = _extract_hostname(str(args[arg_name]))
+            if host is None:
+                continue
+            if not guard.is_host_allowed(host):
+                return False
+        return True
+
+    def test_in_scope_passes(self):
+        from multi_agent_system.core.security_guards import SecurityGuardRails
+        guard = SecurityGuardRails()
+        guard.whitelist_domains = ["target.bssn.go.id"]
+        args = {"url": "https://target.bssn.go.id/search?q=test"}
+        assert self._check_args_in_scope(guard, args) is True
+
+    def test_out_of_scope_rejected(self):
+        from multi_agent_system.core.security_guards import SecurityGuardRails
+        guard = SecurityGuardRails()
+        guard.whitelist_domains = ["target.bssn.go.id"]
+        args = {"url": "https://dev.target.bssn.go.id/api"}
+        assert self._check_args_in_scope(guard, args) is False
+
+    def test_base_url_checked(self):
+        from multi_agent_system.core.security_guards import SecurityGuardRails
+        guard = SecurityGuardRails()
+        guard.whitelist_domains = ["target.bssn.go.id"]
+        args = {"base_url": "https://evil.com/"}
+        assert self._check_args_in_scope(guard, args) is False
+
+    def test_source_code_has_host_check(self):
+        """_before_tool_execution must contain URL host enforcement."""
+        import inspect
+        from multi_agent_system.agents.base_agent import BaseAgent
+        source = inspect.getsource(BaseAgent._before_tool_execution)
+        assert "is_host_allowed" in source
