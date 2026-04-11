@@ -12,6 +12,7 @@ Last Updated: December 14, 2025
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import hashlib
 import re
 from dataclasses import dataclass
@@ -89,6 +90,21 @@ class SecurityGuardRails:
         # Load default whitelist
         self._load_default_whitelist()
     
+    # Internal hosts always allowed (MCP containers use loopback)
+    INTERNAL_HOSTS: frozenset = frozenset({"localhost", "127.0.0.1"})
+
+    def is_host_allowed(self, host: str | None) -> bool:
+        """Check if hostname matches whitelist (exact or fnmatch glob)."""
+        if not host:
+            return False
+        host = host.lower().strip()
+        if host in self.INTERNAL_HOSTS:
+            return True
+        for pattern in self.whitelist_domains:
+            if fnmatch.fnmatch(host, pattern.lower().strip()):
+                return True
+        return False
+
     def _load_default_whitelist(self):
         """Load whitelist from ALLOWED_DOMAINS env var (comma-separated).
 
@@ -155,24 +171,9 @@ class SecurityGuardRails:
         return True
     
     def is_whitelisted(self, domain: str) -> bool:
-        """
-        Check if domain is in whitelist
-        
-        Supports exact match or subdomain match
-        """
-        # Remove port if present
-        domain = domain.split(':')[0]
-        
-        # Exact match
-        if domain in self.whitelist_domains:
-            return True
-        
-        # Subdomain match (e.g., api.example.com matches example.com)
-        for allowed in self.whitelist_domains:
-            if domain.endswith(f".{allowed}") or domain == allowed:
-                return True
-        
-        return False
+        """Check if domain is in whitelist. Delegates to is_host_allowed()."""
+        domain = domain.split(':')[0]  # Remove port if present
+        return self.is_host_allowed(domain)
     
     def add_to_whitelist(self, domain: str, auth_token: str) -> bool:
         """
