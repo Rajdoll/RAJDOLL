@@ -118,6 +118,14 @@ def _render_pdf(job_id: int) -> bytes:
             elif isinstance(ctx.value, dict):
                 final_analysis = ctx.value.get("text", "") or str(ctx.value)
 
+        # Load OSINT data for out-of-scope findings
+        osint_ctx = (
+            db.query(SharedContext)
+            .filter(SharedContext.job_id == job_id, SharedContext.key == "osint")
+            .one_or_none()
+        )
+        osint_data = osint_ctx.value if osint_ctx and osint_ctx.value else {}
+
     # Build findings list (normalized)
     findings: list[dict] = []
     for f in findings_db:
@@ -183,6 +191,24 @@ def _render_pdf(job_id: int) -> bytes:
         for a in agents_db
     ]
 
+    # Scope enforcement: whitelist and out-of-scope OSINT findings
+    from multi_agent_system.core.security_guards import security_guard
+    scope_whitelist = sorted(security_guard.whitelist_domains)
+
+    oos_findings: dict = {"subdomains": [], "emails": [], "urls": []}
+    if isinstance(osint_data, dict):
+        findings_data = osint_data.get("findings", osint_data)
+        oos_findings["subdomains"] = findings_data.get("subdomains_out_of_scope", [])
+        oos_findings["emails"] = findings_data.get("emails_out_of_scope", [])
+        for field in ("exposed_documents", "admin_panels", "directory_listings",
+                      "backup_files", "pastebin_mentions"):
+            for url in findings_data.get(f"{field}_out_of_scope", []):
+                oos_findings["urls"].append({
+                    "url": url,
+                    "category": field.replace("_", " ").title()
+                })
+    has_oos = any(oos_findings[k] for k in oos_findings)
+
     # Render Jinja2 template
     env = Environment(
         loader=FileSystemLoader(str(_TEMPLATE_PATH.parent)),
@@ -203,6 +229,8 @@ def _render_pdf(job_id: int) -> bytes:
         wstg_categories=wstg_categories,
         enrichment_stats=enrichment_stats,
         agents=agents_list,
+        scope_whitelist=scope_whitelist,
+        oos_findings=oos_findings if has_oos else None,
     )
 
     # Convert to PDF
