@@ -716,6 +716,23 @@ class Orchestrator:
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
+	def _build_scope_context_block(self) -> str:
+		"""Build scope constraints block for LLM planning context (Layer 1)."""
+		from .core.config import SCOPE_VIOLATION_TOOLS
+		from .core.security_guards import security_guard
+		allowed = ", ".join(sorted(security_guard.whitelist_domains)) or "(none — all hosts allowed)"
+		disabled = ", ".join(sorted(SCOPE_VIOLATION_TOOLS))
+		return (
+			"\n## SCOPE CONSTRAINTS (MANDATORY)\n\n"
+			f"**Allowed target hosts:** {allowed}\n"
+			"- All url/target_url/target/base_url/domain/host arguments MUST resolve\n"
+			"  to one of these hosts (exact match or glob pattern).\n"
+			"- Tool calls with hostnames outside this list will be rejected at runtime.\n\n"
+			f"**Disabled tools (scope violation — do not select):**\n{disabled}\n"
+			"- These tools perform subdomain/host discovery outside research scope.\n"
+			"- Selecting them has no effect; they are silently skipped.\n"
+		)
+
 	def _inject_planner_context(self, shared_ctx: Dict[str, Any], agent_name: Optional[str] = None) -> Dict[str, Any]:
 		"""Inject cumulative summary + task tree + director directives into shared context."""
 		from .utils.directive_parser import format_for_llm
@@ -730,6 +747,8 @@ class Orchestrator:
 			if directives:
 				ctx[f"director_directive_{agent_name}"] = directives
 				ctx["director_instructions_text"] = format_for_llm(directives)
+		# Layer 1: Scope enforcement via LLM prompt
+		ctx["scope_constraints"] = self._build_scope_context_block()
 		return ctx
 
 	def _get_tool_plan_for_agent(self, agent_name: str) -> Optional[Dict[str, Any]]:

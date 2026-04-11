@@ -234,3 +234,14 @@ class TestUrlArgScopeCheck:
         from multi_agent_system.agents.base_agent import BaseAgent
         source = inspect.getsource(BaseAgent._before_tool_execution)
         assert "is_host_allowed" in source
+
+
+# ── LLM scope context injection ──────────────────────────
+
+class TestScopeContextBlock:
+    def test_inject_planner_context_has_scope_block(self):
+        """_inject_planner_context must include scope constraints."""
+        import inspect
+        from multi_agent_system.orchestrator import Orchestrator
+        source = inspect.getsource(Orchestrator._inject_planner_context)
+        assert "SCOPE CONSTRAINTS" in source or "_build_scope_context_block" in source
