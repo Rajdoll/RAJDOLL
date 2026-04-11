@@ -245,3 +245,38 @@ class TestScopeContextBlock:
         from multi_agent_system.orchestrator import Orchestrator
         source = inspect.getsource(Orchestrator._inject_planner_context)
         assert "SCOPE CONSTRAINTS" in source or "_build_scope_context_block" in source
+
+
+# ── OSINT findings partition ─────────────────────────────
+
+class TestOsintPartition:
+    def test_subdomains_partitioned(self):
+        from multi_agent_system.core.security_guards import SecurityGuardRails
+        guard = SecurityGuardRails()
+        guard.whitelist_domains = ["target.bssn.go.id"]
+
+        subs = ["target.bssn.go.id", "api.target.bssn.go.id", "dev.target.bssn.go.id"]
+        in_scope = [s for s in subs if guard.is_host_allowed(s.lower())]
+        out_scope = [s for s in subs if not guard.is_host_allowed(s.lower())]
+
+        assert in_scope == ["target.bssn.go.id"]
+        assert set(out_scope) == {"api.target.bssn.go.id", "dev.target.bssn.go.id"}
+
+    def test_emails_partitioned_by_domain(self):
+        from multi_agent_system.core.security_guards import SecurityGuardRails
+        guard = SecurityGuardRails()
+        guard.whitelist_domains = ["target.bssn.go.id"]
+
+        emails = ["admin@target.bssn.go.id", "user@other.bssn.go.id"]
+        in_scope = [e for e in emails if guard.is_host_allowed(e.split("@")[-1])]
+        out_scope = [e for e in emails if not guard.is_host_allowed(e.split("@")[-1])]
+
+        assert in_scope == ["admin@target.bssn.go.id"]
+        assert out_scope == ["user@other.bssn.go.id"]
+
+    def test_handle_osint_has_partition_logic(self):
+        """_handle_osint must contain out_of_scope partitioning."""
+        import inspect
+        from multi_agent_system.agents.reconnaissance_agent import ReconnaissanceAgent
+        source = inspect.getsource(ReconnaissanceAgent._handle_osint)
+        assert "out_of_scope" in source
