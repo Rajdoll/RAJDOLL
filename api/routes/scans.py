@@ -19,6 +19,25 @@ from multi_agent_system.core.security_guards import (
 	SecurityPolicyViolation,
 	InvalidAuthTokenError
 )
+import multi_agent_system.core.config as _config
+from multi_agent_system.core.config import SCAN_PROFILE_DEFAULTS
+from typing import Optional
+
+
+def _resolve_hitl_mode(request_hitl: Optional[str]) -> str:
+	"""Resolve HITL mode: per-scan explicit > SCAN_PROFILE > fallback."""
+	if request_hitl:
+		return request_hitl
+	profile = _config.settings.scan_profile
+	return SCAN_PROFILE_DEFAULTS.get(profile, {}).get("hitl_mode", "off")
+
+
+def _resolve_adaptive_mode(request_adaptive: Optional[str]) -> str:
+	"""Resolve adaptive mode: per-scan explicit > SCAN_PROFILE > fallback."""
+	if request_adaptive:
+		return request_adaptive
+	profile = _config.settings.scan_profile
+	return SCAN_PROFILE_DEFAULTS.get(profile, {}).get("adaptive_mode", "aggressive")
 
 
 router = APIRouter()
@@ -26,9 +45,12 @@ router = APIRouter()
 
 @router.post("/scans", response_model=ScanStatusResponse)
 async def create_scan(req: CreateScanRequest):
-	# Auto-add whitelist_domain if provided (convenience for VDP scans)
-	if req.whitelist_domain:
-		security_guard.whitelist_domains.append(req.whitelist_domain)
+	# Auto-add whitelist_domain(s) — supports single string or list
+	# Safe-Change Rule #6: append BEFORE validate_target
+	for domain in req.get_whitelist_list():
+		d = domain.lower().strip()
+		if d and d not in security_guard.whitelist_domains:
+			security_guard.whitelist_domains.append(d)
 
 	# 🔒 SECURITY VALIDATION: Validate target before creating scan
 	try:
@@ -119,6 +141,33 @@ async def create_scan(req: CreateScanRequest):
 	return get_status(job.id)
 
 
+@router.get("/scans", response_model=list[ScanStatusResponse])
+def list_scans(limit: int = 20):
+	"""Return recent scans ordered by newest first (used by frontend auto-restore)."""
+	with get_db() as db:
+		jobs = db.query(Job).order_by(Job.id.desc()).limit(limit).all()
+		result = []
+		for job in jobs:
+			agents = db.query(JobAgent).filter(JobAgent.job_id == job.id).all()
+			agent_states = [
+				JobAgentState(
+					agent_name=a.agent_name,
+					status=a.status.value if hasattr(a.status, 'value') else str(a.status),
+					started_at=a.started_at,
+					finished_at=a.finished_at,
+					error=a.error,
+				)
+				for a in agents
+			]
+			result.append(ScanStatusResponse(
+				job_id=job.id,
+				status=job.status.value if hasattr(job.status, 'value') else str(job.status),
+				agents=agent_states,
+				summary=job.summary,
+			))
+		return result
+
+
 @router.get("/scans/{job_id}", response_model=ScanStatusResponse)
 def get_status(job_id: int):
 	with get_db() as db:
@@ -126,6 +175,23 @@ def get_status(job_id: int):
 		if not job:
 			raise HTTPException(status_code=404, detail="Job not found")
 		agents = db.query(JobAgent).filter(JobAgent.job_id == job_id).all()
+
+		# Auto-heal: if all agents are in terminal states but job is still 'running',
+		# compute and persist the correct final status (handles worker crash / LLM hang).
+		job_status_str = job.status.value if hasattr(job.status, 'value') else str(job.status)
+		if job_status_str == "running" and agents:
+			_terminal = {AgentStatus.completed, AgentStatus.failed, AgentStatus.skipped}
+			if all(a.status in _terminal for a in agents):
+				report_agent = next(
+					(a for a in agents if a.agent_name == "ReportGenerationAgent"), None
+				)
+				report_ok = bool(report_agent and report_agent.status == AgentStatus.completed)
+				any_failed = any(a.status == AgentStatus.failed for a in agents)
+				job.status = JobStatus.completed if (report_ok or not any_failed) else JobStatus.failed
+				job.updated_at = datetime.utcnow()
+				db.commit()
+				job_status_str = job.status.value
+
 		agent_states = [
 			JobAgentState(
 				agent_name=a.agent_name,
@@ -136,7 +202,7 @@ def get_status(job_id: int):
 			)
 			for a in agents
 		]
-		return ScanStatusResponse(job_id=job.id, status=job.status.value if hasattr(job.status, 'value') else str(job.status), agents=agent_states, summary=job.summary)
+		return ScanStatusResponse(job_id=job.id, status=job_status_str, agents=agent_states, summary=job.summary)
 
 
 @router.post("/scans/{job_id}/cancel")

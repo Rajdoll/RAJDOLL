@@ -82,3 +82,66 @@ class TestIsHostAllowed:
         guard = self._make_guard(["target.bssn.go.id"])
         assert guard.is_host_allowed("localhost") is True
         assert guard.is_host_allowed("127.0.0.1") is True
+
+
+# ── Whitelist domain normalization ───────────────────────
+
+class TestWhitelistNormalization:
+    def test_string_to_list(self):
+        from api.schemas.schemas import CreateScanRequest
+        req = CreateScanRequest(target="http://example.com", whitelist_domain="example.com")
+        assert req.get_whitelist_list() == ["example.com"]
+
+    def test_list_passthrough(self):
+        from api.schemas.schemas import CreateScanRequest
+        req = CreateScanRequest(
+            target="http://example.com",
+            whitelist_domain=["a.com", "b.com"]
+        )
+        assert req.get_whitelist_list() == ["a.com", "b.com"]
+
+    def test_none_returns_empty(self):
+        from api.schemas.schemas import CreateScanRequest
+        req = CreateScanRequest(target="http://example.com")
+        assert req.get_whitelist_list() == []
+
+
+# ── Profile resolution ───────────────────────────────────
+
+class TestProfileResolution:
+    def test_resolve_hitl_mode_explicit_wins(self):
+        from api.routes.scans import _resolve_hitl_mode
+        assert _resolve_hitl_mode("tool") == "tool"
+
+    def test_resolve_hitl_mode_lab_default(self):
+        from api.routes.scans import _resolve_hitl_mode
+        with patch.dict(os.environ, {"SCAN_PROFILE": "lab"}):
+            # Need to reimport settings to pick up new env
+            from multi_agent_system.core import config
+            config.settings = config.Settings()
+            from api.routes.scans import _resolve_hitl_mode
+            assert _resolve_hitl_mode(None) == "off"
+
+    def test_resolve_hitl_mode_vdp_default(self):
+        from api.routes.scans import _resolve_hitl_mode
+        with patch.dict(os.environ, {"SCAN_PROFILE": "vdp"}):
+            from multi_agent_system.core import config
+            config.settings = config.Settings()
+            from api.routes.scans import _resolve_hitl_mode
+            assert _resolve_hitl_mode(None) == "agent"
+
+    def test_resolve_adaptive_mode_vdp_default(self):
+        from api.routes.scans import _resolve_adaptive_mode
+        with patch.dict(os.environ, {"SCAN_PROFILE": "vdp"}):
+            from multi_agent_system.core import config
+            config.settings = config.Settings()
+            from api.routes.scans import _resolve_adaptive_mode
+            assert _resolve_adaptive_mode(None) == "balanced"
+
+    def test_resolve_adaptive_mode_fallback(self):
+        from api.routes.scans import _resolve_adaptive_mode
+        with patch.dict(os.environ, {"SCAN_PROFILE": "unknown"}):
+            from multi_agent_system.core import config
+            config.settings = config.Settings()
+            from api.routes.scans import _resolve_adaptive_mode
+            assert _resolve_adaptive_mode(None) == "aggressive"
