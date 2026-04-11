@@ -280,3 +280,104 @@ class TestOsintPartition:
         from multi_agent_system.agents.reconnaissance_agent import ReconnaissanceAgent
         source = inspect.getsource(ReconnaissanceAgent._handle_osint)
         assert "out_of_scope" in source
+
+
+from pathlib import Path
+
+
+# ── Report template scope rendering ──────────────────────
+
+class TestReportTemplate:
+    def test_template_has_scope_row(self):
+        template_path = Path(__file__).resolve().parent.parent / "templates" / "report.html.j2"
+        content = template_path.read_text()
+        assert "scope_whitelist" in content
+
+    def test_template_has_oos_section(self):
+        template_path = Path(__file__).resolve().parent.parent / "templates" / "report.html.j2"
+        content = template_path.read_text()
+        assert "oos_findings" in content
+
+    def test_template_renders_with_oos(self):
+        """Template renders OOS section when oos_findings is provided."""
+        from jinja2 import Environment, FileSystemLoader
+        import markdown
+
+        def _md(text):
+            if not text:
+                return text
+            return markdown.markdown(str(text))
+
+        template_dir = Path(__file__).resolve().parent.parent / "templates"
+        env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=False)
+        env.filters["md"] = _md
+        tmpl = env.get_template("report.html.j2")
+
+        fake_finding = {
+            "ref": "F-001", "title": "Test", "severity": "HIGH",
+            "wstg_id": "WSTG-INPV-05", "cwe_id": "CWE-89",
+            "evidence": "test", "explanation": "test", "remediation": "test",
+            "cvss_score_v4": 9.3, "references": [], "agent_name": "Test",
+            "enrichment_source": "fallback",
+        }
+        oos = {
+            "subdomains": ["api.target.bssn.go.id", "dev.target.bssn.go.id"],
+            "emails": ["user@other.bssn.go.id"],
+            "urls": [{"url": "https://staging.target.bssn.go.id/admin", "category": "Admin Panels"}],
+        }
+
+        html = tmpl.render(
+            job_id=1, target="https://target.bssn.go.id",
+            scan_date="2026-04-11", scan_duration="1h",
+            total_findings=1, final_analysis="Summary.",
+            findings=[fake_finding], top_findings=[fake_finding],
+            sev_counts={"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0, "INFO": 0},
+            wstg_categories={"WSTG-INPV": 1},
+            enrichment_stats={"static_kb": 0, "llm": 0, "fallback": 1},
+            agents=[{"agent_name": "TestAgent", "status": "completed", "duration": "5m"}],
+            scope_whitelist=["target.bssn.go.id"],
+            oos_findings=oos,
+        )
+
+        assert "target.bssn.go.id" in html
+        assert "Out-of-Scope Discovery" in html
+        assert "api.target.bssn.go.id" in html
+        assert "user@other.bssn.go.id" in html
+
+    def test_template_renders_without_oos(self):
+        """Template does NOT render OOS section when oos_findings is None."""
+        from jinja2 import Environment, FileSystemLoader
+        import markdown
+
+        def _md(text):
+            if not text:
+                return text
+            return markdown.markdown(str(text))
+
+        template_dir = Path(__file__).resolve().parent.parent / "templates"
+        env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=False)
+        env.filters["md"] = _md
+        tmpl = env.get_template("report.html.j2")
+
+        fake_finding = {
+            "ref": "F-001", "title": "Test", "severity": "HIGH",
+            "wstg_id": "WSTG-INPV-05", "cwe_id": "CWE-89",
+            "evidence": "test", "explanation": "test", "remediation": "test",
+            "cvss_score_v4": 9.3, "references": [], "agent_name": "Test",
+            "enrichment_source": "fallback",
+        }
+
+        html = tmpl.render(
+            job_id=1, target="http://juice-shop:3000",
+            scan_date="2026-04-11", scan_duration="1h",
+            total_findings=1, final_analysis="Summary.",
+            findings=[fake_finding], top_findings=[fake_finding],
+            sev_counts={"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0, "INFO": 0},
+            wstg_categories={"WSTG-INPV": 1},
+            enrichment_stats={"static_kb": 0, "llm": 0, "fallback": 1},
+            agents=[{"agent_name": "TestAgent", "status": "completed", "duration": "5m"}],
+            scope_whitelist=["juice-shop"],
+            oos_findings=None,
+        )
+
+        assert "Out-of-Scope Discovery" not in html

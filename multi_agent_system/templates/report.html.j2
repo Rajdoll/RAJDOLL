@@ -149,6 +149,7 @@
     <tr><td>Duration</td><td>{{ scan_duration }}</td></tr>
     <tr><td>Total Findings</td><td><strong>{{ total_findings }}</strong></td></tr>
     <tr><td>Framework</td><td>OWASP WSTG 4.2</td></tr>
+    {% if scope_whitelist %}<tr><td>Scope</td><td>{{ scope_whitelist | join(', ') }}</td></tr>{% endif %}
   </table>
   <div><span class="cover-badge">CONFIDENTIAL</span></div>
 </div>
@@ -317,6 +318,52 @@
   {% endif %}
 </div>
 {% endfor %}
+
+{# ═══════════════════════════════ OUT-OF-SCOPE INFORMATIONAL ═══ #}
+{% if oos_findings %}
+<h1 class="section-break">5. Informational: Out-of-Scope Discovery</h1>
+<p style="font-size:9pt;color:#546e7a">
+  The following items were discovered through passive OSINT (certificate transparency,
+  search engine dorking, theHarvester) but reference hosts <strong>outside the declared
+  scan scope</strong>. No active testing was performed against these targets.
+</p>
+
+{% if oos_findings.subdomains %}
+<h2>Subdomains (Certificate Transparency &amp; theHarvester)</h2>
+<table>
+  <tr><th>Subdomain</th><th>Source</th></tr>
+  {% for sub in oos_findings.subdomains %}
+  <tr><td>{{ sub }}</td><td>crt.sh / theHarvester</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if oos_findings.emails %}
+<h2>Email Addresses</h2>
+<table>
+  <tr><th>Email</th><th>Source</th></tr>
+  {% for email in oos_findings.emails %}
+  <tr><td>{{ email }}</td><td>theHarvester</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if oos_findings.urls %}
+<h2>URLs Referencing Out-of-Scope Hosts</h2>
+<table>
+  <tr><th>URL</th><th>Category</th></tr>
+  {% for item in oos_findings.urls %}
+  <tr><td><a href="{{ item.url }}">{{ item.url }}</a></td><td>{{ item.category }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<p style="font-size:9pt;color:#78909c;margin-top:20px">
+  <em>These items are provided for situational awareness only. To include them in
+  active testing, add the relevant hostnames to <code>whitelist_domain</code>
+  and re-scan.</em>
+</p>
+{% endif %}
 
 {# ══════════════════════════════════════════════════ APPENDICES ═════ #}
 <h1 class="section-break">Appendix A — Methodology</h1>
