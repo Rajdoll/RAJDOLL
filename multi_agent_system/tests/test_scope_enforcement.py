@@ -145,3 +145,14 @@ class TestProfileResolution:
             config.settings = config.Settings()
             from api.routes.scans import _resolve_adaptive_mode
             assert _resolve_adaptive_mode(None) == "aggressive"
+
+
+# ── should_run_tool scope gate ───────────────────────────
+
+class TestShouldRunToolScopeGate:
+    def test_scope_violation_tool_rejected(self):
+        """should_run_tool must reject tools in SCOPE_VIOLATION_TOOLS."""
+        import inspect
+        from multi_agent_system.agents.base_agent import BaseAgent
+        source = inspect.getsource(BaseAgent.should_run_tool)
+        assert "SCOPE_VIOLATION_TOOLS" in source

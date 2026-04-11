@@ -890,6 +890,14 @@ class BaseAgent:
 		"""Centralized gating logic for MCP tools."""
 		import sys
 
+		# SCOPE ENFORCEMENT: hard-disable subdomain enumeration tools (Layer 2a)
+		# Cannot be overridden by Director INCLUDE, LLM planner, or HITL approval.
+		from ..core.config import SCOPE_VIOLATION_TOOLS
+		if tool_name in SCOPE_VIOLATION_TOOLS:
+			self.log("warning", f"[scope] tool '{tool_name}' rejected: in SCOPE_VIOLATION_TOOLS")
+			print(f"🚫 {self.agent_name}: Tool {tool_name} BLOCKED — scope violation (subdomain enum disabled)", file=sys.stderr, flush=True)
+			return False
+
 		# Director SKIP check — runs before all other checks
 		directive_key = f"director_directive_{self.agent_name}"
 		directives = self._shared_context_snapshot.get(directive_key, [])
