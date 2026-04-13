@@ -96,7 +96,7 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
                 self.log("warning", f"test_role_definitions failed: {e}")
 
         # Test registration process
-        if self.should_run_tool("test_registration_process"):
+        if self.should_run_tool("test_user_registration"):
             try:
                 res = await self.run_tool_with_timeout(
                     client.call_tool(
