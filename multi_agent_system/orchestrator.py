@@ -104,6 +104,13 @@ class Orchestrator:
 		self.cumulative_summary: str = ""
 		self._llm_summarizer: Optional[SimpleLLMClient] = None
 		self._pending_director_directives: Dict[str, list] = {}
+
+		# Timing tracking for scan_timing SharedContext
+		self._timing_autologin_s: float = 0.0
+		self._timing_llm_planning_s: float = 0.0
+		self._timing_summarization_s: float = 0.0
+		self._timing_autologin_detail: str = ""
+		self._timing_llm_planning_detail: str = ""
 		
 		# CRITICAL FIX: Write target URL to shared context at initialization
 		# This ensures all agents have access to the actual target URL
@@ -624,14 +631,17 @@ class Orchestrator:
 
 		summary = raw_text[:1500]  # fallback
 		if summarizer:
+			import time as _time
 			loop = self._ensure_event_loop()
 			try:
+				_t_sum_start = _time.monotonic()
 				summary = loop.run_until_complete(
 					asyncio.wait_for(
 						summarizer.summarize_agent_findings(agent_name, raw_text, task_tree),
 						timeout=300,  # 5 min max for summarization (Qwen 3-4B on 4GB VRAM)
 					)
 				)
+				self._timing_summarization_s += _time.monotonic() - _t_sum_start
 				print(f"[Orchestrator] Summarized {agent_name} ({len(summary)} chars)")
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: LLM summarization failed for {agent_name}: {e}")
@@ -796,6 +806,12 @@ class Orchestrator:
 
 	def run(self) -> None:
 		self._update_job_status(JobStatus.running)
+		# Record actual scan start time (not queue time) for accurate duration
+		with get_db() as db:
+			job = db.query(Job).get(self.job_id)
+			if job and not job.started_at:
+				job.started_at = datetime.utcnow()
+				db.commit()
 		self._refresh_shared_context_cache()
 		plan_with_recon = self._build_plan()
 		self._ensure_job_agents(plan_with_recon)
@@ -813,7 +829,9 @@ class Orchestrator:
 		# PHASE 1.5: Attempt auto-login to enable authenticated testing
 		# This creates an authenticated session that all subsequent agents can use
 		import warnings
+		import time as _time
 		warnings.warn("[Orchestrator] Phase 1.5: Attempting auto-login for authenticated testing...")
+		_t_autologin_start = _time.monotonic()
 		try:
 			target_url = self._get_target()
 			if target_url:
@@ -832,14 +850,19 @@ class Orchestrator:
 					warnings.warn(f"[Orchestrator] ✓ Auto-login successful as: {auth_session.get('username')}")
 					warnings.warn(f"[Orchestrator]   Auth method: {auth_session.get('auth_method')}")
 					warnings.warn(f"[Orchestrator]   JWT token: {'Present' if auth_session.get('jwt_token') else 'None'}")
+					self._timing_autologin_detail = f"Logged in as {auth_session.get('username', 'unknown')}"
 				else:
 					warnings.warn("[Orchestrator] ⚠ Auto-login failed - continuing with unauthenticated testing")
 					# Store empty auth session to indicate login was attempted
 					self.context_manager.write("authenticated_session", {"logged_in": False, "login_attempted": True})
+					self._timing_autologin_detail = "Login attempted but failed"
 		except Exception as e:
 			import traceback
 			warnings.warn(f"[Orchestrator] ⚠ Auto-login error: {e} - continuing with unauthenticated testing")
 			warnings.warn(f"[Orchestrator] Traceback: {traceback.format_exc()}")
+			self._timing_autologin_detail = f"Error: {str(e)[:80]}"
+		finally:
+			self._timing_autologin_s = _time.monotonic() - _t_autologin_start
 		
 		plan = self._remove_recon(plan_with_recon)
 		
@@ -860,6 +883,7 @@ class Orchestrator:
 					print("[Orchestrator] Calling LLM planner with 300s timeout...")
 					from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 					
+					_t_plan_start = _time.monotonic()
 					with ThreadPoolExecutor(max_workers=1) as executor:
 						future = executor.submit(self.llm_planner.plan_testing_strategy, recon_results)
 						try:
@@ -869,7 +893,9 @@ class Orchestrator:
 							print("[Orchestrator] ERROR: LLM planning timed out after 300s")
 							print("[Orchestrator] Falling back to default plan")
 							raise TimeoutError("LLM planning exceeded 5 minute timeout")
-					
+					self._timing_llm_planning_s = _time.monotonic() - _t_plan_start
+					self._timing_llm_planning_detail = f"{len(self.llm_test_plan.get('owasp_categories', []))} OWASP categories planned"
+
 					# Save LLM test plan metadata for tool selection
 					print(f"[Orchestrator] LLM test plan keys: {list(self.llm_test_plan.keys())}")
 					print(f"[Orchestrator] owasp_categories count: {len(self.llm_test_plan.get('owasp_categories', []))}")
