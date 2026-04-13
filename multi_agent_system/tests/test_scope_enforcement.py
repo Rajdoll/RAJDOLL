@@ -83,6 +83,18 @@ class TestIsHostAllowed:
         assert guard.is_host_allowed("localhost") is True
         assert guard.is_host_allowed("127.0.0.1") is True
 
+    def test_empty_whitelist_allows_all(self):
+        """Open mode: no whitelist configured → all hosts allowed (lab scans)."""
+        guard = self._make_guard([])
+        assert guard.is_host_allowed("juice-shop") is True
+        assert guard.is_host_allowed("any-host.example.com") is True
+
+    def test_nonempty_whitelist_restricts(self):
+        """Restricted mode: whitelist set → only matching hosts allowed."""
+        guard = self._make_guard(["target.bssn.go.id"])
+        assert guard.is_host_allowed("juice-shop") is False
+        assert guard.is_host_allowed("other.com") is False
+
 
 # ── Whitelist domain normalization ───────────────────────
 

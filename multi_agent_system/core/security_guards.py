@@ -94,11 +94,18 @@ class SecurityGuardRails:
     INTERNAL_HOSTS: frozenset = frozenset({"localhost", "127.0.0.1"})
 
     def is_host_allowed(self, host: str | None) -> bool:
-        """Check if hostname matches whitelist (exact or fnmatch glob)."""
+        """Check if hostname matches whitelist (exact or fnmatch glob).
+
+        Open mode: if whitelist_domains is empty, all hosts are allowed.
+        Restricted mode: only whitelisted hosts are allowed.
+        """
         if not host:
             return False
         host = host.lower().strip()
         if host in self.INTERNAL_HOSTS:
+            return True
+        # Open mode — no whitelist configured, allow all (lab/internal scans)
+        if not self.whitelist_domains:
             return True
         for pattern in self.whitelist_domains:
             if fnmatch.fnmatch(host, pattern.lower().strip()):
