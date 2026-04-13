@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, JSONResponse
@@ -241,7 +241,10 @@ def _render_pdf(job_id: int) -> bytes:
     html_content = template.render(
         job_id=job_id,
         target=job.target,
-        scan_date=job.created_at.strftime("%Y-%m-%d %H:%M UTC") if job.created_at else "N/A",
+        scan_date=(
+            (job.created_at + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M WIB")
+            if job.created_at else "N/A"
+        ),
         scan_duration=_scan_duration(job),
         total_findings=len(findings_sorted),
         final_analysis=final_analysis,
