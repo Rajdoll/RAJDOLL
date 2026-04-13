@@ -60,8 +60,10 @@ def _format_evidence(evidence) -> str:
 
 
 def _scan_duration(job: Job) -> str:
-    if job.updated_at and job.created_at:
-        delta = (job.updated_at - job.created_at).total_seconds()
+    start = job.started_at or job.created_at   # prefer actual start time
+    end = job.updated_at
+    if start and end:
+        delta = (end - start).total_seconds()
         h, rem = divmod(int(delta), 3600)
         m, s = divmod(rem, 60)
         if h:
