@@ -227,7 +227,7 @@
 
 <h2>Agents Executed</h2>
 <table>
-  <tr><th>Agent</th><th>Status</th><th>Duration</th></tr>
+  <tr><th>Agent</th><th>Status</th><th>Duration</th><th>Note</th></tr>
   {% for a in agents %}
   <tr>
     <td>{{ a.agent_name }}</td>
@@ -237,9 +237,30 @@
       {% else %}<span style="color:#546e7a">{{ a.status }}</span>{% endif %}
     </td>
     <td>{{ a.duration or '—' }}</td>
+    <td style="color:#546e7a;font-size:8.5pt;font-style:italic">{{ a.note or '' }}</td>
   </tr>
   {% endfor %}
 </table>
+
+{% if scan_timing and scan_timing.phases %}
+<h2>Scan Timeline</h2>
+<p style="font-size:9pt;color:#546e7a">Breakdown of where time was spent during the scan. "Agent execution" is the sum of all agent durations; remaining time is orchestration overhead.</p>
+<table>
+  <tr><th>Phase</th><th>Duration</th><th>Detail</th></tr>
+  {% for phase in scan_timing.phases %}
+  <tr>
+    <td><strong>{{ phase.name }}</strong></td>
+    <td>
+      {%- set s = phase.duration_s | int -%}
+      {%- set m = s // 60 -%}
+      {%- set sec = s % 60 -%}
+      {%- if m > 0 -%}{{ m }}m {{ sec }}s{%- else -%}{{ sec }}s{%- endif -%}
+    </td>
+    <td style="color:#546e7a">{{ phase.detail or '' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
 
 {# ══════════════════════════════════════════════════ RISK OVERVIEW ══ #}
 <h1 class="section-break">3. Risk Overview</h1>
