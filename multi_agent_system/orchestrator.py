@@ -1083,6 +1083,47 @@ class Orchestrator:
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
+		# Write scan timing breakdown to SharedContext for PDF report
+		try:
+			with get_db() as db:
+				agents_db = db.query(JobAgent).filter(JobAgent.job_id == self.job_id).all()
+				agent_sum_s = sum(
+					(a.finished_at - a.started_at).total_seconds()
+					for a in agents_db
+					if a.started_at and a.finished_at
+				)
+			scan_timing = {
+				"phases": [
+					{
+						"name": "Auto-login",
+						"duration_s": round(self._timing_autologin_s),
+						"detail": self._timing_autologin_detail or "Attempted",
+					},
+					{
+						"name": "LLM Planning",
+						"duration_s": round(self._timing_llm_planning_s),
+						"detail": self._timing_llm_planning_detail or "Strategy generation",
+					},
+					{
+						"name": "Summarization",
+						"duration_s": round(self._timing_summarization_s),
+						"detail": f"{len(agents_db)} agents summarized",
+					},
+					{
+						"name": "Agent execution",
+						"duration_s": round(agent_sum_s),
+						"detail": f"Sum of {len(agents_db)} agent durations",
+					},
+				],
+			}
+			self.context_manager.write("scan_timing", scan_timing)
+			print(f"[Orchestrator] scan_timing written: autologin={self._timing_autologin_s:.0f}s "
+				  f"planning={self._timing_llm_planning_s:.0f}s "
+				  f"summarization={self._timing_summarization_s:.0f}s "
+				  f"agents={agent_sum_s:.0f}s")
+		except Exception as e:
+			print(f"[Orchestrator] WARNING: Could not write scan_timing: {e}")
+
 		# Best-effort: ensure report generation runs even if circuit breaker
 		# or early loop exit prevented reaching the final report step.
 		if not self._is_job_cancelled():
