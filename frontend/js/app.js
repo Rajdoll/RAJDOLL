@@ -75,9 +75,16 @@ async function restoreLastScan() {
         jobIdDisplay.textContent = jobId;
         targetDisplay.textContent = lastScan.target || '-';
 
+        // Show panels before populating
+        statusPanel.style.display = 'block';
+        agentsPanel.style.display = 'block';
+        monitorPanel.style.display = 'block';
+        logsPanel.style.display = 'block';
+
         const status = lastScan.status || 'unknown';
         if (['queued', 'running'].includes(status)) {
             addLog(`[SYSTEM] Resuming monitoring of scan #${jobId}...`, 'info');
+            await loadHistoricalLogs(jobId);
             startStatusPolling();
         } else {
             // Fetch full status to show agents and buttons
@@ -86,10 +93,30 @@ async function restoreLastScan() {
                 const data = await detailResp.json();
                 updateStatusDisplay(data);
                 if (data.agents) updateAgentsDisplay(data.agents);
+                await loadHistoricalLogs(jobId);
+                addLog(`[SYSTEM] Restored scan #${jobId} (${status})`, 'info');
             }
         }
     } catch (e) {
         console.log('[restoreLastScan] No previous scan found:', e.message);
+    }
+}
+
+async function loadHistoricalLogs(jobId) {
+    try {
+        const resp = await fetch(`${API_BASE}/scans/${jobId}/events?limit=500`);
+        if (!resp.ok) return;
+        const events = await resp.json();
+        if (!events || events.length === 0) return;
+        addLog(`[SYSTEM] --- Log history for scan #${jobId} (${events.length} events) ---`, 'info');
+        for (const e of events) {
+            const agent = e.agent_name || 'SYSTEM';
+            const level = e.level || 'info';
+            addLog(`[${agent}] ${e.message}`, level);
+        }
+        addLog(`[SYSTEM] --- End of history ---`, 'info');
+    } catch (err) {
+        console.log('[loadHistoricalLogs] Failed:', err.message);
     }
 }
 
@@ -116,12 +143,6 @@ async function handleScanSubmit(e) {
         return;
     }
 
-    // Auto-extract domain for whitelist
-    let whitelistDomain = null;
-    try {
-        whitelistDomain = new URL(targetUrl).hostname;
-    } catch (_) {}
-
     // Build credentials payload if provided
     const credentials = (credUsername && credPassword)
         ? { username: credUsername, password: credPassword }
@@ -139,7 +160,6 @@ async function handleScanSubmit(e) {
         const payload = {
             target: targetUrl,
             full_wstg_coverage: true,
-            ...(whitelistDomain && { whitelist_domain: whitelistDomain }),
             ...(credentials && { credentials }),
         };
 
