@@ -294,76 +294,80 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_exposed_session_vars failed: {e}")
 
-        # OPSI B: CSRF Protection Testing
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="session-management-testing",
-                    tool="test_csrf_protection",
-                    args={"url": target, "form_data": {"test": "data"}}, auth_session=auth_data
-                ),
-                timeout=30
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                data = res.get("data", {})
-                if data.get("csrf_vulnerable") or not data.get("has_csrf_token_in_form"):
-                    self.add_finding("WSTG-SESS", "Missing or weak CSRF protection", severity="high", 
-                                   evidence={"csrf_token_present": data.get("has_csrf_token_in_form"),
-                                           "vulnerable": data.get("csrf_vulnerable")})
-                weak_samesite = [c for c in data.get("cookies_samesite_check", []) if c.get("samesite") == "Not Set"]
-                if weak_samesite:
-                    self.add_finding("WSTG-SESS", "Session cookies without SameSite protection", severity="medium",
-                                   evidence={"cookies": weak_samesite})
-        except Exception as e:
-            self.log("warning", f"test_csrf_protection failed: {e}")
-
-        # OPSI B: Session Puzzling/Variable Overwriting
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="session-management-testing",
-                    tool="test_session_puzzling",
-                    args={"url": target, "test_params": {"admin": "1", "role": "administrator"}}, auth_session=auth_data
-                ),
-                timeout=45
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                data = res.get("data", {})
-                if data.get("array_injection_vulnerable"):
-                    self.add_finding("WSTG-SESS", "Session puzzling: array injection possible", severity="high",
-                                   evidence={"array_injection": True})
-                reflected_vars = [t for t in data.get("parameter_pollution_tests", []) if t.get("reflected_in_response")]
-                if reflected_vars:
-                    self.add_finding("WSTG-SESS", "Session variable pollution possible", severity="medium",
-                                   evidence={"reflected_variables": [v["variable"] for v in reflected_vars]})
-        except Exception as e:
-            self.log("warning", f"test_session_puzzling failed: {e}")
-
-        # OPSI B: Session Hijacking Tests
-        if auth_data:
+        # CSRF Protection (WSTG-SESS-05)
+        if self.should_run_tool("test_csrf_protection"):
             try:
-                # Extract session cookies from authenticated session
-                session_cookies = {"token": auth_data.get('token') or auth_data.get('username', 'test_token')}
-                
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="session-management-testing",
+                        tool="test_csrf_protection",
+                        args={"url": target, "form_data": {"test": "data"}}, auth_session=auth_data
+                    ),
+                    timeout=30
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("csrf_vulnerable") or not data.get("has_csrf_token_in_form"):
+                        self.add_finding("WSTG-SESS-05", "Missing or weak CSRF protection", severity="high",
+                                       evidence={"csrf_token_present": data.get("has_csrf_token_in_form"),
+                                               "vulnerable": data.get("csrf_vulnerable")})
+                    weak_samesite = [c for c in data.get("cookies_samesite_check", []) if c.get("samesite") == "Not Set"]
+                    if weak_samesite:
+                        self.add_finding("WSTG-SESS-05", "Session cookies without SameSite protection", severity="medium",
+                                       evidence={"cookies": weak_samesite})
+            except Exception as e:
+                self.log("warning", f"test_csrf_protection failed: {e}")
+
+        # Session Puzzling (WSTG-SESS-08)
+        if self.should_run_tool("test_session_puzzling"):
+            try:
+                res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="session-management-testing",
+                        tool="test_session_puzzling",
+                        args={"url": target, "test_params": {"admin": "1", "role": "administrator"}}, auth_session=auth_data
+                    ),
+                    timeout=45
+                )
+                if isinstance(res, dict) and res.get("status") == "success":
+                    data = res.get("data", {})
+                    if data.get("array_injection_vulnerable"):
+                        self.add_finding("WSTG-SESS-08", "Session puzzling: array injection possible", severity="high",
+                                       evidence={"array_injection": True})
+                    reflected_vars = [t for t in data.get("parameter_pollution_tests", []) if t.get("reflected_in_response")]
+                    if reflected_vars:
+                        self.add_finding("WSTG-SESS-08", "Session variable pollution possible", severity="medium",
+                                       evidence={"reflected_variables": [v["variable"] for v in reflected_vars]})
+            except Exception as e:
+                self.log("warning", f"test_session_puzzling failed: {e}")
+
+        # Session Hijacking (WSTG-SESS-09)
+        if self.should_run_tool("test_session_hijacking"):
+            session_cookies = {}
+            if auth_data and auth_data.get("cookies"):
+                session_cookies = auth_data["cookies"]
+            elif auth_data and auth_data.get("token"):
+                session_cookies = {"token": auth_data["token"]}
+            try:
                 res = await self.run_tool_with_timeout(
                     client.call_tool(
                         server="session-management-testing",
                         tool="test_session_hijacking",
                         args={"url": target, "session_cookies": session_cookies}, auth_session=auth_data
                     ),
-                    timeout=40
+                    timeout=60
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     weak_tokens = [t for t in data.get("token_analysis", []) if t.get("predictable")]
                     if weak_tokens:
-                        self.add_finding("WSTG-SESS", "Weak session token entropy - hijacking risk", severity="high",
+                        self.add_finding("WSTG-SESS-09", "Weak session token entropy - hijacking risk", severity="high",
                                        evidence={"weak_tokens": weak_tokens})
                     if not data.get("httponly_protection"):
-                        self.add_finding("WSTG-SESS", "Session cookies without HTTPOnly - XSS hijacking risk", severity="high",
+                        self.add_finding("WSTG-SESS-09", "Session cookies without HTTPOnly - XSS hijacking risk", severity="high",
                                        evidence={"httponly": False})
                     if data.get("session_reusable_after_logout"):
-                        self.add_finding("WSTG-SESS", "Session remains valid after logout", severity="high",
+                        self.add_finding("WSTG-SESS-09", "Session remains valid after logout", severity="high",
                                        evidence={"session_reuse": True})
             except Exception as e:
                 self.log("warning", f"test_session_hijacking failed: {e}")
