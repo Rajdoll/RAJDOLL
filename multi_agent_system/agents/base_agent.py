@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Type, ClassVar, Optional, List
+from urllib.parse import urlparse
 from sqlalchemy.exc import IntegrityError
 
 from ..core.config import settings
@@ -33,6 +35,9 @@ _LLM_PLANNING_SEMAPHORE = asyncio.Semaphore(int(os.getenv("LLM_PLANNING_CONCURRE
 
 # FIX #3: Circuit breaker settings
 CIRCUIT_BREAKER_FAILURES = 3    # Max failures before circuit opens
+
+# URL argument names checked for host scope enforcement in _before_tool_execution()
+URL_ARG_NAMES = ("url", "target_url", "target", "base_url", "domain", "host")
 
 
 class AgentRegistry:
@@ -890,6 +895,14 @@ class BaseAgent:
 		"""Centralized gating logic for MCP tools."""
 		import sys
 
+		# SCOPE ENFORCEMENT: hard-disable subdomain enumeration tools (Layer 2a)
+		# Cannot be overridden by Director INCLUDE, LLM planner, or HITL approval.
+		from ..core.config import SCOPE_VIOLATION_TOOLS
+		if tool_name in SCOPE_VIOLATION_TOOLS:
+			self.log("warning", f"[scope] tool '{tool_name}' rejected: in SCOPE_VIOLATION_TOOLS")
+			print(f"🚫 {self.agent_name}: Tool {tool_name} BLOCKED — scope violation (subdomain enum disabled)", file=sys.stderr, flush=True)
+			return False
+
 		# Director SKIP check — runs before all other checks
 		directive_key = f"director_directive_{self.agent_name}"
 		directives = self._shared_context_snapshot.get(directive_key, [])
@@ -1080,11 +1093,35 @@ class BaseAgent:
 
 		return args if args != base_args else base_args
 
+	@staticmethod
+	def _extract_hostname(value: str | None) -> str | None:
+		"""Extract hostname from URL or bare hostname string."""
+		if not value:
+			return None
+		try:
+			v = str(value)
+			parsed = urlparse(v if "://" in v else f"http://{v}")
+			return (parsed.hostname or "").lower() or None
+		except Exception:
+			return None
+
 	async def _before_tool_execution(self, server: str, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
 		"""Hook invoked by MCPClient prior to executing a tool.
 
 		Returns a dict with ``approved`` flag and (optionally) sanitized ``arguments``.
 		"""
+		# SCOPE ENFORCEMENT: reject tool calls targeting out-of-scope hosts (Layer 2b)
+		from ..core.security_guards import security_guard
+		for arg_name in URL_ARG_NAMES:
+			if arg_name not in args:
+				continue
+			host = self._extract_hostname(str(args[arg_name]))
+			if host is None:
+				continue
+			if not security_guard.is_host_allowed(host):
+				self.log("warning", f"[scope] tool '{tool_name}' rejected: arg '{arg_name}'={host!r} not in whitelist")
+				print(f"🚫 {self.agent_name}: Tool {tool_name} BLOCKED — host {host!r} not in whitelist", file=sys.stderr, flush=True)
+				return {"approved": False, "arguments": args}
 		args = self._merge_planned_arguments(tool_name, args)
 		# HIGH_RISK Director tool review — fires when hitl_mode == "agent"
 		from ..core.config import HIGH_RISK_TOOLS

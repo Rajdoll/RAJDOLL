@@ -175,13 +175,13 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             self.log("warning", f"CSS injection testing failed: {e}")
 
         # 6) CORS Misconfiguration (WSTG-CLNT-07)
-        if self.should_run_tool("test_cors"):
+        if self.should_run_tool("test_cors_misconfiguration"):
             try:
                 self.log("info", "Testing for CORS misconfigurations")
                 cors_res = await self.run_tool_with_timeout(
                     client.call_tool(
                         server="client-side-testing",
-                        tool="test_cors",
+                        tool="test_cors_misconfiguration",
                         args={"url": target}, auth_session=auth_data
                     ),
                     timeout=150
@@ -217,13 +217,13 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 self.log("warning", f"Clickjacking testing failed: {e}")
 
         # 8) WebSockets Security (WSTG-CLNT-10)
-        if self.should_run_tool("test_websocket"):
+        if self.should_run_tool("test_websockets"):
             try:
                 self.log("info", "Testing WebSocket security")
                 ws_res = await self.run_tool_with_timeout(
                     client.call_tool(
                         server="client-side-testing",
-                        tool="test_websocket",
+                        tool="test_websockets",
                         args={"url": target}, auth_session=auth_data
                     ),
                     timeout=150
@@ -238,62 +238,26 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 self.log("warning", f"WebSocket testing failed: {e}")
 
         # 9) Browser Storage Security (WSTG-CLNT-12)
-        try:
-            self.log("info", "Testing browser storage security")
-            storage_res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="client-side-testing",
-                    tool="test_browser_storage",
-                    args={"url": target}, auth_session=auth_data
-                ),
-                timeout=150
-            )
-            if isinstance(storage_res, dict) and storage_res.get("status") == "success":
-                data = storage_res.get("data", {})
-                if data.get("vulnerable"):
-                    severity = "high" if data.get("sensitive_data_exposed") else "medium"
-                    self.add_finding("WSTG-CLNT-12", "Insecure browser storage usage", 
-                                   severity=severity, evidence=data,
-                                   details="Sensitive data stored in localStorage/sessionStorage")
-        except Exception as e:
-            self.log("warning", f"Browser storage testing failed: {e}")
-
-        # Test CSP (Content Security Policy)
-        if self.should_run_tool("test_csp"):
+        if self.should_run_tool("test_browser_storage"):
             try:
-                res = await self.run_tool_with_timeout(
+                self.log("info", "Testing browser storage security")
+                storage_res = await self.run_tool_with_timeout(
                     client.call_tool(
                         server="client-side-testing",
-                        tool="test_csp",
-                        args={"url": target},
-                        auth_session=auth_data
+                        tool="test_browser_storage",
+                        args={"url": target}, auth_session=auth_data
                     ),
-                    timeout=30
+                    timeout=150
                 )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    if not data.get("has_csp") or data.get("weak_directives"):
-                        severity = "high" if not data.get("has_csp") else "medium"
-                        self.add_finding("WSTG-CLNT", "CSP missing or weak", severity=severity, evidence=data)
+                if isinstance(storage_res, dict) and storage_res.get("status") == "success":
+                    data = storage_res.get("data", {})
+                    if data.get("vulnerable"):
+                        severity = "high" if data.get("sensitive_data_exposed") else "medium"
+                        self.add_finding("WSTG-CLNT-12", "Insecure browser storage usage",
+                                       severity=severity, evidence=data,
+                                       details="Sensitive data stored in localStorage/sessionStorage")
             except Exception as e:
-                self.log("warning", f"test_csp failed: {e}")
-
-        # Legacy CSP analysis (keep for backward compatibility)
-        try:
-            res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="client-side-testing",
-                    tool="analyze_csp",
-                    args={"url": target}, auth_session=auth_data
-                )
-            )
-            if isinstance(res, dict) and res.get("status") == "success":
-                weaknesses = res.get("data", {}).get("weaknesses_found", [])
-                if weaknesses:
-                    self.add_finding("WSTG-CLNT", "CSP weaknesses detected", 
-                                   severity="low", evidence={"issues": weaknesses[:3]})
-        except Exception as e:
-            self.log("warning", f"analyze_csp failed: {e}")
+                self.log("warning", f"Browser storage testing failed: {e}")
 
         # Phase 4.3: Test prototype pollution
         if self.should_run_tool("test_prototype_pollution"):

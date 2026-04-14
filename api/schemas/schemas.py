@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Union
 
 
 class ScanCredentials(BaseModel):
@@ -21,7 +21,15 @@ class CreateScanRequest(BaseModel):
     authorization_token: Optional[str] = None  # Security guard: authorization token
     user_email: Optional[str] = None  # Audit logging: who initiated the scan
     credentials: Optional[ScanCredentials] = None  # Custom credentials for auto-login
-    whitelist_domain: Optional[str] = None  # Auto-add this domain to whitelist at scan time
+    whitelist_domain: Optional[Union[str, List[str]]] = None  # Auto-add this domain to whitelist at scan time
+
+    def get_whitelist_list(self) -> List[str]:
+        """Normalize whitelist_domain to always return a list."""
+        if self.whitelist_domain is None:
+            return []
+        if isinstance(self.whitelist_domain, str):
+            return [self.whitelist_domain]
+        return list(self.whitelist_domain)
 
 
 class JobAgentState(BaseModel):

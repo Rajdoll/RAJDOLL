@@ -615,12 +615,73 @@ Operate autonomously without human guidance.
                 evidence={"emails": payload["emails_found"][:5]}
             )
 
+    @staticmethod
+    def _extract_hostname_from_url(url: str) -> str | None:
+        """Extract hostname from URL for scope partitioning."""
+        if not url:
+            return None
+        try:
+            parsed = urlparse(url if "://" in url else f"http://{url}")
+            return (parsed.hostname or "").lower() or None
+        except Exception:
+            return None
+
     def _handle_osint(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         if not isinstance(data, dict):
             return
+
+        findings = data.get("findings", {})
+
+        # Layer 3: Partition findings by scope
+        from ..core.security_guards import security_guard
+
+        def _partition(items, host_extractor):
+            in_scope, out_scope = [], []
+            for item in items:
+                h = host_extractor(item)
+                if h and security_guard.is_host_allowed(h):
+                    in_scope.append(item)
+                else:
+                    out_scope.append(item)
+            return in_scope, out_scope
+
+        # Subdomains
+        subs_in, subs_out = _partition(
+            findings.get("subdomains_found", []), lambda s: s.lower())
+        findings["subdomains_found"] = subs_in
+        findings["subdomains_out_of_scope"] = subs_out
+
+        # Emails
+        emails_in, emails_out = _partition(
+            findings.get("emails_found", []),
+            lambda e: e.split("@")[-1] if "@" in e else None)
+        findings["emails_found"] = emails_in
+        findings["emails_out_of_scope"] = emails_out
+
+        # URL fields
+        for field in ("exposed_documents", "admin_panels", "directory_listings",
+                      "backup_files", "pastebin_mentions"):
+            urls_in, urls_out = _partition(
+                findings.get(field, []),
+                lambda u: self._extract_hostname_from_url(u))
+            findings[field] = urls_in
+            findings[f"{field}_out_of_scope"] = urls_out
+
+        # Summary
+        data["out_of_scope_summary"] = {
+            "subdomain_count": len(subs_out),
+            "email_count": len(emails_out),
+            "url_count": sum(
+                len(findings.get(f"{f}_out_of_scope", []))
+                for f in ("exposed_documents", "admin_panels",
+                          "directory_listings", "backup_files", "pastebin_mentions")
+            ),
+        }
+
         snapshot["osint"] = data
         self.write_context("osint", data)
-        findings = data.get("findings", {})
+
+        # Only create findings from in-scope admin panels
         if findings.get("admin_panels"):
             self.add_finding(
                 "WSTG-INFO",

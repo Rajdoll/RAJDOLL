@@ -104,6 +104,13 @@ class Orchestrator:
 		self.cumulative_summary: str = ""
 		self._llm_summarizer: Optional[SimpleLLMClient] = None
 		self._pending_director_directives: Dict[str, list] = {}
+
+		# Timing tracking for scan_timing SharedContext
+		self._timing_autologin_s: float = 0.0
+		self._timing_llm_planning_s: float = 0.0
+		self._timing_summarization_s: float = 0.0
+		self._timing_autologin_detail: str = ""
+		self._timing_llm_planning_detail: str = ""
 		
 		# CRITICAL FIX: Write target URL to shared context at initialization
 		# This ensures all agents have access to the actual target URL
@@ -624,14 +631,17 @@ class Orchestrator:
 
 		summary = raw_text[:1500]  # fallback
 		if summarizer:
+			import time as _time
 			loop = self._ensure_event_loop()
 			try:
+				_t_sum_start = _time.monotonic()
 				summary = loop.run_until_complete(
 					asyncio.wait_for(
 						summarizer.summarize_agent_findings(agent_name, raw_text, task_tree),
 						timeout=300,  # 5 min max for summarization (Qwen 3-4B on 4GB VRAM)
 					)
 				)
+				self._timing_summarization_s += _time.monotonic() - _t_sum_start
 				print(f"[Orchestrator] Summarized {agent_name} ({len(summary)} chars)")
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: LLM summarization failed for {agent_name}: {e}")
@@ -716,6 +726,23 @@ class Orchestrator:
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
+	def _build_scope_context_block(self) -> str:
+		"""Build scope constraints block for LLM planning context (Layer 1)."""
+		from .core.config import SCOPE_VIOLATION_TOOLS
+		from .core.security_guards import security_guard
+		allowed = ", ".join(sorted(security_guard.whitelist_domains)) or "(none — all hosts allowed)"
+		disabled = ", ".join(sorted(SCOPE_VIOLATION_TOOLS))
+		return (
+			"\n## SCOPE CONSTRAINTS (MANDATORY)\n\n"
+			f"**Allowed target hosts:** {allowed}\n"
+			"- All url/target_url/target/base_url/domain/host arguments MUST resolve\n"
+			"  to one of these hosts (exact match or glob pattern).\n"
+			"- Tool calls with hostnames outside this list will be rejected at runtime.\n\n"
+			f"**Disabled tools (scope violation — do not select):**\n{disabled}\n"
+			"- These tools perform subdomain/host discovery outside research scope.\n"
+			"- Selecting them has no effect; they are silently skipped.\n"
+		)
+
 	def _inject_planner_context(self, shared_ctx: Dict[str, Any], agent_name: Optional[str] = None) -> Dict[str, Any]:
 		"""Inject cumulative summary + task tree + director directives into shared context."""
 		from .utils.directive_parser import format_for_llm
@@ -730,6 +757,8 @@ class Orchestrator:
 			if directives:
 				ctx[f"director_directive_{agent_name}"] = directives
 				ctx["director_instructions_text"] = format_for_llm(directives)
+		# Layer 1: Scope enforcement via LLM prompt
+		ctx["scope_constraints"] = self._build_scope_context_block()
 		return ctx
 
 	def _get_tool_plan_for_agent(self, agent_name: str) -> Optional[Dict[str, Any]]:
@@ -777,6 +806,12 @@ class Orchestrator:
 
 	def run(self) -> None:
 		self._update_job_status(JobStatus.running)
+		# Record actual scan start time (not queue time) for accurate duration
+		with get_db() as db:
+			job = db.query(Job).get(self.job_id)
+			if job and not job.started_at:
+				job.started_at = datetime.utcnow()
+				db.commit()
 		self._refresh_shared_context_cache()
 		plan_with_recon = self._build_plan()
 		self._ensure_job_agents(plan_with_recon)
@@ -794,7 +829,9 @@ class Orchestrator:
 		# PHASE 1.5: Attempt auto-login to enable authenticated testing
 		# This creates an authenticated session that all subsequent agents can use
 		import warnings
+		import time as _time
 		warnings.warn("[Orchestrator] Phase 1.5: Attempting auto-login for authenticated testing...")
+		_t_autologin_start = _time.monotonic()
 		try:
 			target_url = self._get_target()
 			if target_url:
@@ -813,14 +850,19 @@ class Orchestrator:
 					warnings.warn(f"[Orchestrator] ✓ Auto-login successful as: {auth_session.get('username')}")
 					warnings.warn(f"[Orchestrator]   Auth method: {auth_session.get('auth_method')}")
 					warnings.warn(f"[Orchestrator]   JWT token: {'Present' if auth_session.get('jwt_token') else 'None'}")
+					self._timing_autologin_detail = f"Logged in as {auth_session.get('username', 'unknown')}"
 				else:
 					warnings.warn("[Orchestrator] ⚠ Auto-login failed - continuing with unauthenticated testing")
 					# Store empty auth session to indicate login was attempted
 					self.context_manager.write("authenticated_session", {"logged_in": False, "login_attempted": True})
+					self._timing_autologin_detail = "Login attempted but failed"
 		except Exception as e:
 			import traceback
 			warnings.warn(f"[Orchestrator] ⚠ Auto-login error: {e} - continuing with unauthenticated testing")
 			warnings.warn(f"[Orchestrator] Traceback: {traceback.format_exc()}")
+			self._timing_autologin_detail = f"Error: {str(e)[:80]}"
+		finally:
+			self._timing_autologin_s = _time.monotonic() - _t_autologin_start
 		
 		plan = self._remove_recon(plan_with_recon)
 		
@@ -841,6 +883,7 @@ class Orchestrator:
 					print("[Orchestrator] Calling LLM planner with 300s timeout...")
 					from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 					
+					_t_plan_start = _time.monotonic()
 					with ThreadPoolExecutor(max_workers=1) as executor:
 						future = executor.submit(self.llm_planner.plan_testing_strategy, recon_results)
 						try:
@@ -850,7 +893,9 @@ class Orchestrator:
 							print("[Orchestrator] ERROR: LLM planning timed out after 300s")
 							print("[Orchestrator] Falling back to default plan")
 							raise TimeoutError("LLM planning exceeded 5 minute timeout")
-					
+					self._timing_llm_planning_s = _time.monotonic() - _t_plan_start
+					self._timing_llm_planning_detail = f"{len(self.llm_test_plan.get('owasp_categories', []))} OWASP categories planned"
+
 					# Save LLM test plan metadata for tool selection
 					print(f"[Orchestrator] LLM test plan keys: {list(self.llm_test_plan.keys())}")
 					print(f"[Orchestrator] owasp_categories count: {len(self.llm_test_plan.get('owasp_categories', []))}")
@@ -1037,6 +1082,47 @@ class Orchestrator:
 				self._run_final_analysis()
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
+
+		# Write scan timing breakdown to SharedContext for PDF report
+		try:
+			with get_db() as db:
+				agents_db = db.query(JobAgent).filter(JobAgent.job_id == self.job_id).all()
+				agent_sum_s = sum(
+					(a.finished_at - a.started_at).total_seconds()
+					for a in agents_db
+					if a.started_at and a.finished_at
+				)
+			scan_timing = {
+				"phases": [
+					{
+						"name": "Auto-login",
+						"duration_s": round(self._timing_autologin_s),
+						"detail": self._timing_autologin_detail or "Attempted",
+					},
+					{
+						"name": "LLM Planning",
+						"duration_s": round(self._timing_llm_planning_s),
+						"detail": self._timing_llm_planning_detail or "Strategy generation",
+					},
+					{
+						"name": "Summarization",
+						"duration_s": round(self._timing_summarization_s),
+						"detail": f"{len(agents_db)} agents summarized",
+					},
+					{
+						"name": "Agent execution",
+						"duration_s": round(agent_sum_s),
+						"detail": f"Sum of {len(agents_db)} agent durations",
+					},
+				],
+			}
+			self.context_manager.write("scan_timing", scan_timing)
+			print(f"[Orchestrator] scan_timing written: autologin={self._timing_autologin_s:.0f}s "
+				  f"planning={self._timing_llm_planning_s:.0f}s "
+				  f"summarization={self._timing_summarization_s:.0f}s "
+				  f"agents={agent_sum_s:.0f}s")
+		except Exception as e:
+			print(f"[Orchestrator] WARNING: Could not write scan_timing: {e}")
 
 		# Best-effort: ensure report generation runs even if circuit breaker
 		# or early loop exit prevented reaching the final report step.

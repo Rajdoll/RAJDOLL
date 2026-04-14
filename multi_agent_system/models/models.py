@@ -61,6 +61,7 @@ class Job(Base):
     target: Mapped[str] = Column(String(512), nullable=False)
     created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    started_at: Mapped[Optional[datetime]] = Column(DateTime, nullable=True)
     status: Mapped[JobStatus] = Column(Enum(JobStatus), default=JobStatus.queued, nullable=False)
     plan: Mapped[Optional[dict]] = Column(JSON, nullable=True)
     summary: Mapped[Optional[str]] = Column(Text, nullable=True)
