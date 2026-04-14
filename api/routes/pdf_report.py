@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, JSONResponse
@@ -60,8 +60,10 @@ def _format_evidence(evidence) -> str:
 
 
 def _scan_duration(job: Job) -> str:
-    if job.updated_at and job.created_at:
-        delta = (job.updated_at - job.created_at).total_seconds()
+    start = job.started_at or job.created_at   # prefer actual start time
+    end = job.updated_at
+    if start and end:
+        delta = (end - start).total_seconds()
         h, rem = divmod(int(delta), 3600)
         m, s = divmod(rem, 60)
         if h:
@@ -80,6 +82,17 @@ def _agent_duration(agent: JobAgent) -> str:
             return f"{s}s"
         return f"{m}m {s}s"
     return "—"
+
+
+def _agent_note(agent: dict) -> str:
+    """Return a contextual note for agents with unusual durations."""
+    name = agent.get("agent_name", "")
+    duration = agent.get("duration", "")
+    if name == "ReportGenerationAgent":
+        return "PDF rendered on-demand"
+    if duration in ("< 1s", "—", "1s", "2s"):
+        return "Fast response — target-dependent"
+    return ""
 
 
 def _render_pdf(job_id: int) -> bytes:
@@ -117,6 +130,22 @@ def _render_pdf(job_id: int) -> bytes:
                 final_analysis = ctx.value
             elif isinstance(ctx.value, dict):
                 final_analysis = ctx.value.get("text", "") or str(ctx.value)
+
+        # Load OSINT data for out-of-scope findings
+        osint_ctx = (
+            db.query(SharedContext)
+            .filter(SharedContext.job_id == job_id, SharedContext.key == "osint")
+            .one_or_none()
+        )
+        osint_data = osint_ctx.value if osint_ctx and osint_ctx.value else {}
+
+        # Load scan timing breakdown for Scan Timeline table
+        timing_ctx = (
+            db.query(SharedContext)
+            .filter(SharedContext.job_id == job_id, SharedContext.key == "scan_timing")
+            .one_or_none()
+        )
+        scan_timing = timing_ctx.value if timing_ctx and timing_ctx.value else None
 
     # Build findings list (normalized)
     findings: list[dict] = []
@@ -173,15 +202,34 @@ def _render_pdf(job_id: int) -> bytes:
         src = f["enrichment_source"]
         enrichment_stats[src] = enrichment_stats.get(src, 0) + 1
 
-    # Agents list with duration
-    agents_list = [
-        {
+    # Agents list with duration and contextual notes
+    agents_list = []
+    for a in agents_db:
+        entry = {
             "agent_name": a.agent_name,
             "status": a.status.value if hasattr(a.status, "value") else str(a.status),
             "duration": _agent_duration(a),
         }
-        for a in agents_db
-    ]
+        entry["note"] = _agent_note(entry)
+        agents_list.append(entry)
+
+    # Scope enforcement: whitelist and out-of-scope OSINT findings
+    from multi_agent_system.core.security_guards import security_guard
+    scope_whitelist = sorted(security_guard.whitelist_domains)
+
+    oos_findings: dict = {"subdomains": [], "emails": [], "urls": []}
+    if isinstance(osint_data, dict):
+        findings_data = osint_data.get("findings", osint_data)
+        oos_findings["subdomains"] = findings_data.get("subdomains_out_of_scope", [])
+        oos_findings["emails"] = findings_data.get("emails_out_of_scope", [])
+        for field in ("exposed_documents", "admin_panels", "directory_listings",
+                      "backup_files", "pastebin_mentions"):
+            for url in findings_data.get(f"{field}_out_of_scope", []):
+                oos_findings["urls"].append({
+                    "url": url,
+                    "category": field.replace("_", " ").title()
+                })
+    has_oos = any(oos_findings[k] for k in oos_findings)
 
     # Render Jinja2 template
     env = Environment(
@@ -193,7 +241,10 @@ def _render_pdf(job_id: int) -> bytes:
     html_content = template.render(
         job_id=job_id,
         target=job.target,
-        scan_date=job.created_at.strftime("%Y-%m-%d %H:%M UTC") if job.created_at else "N/A",
+        scan_date=(
+            (job.created_at + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M WIB")
+            if job.created_at else "N/A"
+        ),
         scan_duration=_scan_duration(job),
         total_findings=len(findings_sorted),
         final_analysis=final_analysis,
@@ -203,6 +254,9 @@ def _render_pdf(job_id: int) -> bytes:
         wstg_categories=wstg_categories,
         enrichment_stats=enrichment_stats,
         agents=agents_list,
+        scope_whitelist=scope_whitelist,
+        oos_findings=oos_findings if has_oos else None,
+        scan_timing=scan_timing,
     )
 
     # Convert to PDF
