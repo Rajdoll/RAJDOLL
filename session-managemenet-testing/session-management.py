@@ -62,7 +62,7 @@ async def analyze_cookies(url: str, auth_session: Optional[Dict[str, Any]] = Non
         
         cookie_analysis = []
         # Analisis dari Set-Cookie header untuk mendapatkan semua atribut
-        set_cookie_headers = resp.headers.getlist('set-cookie')
+        set_cookie_headers = resp.headers.get_list('set-cookie')
         
         for header in set_cookie_headers:
             parts = [p.strip() for p in header.split(';')]
@@ -249,7 +249,7 @@ async def test_csrf_protection(url: str, form_data: Dict[str, str], auth_session
         
         # 2. Check SameSite attributes on session cookies
         cookies_analysis = []
-        for header in resp.headers.getlist('set-cookie'):
+        for header in resp.headers.get_list('set-cookie'):
             if 'session' in header.lower() or 'auth' in header.lower():
                 samesite = re.search(r'samesite=(strict|lax|none)', header, re.I)
                 cookies_analysis.append({
@@ -365,7 +365,7 @@ async def test_session_hijacking(url: str, session_cookies: Dict[str, str], auth
         resp = await quick_req("GET", url, auth_session=auth_session)
         httponly_protected = False
         if resp:
-            for header in resp.headers.getlist('set-cookie'):
+            for header in resp.headers.get_list('set-cookie'):
                 if any(name in header for name in session_cookies.keys()):
                     httponly_protected = "httponly" in header.lower()
                     break
