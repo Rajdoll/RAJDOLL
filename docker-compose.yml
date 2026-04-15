@@ -245,3 +245,16 @@ services:
 
   # NOTE: juice-shop is now managed here with auto-restart.
   # Scan target: http://juice-shop:3000 (internal) or http://localhost:3000 (host)
+
+  webgoat:
+    image: webgoat/webgoat:latest
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      - WEBGOAT_PORT=8080
+      - WEBGOAT_HSQLDB_WEBGOAT_PASSWORD=webgoat
+    # Scan target: http://webgoat:8080/WebGoat (internal)
+    # Host access: http://localhost:8081/WebGoat
+    # Register account at /WebGoat/registration before scanning
+    # Suggested scan credentials: {"username": "guest", "password": "guest"}
