@@ -80,6 +80,9 @@ async function restoreLastScan() {
         agentsPanel.style.display = 'block';
         monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
+        document.getElementById('btnValidateFindings').style.display = 'inline-block';
+        _findingsLoaded = false;
+        document.getElementById('findingsValidationPanel').style.display = 'none';
 
         const status = lastScan.status || 'unknown';
         if (['queued', 'running'].includes(status)) {
@@ -184,11 +187,14 @@ async function handleScanSubmit(e) {
         agentsPanel.style.display = 'block';
         monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
-        
+        document.getElementById('btnValidateFindings').style.display = 'inline-block';
+        _findingsLoaded = false;
+        document.getElementById('findingsValidationPanel').style.display = 'none';
+
         // Update displays
         jobIdDisplay.textContent = currentJobId;
         targetDisplay.textContent = targetUrl;
-        
+
         // Start monitoring
         startStatusPolling();
         connectWebSocket();
@@ -978,6 +984,69 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ── Findings Validation ───────────────────────────────────────────────────
+
+let _findingsLoaded = false;
+
+function toggleFindingsPanel() {
+    const panel = document.getElementById('findingsValidationPanel');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        if (!_findingsLoaded) loadFindings();
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+async function loadFindings() {
+    if (!currentJobId) return;
+    const resp = await fetch(`${API_BASE}/scans/${currentJobId}/findings`);
+    if (!resp.ok) return;
+    const findings = await resp.json();
+    renderFindingsList(findings);
+    _findingsLoaded = true;
+}
+
+function renderFindingsList(findings) {
+    const container = document.getElementById('findingsList');
+    const total = findings.length;
+    const reviewed = findings.filter(f => f.is_true_positive !== null && f.is_true_positive !== undefined).length;
+    document.getElementById('validationProgress').textContent =
+        `${reviewed}/${total} reviewed`;
+
+    container.innerHTML = findings.map(f => {
+        const sevColor = {critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#22c55e', info:'#6b7280'}[f.severity] || '#6b7280';
+        const tpActive  = f.is_true_positive === true  ? 'background:#16a34a;color:#fff;' : '';
+        const fpActive  = f.is_true_positive === false ? 'background:#dc2626;color:#fff;' : '';
+        return `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border-color);" data-finding-id="${f.id}">
+          <span style="font-size:10px;font-weight:700;color:${sevColor};min-width:56px;">${f.severity.toUpperCase()}</span>
+          <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(f.title)}">${escapeHtml(f.title)}</span>
+          <button onclick="markFinding(${f.id}, true)"  style="font-size:11px;padding:2px 8px;border:1px solid #16a34a;border-radius:4px;cursor:pointer;${tpActive}">TP</button>
+          <button onclick="markFinding(${f.id}, false)" style="font-size:11px;padding:2px 8px;border:1px solid #dc2626;border-radius:4px;cursor:pointer;${fpActive}">FP</button>
+        </div>`;
+    }).join('');
+}
+
+function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function markFinding(findingId, isTP) {
+    const token = localStorage.getItem('adminToken') || '';
+    const resp = await fetch(`${API_BASE}/findings/${findingId}/validate`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-Admin-Token': token},
+        body: JSON.stringify({is_true_positive: isTP}),
+    });
+    if (resp.ok) {
+        _findingsLoaded = false;
+        loadFindings();
+    } else {
+        alert('Validation failed — check admin token in browser localStorage (key: adminToken)');
+    }
+}
 
 // ========== CLEANUP ==========
 window.addEventListener('beforeunload', () => {
