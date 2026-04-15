@@ -21,3 +21,17 @@ class TestGroundTruthEntry:
     def test_model_tablename(self):
         from multi_agent_system.models.ground_truth import GroundTruthEntry
         assert GroundTruthEntry.__tablename__ == "ground_truth_entries"
+
+
+class TestFindingValidationFields:
+    def test_finding_has_is_true_positive(self):
+        from multi_agent_system.models.models import Finding
+        f = Finding()
+        assert hasattr(f, "is_true_positive")
+        assert f.is_true_positive is None  # nullable default
+
+    def test_finding_has_validation_notes(self):
+        from multi_agent_system.models.models import Finding
+        f = Finding()
+        assert hasattr(f, "validation_notes")
+        assert f.validation_notes is None
