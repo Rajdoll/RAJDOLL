@@ -173,8 +173,8 @@ class EffectivenessMetrics:
         for finding in findings:
             for gt in ground_truth:
                 if self._matches(finding, gt):
-                    if finding.cvss_score and gt.cvss:
-                        system_scores.append(finding.cvss_score)
+                    if finding.cvss_score_v4 and gt.cvss:
+                        system_scores.append(finding.cvss_score_v4)
                         expert_scores.append(gt.cvss)
 
         if len(system_scores) < 2:
@@ -185,7 +185,7 @@ class EffectivenessMetrics:
     
     def _get_finding_signature(self, finding: Finding) -> str:
         """Generate unique signature for finding"""
-        return f"{finding.category}:{finding.title.lower()}:{finding.location}"
+        return f"{finding.category}:{finding.title.lower()}:{finding.agent_name}"
 
     def _matches(self, finding: Finding, gt: GroundTruthEntry) -> bool:
         """Category must match; at least 2 vuln_name keywords in finding text."""
@@ -462,7 +462,7 @@ class ReliabilityMetrics:
     
     def _get_finding_signature(self, finding: Finding) -> str:
         """Generate unique signature for finding"""
-        return f"{finding.category}:{finding.title}:{finding.location}"
+        return f"{finding.category}:{finding.title}:{finding.agent_name}"
 
 
 class MetricsCalculator:
@@ -529,49 +529,57 @@ class MetricsCalculator:
                 consistency_score=0.0  # Requires multiple runs
             )
     
+    @staticmethod
+    def _fmt_pct(val: Optional[float], decimals: int = 2) -> str:
+        if val is None:
+            return "N/A (pending review)"
+        return f"{val:.{decimals}f}%"
+
     def print_metrics_report(self, metrics: MetricsResult, job_id: int):
         """Print formatted metrics report"""
         print("\n" + "="*70)
         print(f"EVALUATION METRICS REPORT - Job #{job_id}")
         print("="*70)
-        
+
         print("\n📊 EFFECTIVENESS METRICS:")
-        print(f"  Precision:           {metrics.precision:.2f}% (Target: ≥90%)")
-        print(f"  Recall:              {metrics.recall:.2f}% (Target: ≥80%)")
-        print(f"  F1-Score:            {metrics.f1_score:.2f}% (Target: ≥85%)")
-        print(f"  False Negative Rate: {metrics.false_negative_rate:.2f}% (Target: ≤20%)")
+        print(f"  Precision:           {self._fmt_pct(metrics.precision)} (Target: ≥90%)")
+        print(f"  Recall:              {self._fmt_pct(metrics.recall)} (Target: ≥80%)")
+        print(f"  F1-Score:            {self._fmt_pct(metrics.f1_score)} (Target: ≥85%)")
+        print(f"  False Negative Rate: {self._fmt_pct(metrics.false_negative_rate)} (Target: ≤20%)")
         print(f"  Severity Accuracy:   {metrics.severity_accuracy:.2f}% (Target: ≥80%)")
         print(f"  CVSS Correlation:    {metrics.cvss_correlation:.3f} (Target: ≥0.7)")
-        
+
         print("\n⚡ EFFICIENCY METRICS:")
         print(f"  TTFF:                {metrics.ttff_seconds:.1f}s (Target: ≤300s)")
         print(f"  Total Scan Time:     {metrics.total_scan_hours:.2f}h (Target: ≤4h)")
-        
+
         print("\n📋 COVERAGE METRICS:")
         print(f"  TCR:                 {metrics.tcr_percentage:.1f}% (Target: ≥70%)")
         print(f"  OWASP Top 10:        {metrics.owasp_top10_coverage:.1f}% (Target: ≥80%)")
         print(f"  Attack Surface:      {metrics.attack_surface_coverage:.1f}% (Target: ≥90%)")
-        
+
         print("\n🛡️  RELIABILITY METRICS:")
         print(f"  Crash Rate:          {metrics.crash_rate:.2f}% (Target: ≤2%)")
         print(f"  Recovery Rate:       {metrics.recovery_rate:.1f}% (Target: ≥90%)")
-        
+
         print("\n" + "="*70)
-        
+
         # Overall assessment
         passing_criteria = [
-            metrics.f1_score >= 85,
+            metrics.f1_score is not None and metrics.f1_score >= 85,
             metrics.ttff_seconds <= 300,
             metrics.total_scan_hours <= 4,
             metrics.tcr_percentage >= 70,
             metrics.crash_rate <= 2
         ]
-        
+
         if all(passing_criteria):
             print("✅ SYSTEM PASSES ALL ACCEPTANCE CRITERIA")
         else:
             print("⚠️  SYSTEM NEEDS IMPROVEMENT")
-            if metrics.f1_score < 85:
+            if metrics.f1_score is None:
+                print("   - F1-Score pending review (validate findings as TP/FP first)")
+            elif metrics.f1_score < 85:
                 print("   - F1-Score below target (improve detection accuracy)")
             if metrics.ttff_seconds > 300:
                 print("   - TTFF too slow (optimize reconnaissance phase)")
@@ -581,5 +589,5 @@ class MetricsCalculator:
                 print("   - Test coverage insufficient (enable more test cases)")
             if metrics.crash_rate > 2:
                 print("   - System reliability needs improvement (fix crashes)")
-        
+
         print("="*70 + "\n")
