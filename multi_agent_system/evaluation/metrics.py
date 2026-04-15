@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import numpy as np
 from scipy.stats import pearsonr
@@ -21,15 +22,16 @@ from sqlalchemy.orm import Session
 
 from ..core.db import get_db
 from ..models.models import Job, JobAgent, Finding, AgentStatus, JobStatus, FindingSeverity
+from ..models.ground_truth import GroundTruthEntry
 
 
 @dataclass
 class MetricsResult:
     """Container for evaluation metrics"""
-    precision: float
-    recall: float
-    f1_score: float
-    false_negative_rate: float
+    precision: Optional[float]
+    recall: Optional[float]
+    f1_score: Optional[float]
+    false_negative_rate: Optional[float]
     severity_accuracy: float
     cvss_correlation: float
     cvss_p_value: float
@@ -44,115 +46,21 @@ class MetricsResult:
 
 
 class GroundTruthManager:
-    """Manage ground truth data for known vulnerable applications"""
-    
-    # DVWA Known Vulnerabilities (25 total)
-    DVWA_GROUND_TRUTH = {
-        "sqli_login": {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05"},
-        "sqli_search": {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05"},
-        "xss_reflected": {"severity": "high", "cvss": 7.5, "category": "WSTG-INPV-01"},
-        "xss_stored": {"severity": "high", "cvss": 8.0, "category": "WSTG-INPV-01"},
-        "xss_dom": {"severity": "high", "cvss": 7.5, "category": "WSTG-INPV-01"},
-        "csrf_change_password": {"severity": "high", "cvss": 8.0, "category": "WSTG-SESS-05"},
-        "file_inclusion": {"severity": "critical", "cvss": 9.0, "category": "WSTG-INPV-12"},
-        "file_upload": {"severity": "critical", "cvss": 9.5, "category": "WSTG-BUSL-08"},
-        "command_injection": {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-12"},
-        "weak_session_ids": {"severity": "high", "cvss": 7.0, "category": "WSTG-SESS-01"},
-        "brute_force": {"severity": "high", "cvss": 7.5, "category": "WSTG-ATHN-03"},
-        "insecure_captcha": {"severity": "medium", "cvss": 5.0, "category": "WSTG-ATHN-03"},
-        "weak_ssl": {"severity": "medium", "cvss": 5.3, "category": "WSTG-CRYP-01"},
-        "javascript_injection": {"severity": "medium", "cvss": 6.0, "category": "WSTG-CLNT-02"},
-        "open_redirect": {"severity": "medium", "cvss": 5.4, "category": "WSTG-CLNT-04"},
-        "info_disclosure": {"severity": "low", "cvss": 3.1, "category": "WSTG-INFO-05"},
-        "missing_headers": {"severity": "low", "cvss": 3.7, "category": "WSTG-CONF-06"},
-        "directory_traversal": {"severity": "high", "cvss": 7.5, "category": "WSTG-ATHZ-01"},
-        "authentication_bypass": {"severity": "critical", "cvss": 9.1, "category": "WSTG-ATHN-04"},
-        "privilege_escalation": {"severity": "critical", "cvss": 8.8, "category": "WSTG-AUTHZ-03"},
-        "xxe_injection": {"severity": "high", "cvss": 8.2, "category": "WSTG-INPV-07"},
-        "ldap_injection": {"severity": "high", "cvss": 7.7, "category": "WSTG-INPV-06"},
-        "xpath_injection": {"severity": "high", "cvss": 7.5, "category": "WSTG-INPV-09"},
-        "insecure_deserialization": {"severity": "critical", "cvss": 9.0, "category": "WSTG-INPV-05"},
-        "server_side_include": {"severity": "high", "cvss": 7.2, "category": "WSTG-INPV-08"}
-    }
-    
-    # OWASP Juice Shop Known Vulnerabilities — Automatable Subset
-    # 52 challenges that can be detected by automated scanning tools
-    # Mapped to WSTG 4.2 categories for thesis evaluation
-    JUICE_SHOP_GROUND_TRUTH = {
-        # ── 1-Star (Trivial) ──────────────────────────────────────────────
-        "score_board":              {"severity": "info",     "cvss": 3.7, "category": "WSTG-INFO-06", "challenge": "Score Board",              "stars": 1},
-        "bonus_payload_xss":       {"severity": "high",     "cvss": 7.5, "category": "WSTG-INPV-01", "challenge": "Bonus Payload",            "stars": 1},
-        "dom_xss":                 {"severity": "high",     "cvss": 7.5, "category": "WSTG-CLNT-01", "challenge": "DOM XSS",                  "stars": 1},
-        "confidential_document":   {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Confidential Document",    "stars": 1},
-        "error_handling":          {"severity": "low",      "cvss": 3.7, "category": "WSTG-ERRH-01", "challenge": "Error Handling",            "stars": 1},
-        "exposed_metrics":         {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-05", "challenge": "Exposed Metrics",           "stars": 1},
-        "outdated_allowlist":      {"severity": "medium",   "cvss": 5.4, "category": "WSTG-CLNT-04", "challenge": "Outdated Allowlist",        "stars": 1},
-        "zero_stars_feedback":     {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-01", "challenge": "Zero Stars",                "stars": 1},
+    """Manage ground truth data — reads from DB, not hardcoded dicts."""
 
-        # ── 2-Star (Easy) ─────────────────────────────────────────────────
-        "login_admin_sqli":        {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login Admin",               "stars": 2},
-        "password_strength":       {"severity": "medium",   "cvss": 5.3, "category": "WSTG-ATHN-07", "challenge": "Password Strength",         "stars": 2},
-        "security_policy":         {"severity": "info",     "cvss": 3.7, "category": "WSTG-INFO-02", "challenge": "Security Policy",           "stars": 2},
-        "view_basket_idor":        {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-04", "challenge": "View Basket",               "stars": 2},
-        "admin_section":           {"severity": "critical", "cvss": 9.1, "category": "WSTG-ATHZ-02", "challenge": "Admin Section",             "stars": 2},
-        "deprecated_interface":    {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-05", "challenge": "Deprecated Interface",      "stars": 2},
-        "five_star_feedback":      {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-01", "challenge": "Five-Star Feedback",        "stars": 2},
-        "login_mc_safesearch":     {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login MC SafeSearch",       "stars": 2},
+    @staticmethod
+    def derive_profile(target_url: str) -> str:
+        """Derive a stable profile key from a target URL hostname."""
+        parsed = urlparse(target_url)
+        hostname = parsed.hostname or target_url
+        return hostname.lower()
 
-        # ── 3-Star (Medium) ───────────────────────────────────────────────
-        "captcha_bypass":          {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-07", "challenge": "CAPTCHA Bypass",            "stars": 3},
-        "csrf":                    {"severity": "high",     "cvss": 8.0, "category": "WSTG-SESS-05", "challenge": "CSRF",                      "stars": 3},
-        "database_schema":         {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Database Schema",           "stars": 3},
-        "forged_feedback":         {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-02", "challenge": "Forged Feedback",           "stars": 3},
-        "login_bender":            {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login Bender",              "stars": 3},
-        "login_jim":               {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Login Jim",                 "stars": 3},
-        "manipulate_basket":       {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-09", "challenge": "Manipulate Basket",         "stars": 3},
-        "payback_time":            {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-01", "challenge": "Payback Time",              "stars": 3},
-        "product_tampering":       {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-02", "challenge": "Product Tampering",         "stars": 3},
-        "upload_size":             {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-08", "challenge": "Upload Size",               "stars": 3},
-        "upload_type":             {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-08", "challenge": "Upload Type",               "stars": 3},
-        "xxe_data_access":         {"severity": "high",     "cvss": 8.2, "category": "WSTG-INPV-07", "challenge": "XXE Data Access",           "stars": 3},
-        "admin_registration":      {"severity": "critical", "cvss": 9.1, "category": "WSTG-IDNT-02", "challenge": "Admin Registration",        "stars": 3},
-
-        # ── 4-Star (Hard) ─────────────────────────────────────────────────
-        "access_log":              {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Access Log",                "stars": 4},
-        "christmas_special":       {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "Christmas Special",         "stars": 4},
-        "easter_egg":              {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-04", "challenge": "Easter Egg",                "stars": 4},
-        "expired_coupon":          {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-01", "challenge": "Expired Coupon",            "stars": 4},
-        "forgotten_developer":     {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Forgotten Developer Backup","stars": 4},
-        "forgotten_sales":         {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Forgotten Sales Backup",    "stars": 4},
-        "misplaced_signature":     {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-04", "challenge": "Misplaced Signature File",  "stars": 4},
-        "nosql_dos":               {"severity": "high",     "cvss": 7.5, "category": "WSTG-INPV-05", "challenge": "NoSQL DoS",                 "stars": 4},
-        "nosql_exfiltration":      {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "NoSQL Exfiltration",        "stars": 4},
-        "poison_null_byte":        {"severity": "high",     "cvss": 7.5, "category": "WSTG-CONF-04", "challenge": "Poison Null Byte",          "stars": 4},
-
-        # ── 5-Star (Challenging) ──────────────────────────────────────────
-        "change_bender_password":  {"severity": "high",     "cvss": 8.0, "category": "WSTG-ATHN-09", "challenge": "Change Bender's Password",  "stars": 5},
-        "deluxe_fraud":            {"severity": "high",     "cvss": 7.5, "category": "WSTG-IDNT-02", "challenge": "Deluxe Fraud",              "stars": 5},
-        "email_leak":              {"severity": "high",     "cvss": 7.5, "category": "WSTG-INPV-05", "challenge": "Email Leak",                "stars": 5},
-        "forged_review":           {"severity": "high",     "cvss": 7.5, "category": "WSTG-ATHZ-02", "challenge": "Forged Review",             "stars": 5},
-        "forged_signed_jwt":       {"severity": "critical", "cvss": 9.8, "category": "WSTG-CRYP-04", "challenge": "Forged Signed JWT",         "stars": 5},
-        "multiple_likes":          {"severity": "medium",   "cvss": 5.0, "category": "WSTG-BUSL-07", "challenge": "Multiple Likes",            "stars": 5},
-        "ssti":                    {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-18", "challenge": "SSTi",                      "stars": 5},
-        "two_factor_auth":         {"severity": "high",     "cvss": 8.0, "category": "WSTG-ATHN-11", "challenge": "Two Factor Authentication", "stars": 5},
-        "vulnerable_library":      {"severity": "medium",   "cvss": 5.3, "category": "WSTG-CONF-01", "challenge": "Vulnerable Library",        "stars": 5},
-
-        # ── 6-Star (Expert) ───────────────────────────────────────────────
-        "forged_coupon":           {"severity": "high",     "cvss": 7.5, "category": "WSTG-BUSL-01", "challenge": "Forged Coupon",             "stars": 6},
-        "ssrf":                    {"severity": "critical", "cvss": 9.0, "category": "WSTG-INPV-19", "challenge": "SSRF",                      "stars": 6},
-        "allowlist_bypass":        {"severity": "medium",   "cvss": 5.4, "category": "WSTG-CLNT-04", "challenge": "Allowlist Bypass",          "stars": 6},
-        "csp_bypass":              {"severity": "high",     "cvss": 7.5, "category": "WSTG-CLNT-12", "challenge": "CSP Bypass",                "stars": 6},
-        "nosql_manipulation":      {"severity": "critical", "cvss": 9.8, "category": "WSTG-INPV-05", "challenge": "NoSQL Manipulation",        "stars": 6},
-    }
-    
-    def get_ground_truth(self, target: str) -> Dict[str, Dict]:
-        """Get ground truth for specific target"""
-        if "dvwa" in target.lower():
-            return self.DVWA_GROUND_TRUTH
-        elif "juice" in target.lower():
-            return self.JUICE_SHOP_GROUND_TRUTH
-        else:
-            return {}
+    def get_ground_truth(self, target_url: str, db: Session) -> List[GroundTruthEntry]:
+        """Load ground truth entries for target from the database."""
+        profile = self.derive_profile(target_url)
+        return db.query(GroundTruthEntry).filter(
+            GroundTruthEntry.target_profile == profile
+        ).all()
 
 
 class EffectivenessMetrics:
@@ -161,193 +69,131 @@ class EffectivenessMetrics:
     def __init__(self):
         self.ground_truth_manager = GroundTruthManager()
     
-    def calculate_precision(
-        self, 
-        findings: List[Finding], 
-        ground_truth: Dict[str, Dict]
-    ) -> float:
+    def calculate_precision(self, findings: List[Finding]) -> Optional[float]:
         """
-        Calculate precision (positive predictive value)
-        
-        Precision = TP / (TP + FP)
-        
-        Returns:
-            Precision percentage (0-100)
+        Precision = TP / (TP + FP) from manual researcher labels.
+        Returns None when no findings have been reviewed yet.
         """
-        if not findings:
+        reviewed = [f for f in findings if f.is_true_positive is not None]
+        if not reviewed:
+            return None
+        tp = sum(1 for f in reviewed if f.is_true_positive is True)
+        fp = sum(1 for f in reviewed if f.is_true_positive is False)
+        if tp + fp == 0:
             return 0.0
-        
-        true_positives = 0
-        false_positives = 0
-        
-        for finding in findings:
-            signature = self._get_finding_signature(finding)
-            
-            if self._matches_ground_truth(signature, finding, ground_truth):
-                true_positives += 1
-            else:
-                false_positives += 1
-        
-        if true_positives + false_positives == 0:
-            return 0.0
-        
-        precision = (true_positives / (true_positives + false_positives)) * 100
-        return round(precision, 2)
+        return round((tp / (tp + fp)) * 100, 2)
     
     def calculate_recall(
-        self, 
-        findings: List[Finding], 
-        ground_truth: Dict[str, Dict]
-    ) -> float:
+        self,
+        findings: List[Finding],
+        ground_truth: List[GroundTruthEntry],
+    ) -> Optional[float]:
         """
-        Calculate recall (sensitivity / true positive rate)
-        
-        Recall = TP / (TP + FN)
-        
-        Returns:
-            Recall percentage (0-100)
+        Recall = detected GT entries / total GT entries.
+        Returns None when no ground truth exists for this target.
         """
         if not ground_truth:
-            return 0.0
-        
+            return None
         detected = set()
-        
-        for finding in findings:
-            signature = self._get_finding_signature(finding)
-            
-            for vuln_name, vuln_data in ground_truth.items():
-                if self._matches_vulnerability(finding, vuln_name, vuln_data):
-                    detected.add(vuln_name)
-        
-        true_positives = len(detected)
-        false_negatives = len(ground_truth) - true_positives
-        
-        recall = (true_positives / len(ground_truth)) * 100
-        return round(recall, 2)
+        for f in findings:
+            for gt in ground_truth:
+                if self._matches(f, gt):
+                    detected.add(gt.id)
+        return round((len(detected) / len(ground_truth)) * 100, 2)
     
-    def calculate_f1_score(self, precision: float, recall: float) -> float:
+    def calculate_f1_score(self, precision: Optional[float], recall: Optional[float]) -> Optional[float]:
         """
-        Calculate F1-Score (harmonic mean of precision and recall)
-        
-        F1 = 2 * (Precision * Recall) / (Precision + Recall)
-        
-        Returns:
-            F1-Score (0-100)
+        Calculate F1-Score (harmonic mean of precision and recall).
+        Returns None when either input is None.
         """
+        if precision is None or recall is None:
+            return None
         if precision + recall == 0:
             return 0.0
-        
-        f1 = 2 * (precision * recall) / (precision + recall)
-        return round(f1, 2)
+        return round(2 * (precision * recall) / (precision + recall), 2)
     
     def calculate_false_negative_rate(
-        self, 
-        findings: List[Finding], 
-        ground_truth: Dict[str, Dict]
-    ) -> float:
+        self,
+        findings: List[Finding],
+        ground_truth: List[GroundTruthEntry],
+    ) -> Optional[float]:
         """
-        Calculate False Negative Rate
-        
-        FNR = FN / (FN + TP)
-        
-        Returns:
-            FNR percentage (0-100)
+        Calculate False Negative Rate = 100 - Recall.
+        Returns None when no ground truth exists.
         """
         recall = self.calculate_recall(findings, ground_truth)
-        fnr = 100 - recall
-        return round(fnr, 2)
+        if recall is None:
+            return None
+        return round(100 - recall, 2)
     
     def calculate_severity_accuracy(
         self,
         findings: List[Finding],
-        ground_truth: Dict[str, Dict]
+        ground_truth: List[GroundTruthEntry],
     ) -> float:
         """
-        Calculate severity classification accuracy
-        
+        Calculate severity classification accuracy.
+
         Returns:
             Accuracy percentage (0-100)
         """
         correct = 0
         total = 0
-        
+
         for finding in findings:
-            for vuln_name, vuln_data in ground_truth.items():
-                if self._matches_vulnerability(finding, vuln_name, vuln_data):
+            for gt in ground_truth:
+                if self._matches(finding, gt):
                     total += 1
-                    expected_severity = vuln_data["severity"]
+                    expected_severity = gt.severity
                     actual_severity = finding.severity.value
-                    
+
                     if expected_severity == actual_severity:
                         correct += 1
-        
+
         if total == 0:
             return 0.0
-        
+
         accuracy = (correct / total) * 100
         return round(accuracy, 2)
     
     def calculate_cvss_correlation(
         self,
         findings: List[Finding],
-        ground_truth: Dict[str, Dict]
+        ground_truth: List[GroundTruthEntry],
     ) -> Tuple[float, float]:
         """
-        Calculate Pearson correlation between system CVSS and expert CVSS
-        
+        Calculate Pearson correlation between system CVSS and expert CVSS.
+
         Returns:
             (correlation_coefficient, p_value)
         """
         system_scores = []
         expert_scores = []
-        
+
         for finding in findings:
-            for vuln_name, vuln_data in ground_truth.items():
-                if self._matches_vulnerability(finding, vuln_name, vuln_data):
-                    if finding.cvss_score and vuln_data.get("cvss"):
+            for gt in ground_truth:
+                if self._matches(finding, gt):
+                    if finding.cvss_score and gt.cvss:
                         system_scores.append(finding.cvss_score)
-                        expert_scores.append(vuln_data["cvss"])
-        
+                        expert_scores.append(gt.cvss)
+
         if len(system_scores) < 2:
             return 0.0, 1.0
-        
+
         r, p_value = pearsonr(system_scores, expert_scores)
         return round(r, 3), round(p_value, 4)
     
     def _get_finding_signature(self, finding: Finding) -> str:
         """Generate unique signature for finding"""
         return f"{finding.category}:{finding.title.lower()}:{finding.location}"
-    
-    def _matches_ground_truth(
-        self, 
-        signature: str, 
-        finding: Finding, 
-        ground_truth: Dict[str, Dict]
-    ) -> bool:
-        """Check if finding matches any ground truth vulnerability"""
-        for vuln_name, vuln_data in ground_truth.items():
-            if self._matches_vulnerability(finding, vuln_name, vuln_data):
-                return True
-        return False
-    
-    def _matches_vulnerability(
-        self, 
-        finding: Finding, 
-        vuln_name: str, 
-        vuln_data: Dict
-    ) -> bool:
-        """Check if finding matches specific vulnerability"""
-        # Match by category
-        if finding.category != vuln_data["category"]:
+
+    def _matches(self, finding: Finding, gt: GroundTruthEntry) -> bool:
+        """Category must match; at least 2 vuln_name keywords in finding text."""
+        if finding.category != gt.category:
             return False
-        
-        # Match by keywords in title or description
-        keywords = vuln_name.lower().replace("_", " ").split()
-        finding_text = (finding.title + " " + finding.description).lower()
-        
-        # At least 2 keywords must match
-        matches = sum(1 for kw in keywords if kw in finding_text)
-        return matches >= 2
+        keywords = gt.vuln_name.lower().replace("-", " ").replace("_", " ").split()
+        finding_text = (finding.title + " " + (finding.details or "")).lower()
+        return sum(1 for kw in keywords if kw in finding_text) >= 2
 
 
 class EfficiencyMetrics:
@@ -642,10 +488,10 @@ class MetricsCalculator:
         """
         with get_db() as db:
             findings = db.query(Finding).filter(Finding.job_id == job_id).all()
-            ground_truth = self.ground_truth_manager.get_ground_truth(target)
-            
+            ground_truth = self.ground_truth_manager.get_ground_truth(target, db)
+
             # Effectiveness metrics
-            precision = self.effectiveness.calculate_precision(findings, ground_truth)
+            precision = self.effectiveness.calculate_precision(findings)
             recall = self.effectiveness.calculate_recall(findings, ground_truth)
             f1_score = self.effectiveness.calculate_f1_score(precision, recall)
             fnr = self.effectiveness.calculate_false_negative_rate(findings, ground_truth)
