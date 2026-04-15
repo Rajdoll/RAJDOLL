@@ -53,6 +53,8 @@ def get_findings(job_id: int):
                 "evidence": f.evidence,
                 "details": f.details,
                 "created_at": f.created_at,
+                "is_true_positive": f.is_true_positive,
+                "validation_notes": f.validation_notes,
             }
             for f in findings
         ]
