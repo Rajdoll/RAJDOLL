@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -126,6 +127,9 @@ class Finding(Base):
     cvss_score_v4: Mapped[Optional[float]] = Column(Float, nullable=True)
     references: Mapped[Optional[list]] = Column("references", JSON, nullable=True)
     enrichment_source: Mapped[Optional[str]] = Column(String(20), nullable=True)
+    # Manual precision validation
+    is_true_positive: Mapped[Optional[bool]] = Column(Boolean, nullable=True, default=None)
+    validation_notes: Mapped[Optional[str]] = Column(Text, nullable=True, default=None)
 
     job: Mapped[Job] = relationship("Job", back_populates="findings")
 
