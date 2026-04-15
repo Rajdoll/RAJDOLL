@@ -12,6 +12,8 @@ from .routes.hitl import router as hitl_router
 from .routes.hitl_chat import router as hitl_chat_router
 from .routes.pdf_report import router as pdf_report_router
 from .routes.evaluation import router as evaluation_router  # 🆕 Evaluation metrics API
+from .routes.ground_truth import router as ground_truth_router
+from .routes.validation import router as validation_router
 from multi_agent_system.core.db import Base, engine
 from starlette.staticfiles import StaticFiles
 
@@ -25,6 +27,8 @@ app.include_router(results_router, prefix="/api")
 app.include_router(owasp_reports_router, prefix="/api")
 app.include_router(pdf_report_router, prefix="/api")
 app.include_router(evaluation_router, prefix="/api")  # 🆕 Evaluation metrics endpoint
+app.include_router(ground_truth_router, prefix="/api")
+app.include_router(validation_router, prefix="/api")
 app.include_router(ws_router)
 app.include_router(logs_router)
 app.include_router(hitl_router)
@@ -40,5 +44,6 @@ app.mount(
 
 @app.on_event("startup")
 def _create_tables():
+	from multi_agent_system.models import ground_truth  # noqa: register GroundTruthEntry
 	Base.metadata.create_all(bind=engine)
 
