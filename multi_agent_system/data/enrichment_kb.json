@@ -367,7 +367,11 @@
       "x-content-type",
       "security headers",
       "hsts missing",
-      "csp missing header"
+      "csp missing header",
+      "hsts issues",
+      "hsts issue",
+      "hsts not set",
+      "strict-transport-security"
     ],
     "wstg_id": "WSTG-CONF-07",
     "cwe_id": "CWE-693",
@@ -509,7 +513,11 @@
       "content security policy",
       "csp bypass",
       "unsafe-inline",
-      "unsafe-eval"
+      "unsafe-eval",
+      "csp issue",
+      "no csp header",
+      "csp not set",
+      "missing csp"
     ],
     "wstg_id": "WSTG-CLNT-12",
     "cwe_id": "CWE-693",
@@ -571,7 +579,11 @@
       "discount abuse",
       "coupon bypass",
       "expired coupon",
-      "coupon manipulation"
+      "coupon manipulation",
+      "coupon/pricing vulnerability",
+      "price manipulation",
+      "pricing vulnerability",
+      "quantity data exposed"
     ],
     "wstg_id": "WSTG-BUSL-09",
     "cwe_id": "CWE-840",
@@ -790,6 +802,226 @@
       "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/19-Testing_for_Server-Side_Request_Forgery",
       "https://cwe.mitre.org/data/definitions/918.html",
       "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "sqli-login-bypass",
+    "category_pattern": "wstg-athn",
+    "title_keywords": ["sql injection login bypass", "login bypass", "sqli bypass", "sqli login", "sql injection login"],
+    "wstg_id": "WSTG-ATHN-03",
+    "cwe_id": "CWE-89",
+    "cvss_score_v4": 9.3,
+    "explanation": "SQL injection in the login endpoint allows an attacker to bypass authentication entirely by injecting SQL metacharacters into the username or password field. The underlying query is constructed with unsanitized input, allowing payloads such as `' OR '1'='1` to always evaluate as true, granting access as any user — including administrators.",
+    "remediation": "1. Replace all dynamic SQL string concatenation with parameterized queries or prepared statements.\n2. Use an ORM layer that auto-escapes inputs and never constructs raw SQL from user-supplied values.\n3. Add server-side input validation: reject login credentials containing SQL metacharacters (', \", --, ;, /**/).\n4. Implement account lockout or CAPTCHA after repeated failed login attempts to limit brute-force and injection probing.\n5. Deploy WAF rules to detect and block common SQL injection patterns targeting login endpoints.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/04-Authentication_Testing/03-Testing_for_Weak_Lock_Out_Mechanism",
+      "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/89.html"
+    ]
+  },
+  {
+    "id": "auth-bypass-schema",
+    "category_pattern": "wstg-athn",
+    "title_keywords": ["auth bypass", "authentication bypass", "bypass authentication", "protected resource accessible without auth", "direct access", "case_change", "path_traversal"],
+    "wstg_id": "WSTG-ATHN-06",
+    "cwe_id": "CWE-287",
+    "cvss_score_v4": 9.1,
+    "explanation": "The application's authentication enforcement can be bypassed through techniques such as URL case manipulation, direct path access, or path traversal sequences. Protected resources that should require a valid session are accessible without credentials, allowing unauthenticated users to reach administrative functions or private data.",
+    "remediation": "1. Enforce authentication checks in server-side middleware that applies to every request — do not rely on route-level guards that can be bypassed by URL manipulation.\n2. Normalize URLs server-side before performing access control checks (canonicalize case, resolve path traversal sequences).\n3. Use a centralized authorization filter applied across all routes, not per-endpoint logic.\n4. Conduct regular access-control testing to verify that every protected resource returns 401/403 for unauthenticated requests.\n5. Implement an integration test suite that asserts authentication failure for all protected endpoints.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/04-Authentication_Testing/06-Testing_for_Browser_Cache_Weaknesses",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/287.html"
+    ]
+  },
+  {
+    "id": "auth-rate-limit-channel",
+    "category_pattern": "wstg-athn",
+    "title_keywords": ["alt channel", "no rate limiting", "rate limiting", "captcha bypass", "missing misuse defense", "misuse defense", "csrf token", "csrf missing", "over https", "not fully over https", "login over http", "sensitive pages may be cacheable", "login form may not use post"],
+    "wstg_id": "WSTG-ATHN-02",
+    "cwe_id": "CWE-307",
+    "cvss_score_v4": 7.5,
+    "explanation": "Authentication endpoints lack consistent security controls across all access channels. Missing rate limiting allows unlimited login attempts enabling brute force attacks. Alternative API/mobile authentication channels bypass front-end protections. Authentication over HTTP exposes credentials in transit. Missing CSRF tokens allow cross-site request forgery on login forms.",
+    "remediation": "1. Apply rate limiting (e.g., 5 attempts per minute per IP) consistently across ALL authentication channels: web, mobile, API, and alternative login paths.\n2. Enforce HTTPS on every authentication endpoint — redirect HTTP to HTTPS at the web server level and add HSTS.\n3. Add CSRF tokens to all state-changing forms, especially login, registration, and password reset.\n4. Validate and renew CAPTCHA server-side — never trust client-side CAPTCHA bypass signals.\n5. Set Cache-Control: no-store on all authentication response pages to prevent sensitive data being cached by browsers or proxies.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/04-Authentication_Testing/02-Testing_for_Default_Credentials",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/307.html"
+    ]
+  },
+  {
+    "id": "password-reset-weak",
+    "category_pattern": "wstg-athn",
+    "title_keywords": ["password reset", "reset token", "reset no rate limiting", "reset does not require current password", "reset exposed in http"],
+    "wstg_id": "WSTG-ATHN-09",
+    "cwe_id": "CWE-640",
+    "cvss_score_v4": 8.1,
+    "explanation": "The password reset mechanism has multiple weaknesses: the reset token is exposed in HTTP responses, there is no rate limiting on reset requests, and changing a password does not require verification of the current password. These issues allow attackers to enumerate valid accounts, flood inboxes, or trivially reset any user's password if the token is interceptable.",
+    "remediation": "1. Generate cryptographically random, single-use password reset tokens with a short expiry (15 minutes maximum).\n2. Deliver reset tokens exclusively via email — never include them in HTTP response bodies or redirect URLs.\n3. Rate-limit password reset requests per account and per IP address (e.g., 3 requests per hour).\n4. Require current password verification for password change operations when the user is already authenticated.\n5. Invalidate all active sessions after a successful password reset to prevent session fixation.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/04-Authentication_Testing/09-Testing_for_Weak_Password_Change_or_Reset_Functionalities",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/640.html"
+    ]
+  },
+  {
+    "id": "rate-limit-bypass",
+    "category_pattern": "wstg-busl",
+    "title_keywords": ["rate limiting bypass", "no rate limiting", "captcha bypass", "captcha not validated", "login brute force", "registration spam", "feedback spam", "complaint spam", "search abuse"],
+    "wstg_id": "WSTG-BUSL-08",
+    "cwe_id": "CWE-770",
+    "cvss_score_v4": 7.3,
+    "explanation": "The application lacks rate limiting on high-value actions including login, registration, feedback submission, and search. An attacker can automate these endpoints without restriction, enabling credential brute force, account registration flooding, spam submission, and denial-of-service through resource exhaustion. CAPTCHA controls present are either bypassable or not validated server-side.",
+    "remediation": "1. Implement server-side rate limiting on all user-facing endpoints using token bucket or sliding window algorithms (e.g., 10 requests/minute for sensitive actions).\n2. Validate CAPTCHA on the server — never trust a client-supplied 'captcha_passed' flag.\n3. Use progressive delays or temporary IP blocks after repeated violations.\n4. Apply per-user and per-IP limits independently to prevent distributed attacks.\n5. Consider integrating a bot-detection service (Cloudflare, reCAPTCHA Enterprise) for critical flows.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/08-Test_for_Process_Timing",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/770.html"
+    ]
+  },
+  {
+    "id": "business-logic-shopping-cart",
+    "category_pattern": "wstg-busl",
+    "title_keywords": ["shopping cart manipulation", "cart manipulation", "shopping cart"],
+    "wstg_id": "WSTG-BUSL-01",
+    "cwe_id": "CWE-840",
+    "cvss_score_v4": 7.5,
+    "explanation": "The shopping cart implementation does not adequately enforce business rules server-side. An attacker can manipulate cart parameters (item quantities, prices, discount codes) after they are set client-side, resulting in placing orders at arbitrary prices or acquiring items for free.",
+    "remediation": "1. Calculate all prices, discounts, and totals exclusively on the server — never trust price or discount values submitted by the client.\n2. Store cart state server-side tied to the user's session, not in client-accessible cookies or local storage.\n3. Validate item availability and pricing at checkout time, not only when items are added.\n4. Implement integrity checks: sign cart contents with an HMAC so tampering is detectable.\n5. Log all order submissions and alert on statistical outliers (unusually low totals, repeated discount application).",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/01-Test_Business_Logic_Data_Validation",
+      "https://cwe.mitre.org/data/definitions/840.html"
+    ]
+  },
+  {
+    "id": "business-logic-integrity",
+    "category_pattern": "wstg-busl",
+    "title_keywords": ["integrity check failure", "integrity check", "workflow integrity", "workflow bypass"],
+    "wstg_id": "WSTG-BUSL-03",
+    "cwe_id": "CWE-841",
+    "cvss_score_v4": 7.5,
+    "explanation": "The application fails to enforce multi-step workflow integrity, allowing users to skip, repeat, or reorder process steps. This can enable checkout without payment, order placement without stock validation, or privilege escalation by jumping to later workflow stages.",
+    "remediation": "1. Enforce workflow step sequencing server-side — validate that prerequisite steps were completed before allowing the next step.\n2. Use server-side state machines to track workflow progress per session; reject out-of-order requests.\n3. Invalidate step tokens after use to prevent replay attacks (re-using a completed step token).\n4. Audit all multi-step flows (checkout, registration, onboarding) with adversarial test cases that attempt to skip steps.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/03-Test_Integrity_Checks",
+      "https://cwe.mitre.org/data/definitions/841.html"
+    ]
+  },
+  {
+    "id": "business-logic-misuse-defense",
+    "category_pattern": "wstg-busl",
+    "title_keywords": ["missing misuse defense", "misuse defense", "anti-automation", "abuse prevention"],
+    "wstg_id": "WSTG-BUSL-07",
+    "cwe_id": "CWE-799",
+    "cvss_score_v4": 6.9,
+    "explanation": "The application lacks defenses against misuse and abuse of legitimate functionality. Without anti-automation controls, attackers can systematically abuse registration, search, feedback, and payment flows to harvest data, spam users, or perform denial-of-service via resource exhaustion.",
+    "remediation": "1. Deploy anti-automation controls (CAPTCHA, device fingerprinting, behavioral analytics) on abuse-prone endpoints.\n2. Implement honeypot fields in forms to detect automated submissions.\n3. Set per-user and per-IP request quotas on all high-value actions.\n4. Monitor for anomalous usage patterns (high velocity requests, sequential IDs, identical request bodies) and trigger alerts or automatic blocks.\n5. Require email verification before enabling full account functionality to prevent bulk account creation.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/07-Test_Defenses_Against_Application_Misuse",
+      "https://cwe.mitre.org/data/definitions/799.html"
+    ]
+  },
+  {
+    "id": "path-traversal-download",
+    "category_pattern": "wstg-busl",
+    "title_keywords": ["path traversal download", "null byte file access", "null byte bypass", "null_byte", "directory_listing", "sensitive_file_access"],
+    "wstg_id": "WSTG-BUSL-09",
+    "cwe_id": "CWE-22",
+    "cvss_score_v4": 8.5,
+    "explanation": "The file download or serving functionality fails to properly validate the requested file path, allowing attackers to use path traversal sequences (../), null byte injection (%00), or direct path manipulation to access files outside the intended directory. This can expose application source code, configuration files, credentials, or other sensitive data.",
+    "remediation": "1. Validate all user-supplied file paths against a strict allowlist of permitted files or directories — never pass user input directly to filesystem operations.\n2. Resolve the canonical path (realpath) and verify it starts with the allowed base directory before serving any file.\n3. Strip or reject null bytes and path traversal sequences (../, ..\\\\ ) from all file-related input parameters.\n4. Store downloadable files outside the web root or use indirect references (database ID mapped to file path) rather than direct path parameters.\n5. Set Content-Disposition: attachment for all file downloads to prevent browsers from interpreting served content as HTML.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/09-Test_for_File_Uploading",
+      "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/22.html"
+    ]
+  },
+  {
+    "id": "jwt-vulnerability",
+    "category_pattern": "wstg-cryp",
+    "title_keywords": ["jwt vulnerabilit", "jwt weakness", "jwt algorithm", "jwt none", "alg none", "jwt secret", "token vulnerabilit"],
+    "wstg_id": "WSTG-CRYP-02",
+    "cwe_id": "CWE-347",
+    "cvss_score_v4": 9.1,
+    "explanation": "The application's JWT implementation contains exploitable vulnerabilities. The 'none' algorithm bypass allows forging tokens without a valid signature. Algorithm confusion attacks (RS256 to HS256) allow signing arbitrary tokens with the public key. Weak HMAC secrets can be brute-forced offline with common wordlists. Exploitation grants an attacker the ability to forge authentication tokens for any user or elevate privileges.",
+    "remediation": "1. Explicitly allowlist accepted JWT algorithms on the server — reject any token with `alg: none` or an unexpected algorithm.\n2. Use a cryptographically strong, randomly generated secret (minimum 256 bits) for HMAC-based JWTs; store it in a secrets manager, not in source code.\n3. For RS256/ES256, validate the public key origin — never accept a key from within the token itself (e.g., via 'jku' or 'x5u' headers).\n4. Set a short token expiry (15-60 minutes) and implement token revocation (blacklist or short-lived refresh tokens).\n5. Use a well-maintained JWT library rather than custom implementations and keep it updated.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/02-Testing_for_Padding_Oracle",
+      "https://portswigger.net/web-security/jwt",
+      "https://cwe.mitre.org/data/definitions/347.html"
+    ]
+  },
+  {
+    "id": "cleartext-transmission",
+    "category_pattern": "wstg-cryp",
+    "title_keywords": ["not enforce https", "transmitted in plaintext", "cleartext transmission", "http-only", "no https", "login over http", "http transmission"],
+    "wstg_id": "WSTG-CRYP-03",
+    "cwe_id": "CWE-319",
+    "cvss_score_v4": 8.1,
+    "explanation": "The application transmits sensitive data (credentials, session tokens, personal information) over unencrypted HTTP. A network attacker performing a man-in-the-middle attack can intercept and read all traffic, capture login credentials in transit, and hijack authenticated sessions by stealing unencrypted cookies.",
+    "remediation": "1. Obtain a TLS certificate (free via Let's Encrypt) and configure the web server to listen only on HTTPS (port 443).\n2. Add HTTP to HTTPS redirect rules at the web server level for all incoming HTTP (port 80) connections.\n3. Set the Strict-Transport-Security (HSTS) header: `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`.\n4. Set the Secure flag on all session and authentication cookies so they are never sent over HTTP.\n5. Verify no mixed content (HTTP resources loaded from HTTPS pages) using browser developer tools or automated scanners.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/03-Testing_for_Sensitive_Information_Sent_via_Unencrypted_Channels",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Protection_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/319.html"
+    ]
+  },
+  {
+    "id": "client-side-template-injection",
+    "category_pattern": "wstg-clnt",
+    "title_keywords": ["client-side template injection", "csti", "template injection client", "angular injection", "client side template"],
+    "wstg_id": "WSTG-CLNT-15",
+    "cwe_id": "CWE-79",
+    "cvss_score_v4": 8.1,
+    "explanation": "Client-Side Template Injection (CSTI) occurs when user-controlled data is rendered within a client-side template engine (Angular, Vue, Handlebars) without proper sanitization. An attacker can inject template expressions that execute arbitrary JavaScript in the victim's browser, leading to XSS, session hijacking, and data exfiltration.",
+    "remediation": "1. Sanitize all user-supplied data before binding it to template contexts — use the framework's built-in sanitization APIs (e.g., Angular's DomSanitizer).\n2. Avoid double-interpolation: do not insert user data into template strings that are themselves compiled by a template engine.\n3. Use a strict Content Security Policy (CSP) with `script-src 'self'` and nonces to block inline script execution.\n4. Upgrade to a framework version that sandboxes template evaluation and blocks expression injection by default.\n5. Conduct code reviews of all template bindings that include user-controlled variables.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/11-Client-Side_Testing/15-Testing_for_Client-Side_Template_Injection",
+      "https://portswigger.net/research/xss-without-html-client-side-template-injection-with-angularjs",
+      "https://cwe.mitre.org/data/definitions/79.html"
+    ]
+  },
+  {
+    "id": "http-verb-tampering",
+    "category_pattern": "wstg-inpv",
+    "title_keywords": ["http verb tampering", "verb tampering", "http method tampering", "method override", "http verb"],
+    "wstg_id": "WSTG-INPV-03",
+    "cwe_id": "CWE-650",
+    "cvss_score_v4": 7.3,
+    "explanation": "The application's access controls can be bypassed by sending HTTP requests using unexpected HTTP methods (e.g., HEAD, OPTIONS, TRACE, arbitrary verbs). Some web servers and frameworks grant different access to different HTTP methods, allowing attackers to reach protected endpoints by substituting an unexpected verb.",
+    "remediation": "1. Explicitly allowlist permitted HTTP methods for each endpoint in the web server and application framework configuration.\n2. Return 405 Method Not Allowed for any request using an unexpected HTTP method.\n3. Apply authentication and authorization checks independent of the HTTP method — do not branch access control logic on the verb.\n4. Disable HTTP TRACE and TRACK methods globally on the web server.\n5. Use framework-level routing that maps specific methods to specific handlers, rejecting unregistered method/route combinations.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/03-Testing_for_HTTP_Verb_Tampering",
+      "https://cwe.mitre.org/data/definitions/650.html"
+    ]
+  },
+  {
+    "id": "sensitive-files-exposed",
+    "category_pattern": "wstg-conf",
+    "title_keywords": ["sensitive files exposed", "sensitive file discovered", "backup file", "config file exposed", "encryptionkeys", "encryption keys", "dangerous file extension"],
+    "wstg_id": "WSTG-CONF-03",
+    "cwe_id": "CWE-538",
+    "cvss_score_v4": 8.3,
+    "explanation": "Sensitive files (backup files, configuration files, encryption keys, source code) are accessible via the web server. These files may contain database credentials, API keys, cryptographic secrets, or application source code that provides a roadmap for further attacks. Dangerous file extensions (PHP, ASP, EXE) accessible via upload paths may enable remote code execution.",
+    "remediation": "1. Remove all sensitive files from the web root — backup files (.bak, .old, .orig), configuration files (.env, web.config), and temporary files have no place in a public directory.\n2. Configure the web server to deny access to specific file extensions and path patterns (.git, .env, *.bak, *.key) with explicit 403 rules.\n3. Store encryption keys, API secrets, and credentials in a dedicated secrets manager (HashiCorp Vault, AWS Secrets Manager) — never on the filesystem under the web root.\n4. Audit the web root directory periodically with an automated scanner to detect newly introduced sensitive files.\n5. Restrict dangerous upload file extensions at the web server level before the application processes them.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/03-Test_File_Extensions_Handling_for_Sensitive_Information",
+      "https://cwe.mitre.org/data/definitions/538.html"
+    ]
+  },
+  {
+    "id": "mass-assignment-registration",
+    "category_pattern": "wstg-idnt",
+    "title_keywords": ["registration accepted extra field", "extra field", "extra_fields_accepted", "registration mass assignment", "role injection registration", "empty registration", "empty email and password"],
+    "wstg_id": "WSTG-IDNT-02",
+    "cwe_id": "CWE-915",
+    "cvss_score_v4": 8.6,
+    "explanation": "The registration endpoint accepts and processes unexpected input fields (e.g., role, isAdmin, deluxeToken) beyond the expected username and password. This mass assignment vulnerability allows attackers to self-assign elevated privileges or internal attributes during account creation. Additionally, the endpoint accepts registrations with empty credentials, which may allow account creation bypass.",
+    "remediation": "1. Implement a strict input allowlist for the registration endpoint — explicitly define and validate only the expected fields (e.g., email, password) and reject any additional properties.\n2. Use a dedicated registration DTO/schema that ignores unknown fields rather than binding all request properties to the user model.\n3. Never derive roles, permissions, or admin status from user-supplied registration data — assign defaults server-side based on registration type.\n4. Enforce minimum field requirements server-side: reject registrations with empty, null, or whitespace-only email or password.\n5. Log all registration attempts that include unexpected fields as potential security events.",
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/03-Identity_Management_Testing/02-Test_User_Registration_Process",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/915.html"
     ]
   }
 ]
