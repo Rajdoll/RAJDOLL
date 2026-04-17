@@ -151,6 +151,9 @@ class MCPClient:
                         else:
                             result["status"] = "success"
                     return result
+                except httpx.TimeoutException:
+                    # MCP container took longer than timeout — treat same as asyncio.TimeoutError
+                    return {"status": "error", "message": "timeout"}
                 except httpx.HTTPStatusError as e:
                     # 🚦 Handle rate limiting responses (429, 503)
                     if e.response.status_code in [429, 503] and target_url:
