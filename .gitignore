@@ -76,6 +76,10 @@ generate_bab4.py
 # Claude Code local config (not for repo)
 .claude/
 
+# Internal docs / design specs (local only)
+docs/
+QWEN.md
+
 # Output directories
 information-gathering/subresult/
 information-gathering/logs/
