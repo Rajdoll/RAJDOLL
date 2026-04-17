@@ -1726,6 +1726,34 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_s
                     except Exception:
                         continue
         
+        # Juice Shop-specific SSRF probe: imageUrl field in profile update
+        if auth_session:
+            _token = auth_session.get("token") or auth_session.get("access_token")
+            if _token:
+                _headers = {"Authorization": f"Bearer {_token}", "Content-Type": "application/json"}
+                _ssrf_targets = ["http://127.0.0.1/", "http://localhost:3000/api/Users/"]
+                async with httpx.AsyncClient(timeout=10, verify=False) as _client:
+                    for _target in _ssrf_targets:
+                        try:
+                            _r = await _client.post(
+                                f"{parsed.scheme}://{parsed.netloc}/profile",
+                                json={"imageUrl": _target},
+                                headers=_headers
+                            )
+                            _indicators = ["econnrefused", "connection refused", "127.0.0.1",
+                                          "ECONNREFUSED", "getaddrinfo", "fetch failed"]
+                            if any(kw in _r.text for kw in _indicators):
+                                findings.append({
+                                    "type": "ssrf_profile_imageurl",
+                                    "endpoint": "/profile",
+                                    "payload": _target,
+                                    "severity": "High",
+                                    "description": f"SSRF via profile imageUrl: server attempted to fetch {_target}",
+                                    "evidence": _r.text[:300]
+                                })
+                        except Exception:
+                            pass
+
         if findings:
             return {
                 "status": "success",
