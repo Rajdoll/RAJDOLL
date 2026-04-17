@@ -1970,7 +1970,7 @@ async def test_open_redirect(url: str, auth_session: Optional[Dict[str, Any]] = 
                     continue
 
         return {"status": "success", "data": {
-            "vulnerable": any(f.get("severity") in ("high", "critical") for f in findings),
+            "vulnerable": len(findings) > 0,  # any redirect behavior (allowlisted or bypassed) is CLNT-04 relevant
             "findings": findings,
             "vulnerabilities_found": len(findings),
             "payloads_tested": len(all_payloads)
