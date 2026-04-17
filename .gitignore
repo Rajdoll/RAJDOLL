@@ -65,6 +65,17 @@ ffuf_*.json
 secrets/
 credentials/
 
+# Research / thesis documents (local only)
+Penelitian/
+paperwritingskill/
+*.docx
+*.pdf
+*.tex
+generate_bab4.py
+
+# Claude Code local config (not for repo)
+.claude/
+
 # Output directories
 information-gathering/subresult/
 information-gathering/logs/
