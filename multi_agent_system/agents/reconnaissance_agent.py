@@ -714,12 +714,7 @@ Operate autonomously without human guidance.
         self.write_context("entry_points", entry_points)
 
         api_endpoints = entry_points.get("api_endpoints") or []
-        self.add_finding(
-            "WSTG-INFO",
-            f"Identified {entry_points.get('urls_found', 0)} entry URLs and {len(api_endpoints)} API endpoints",
-            severity="info",
-            evidence={"api_samples": api_endpoints[:5]}
-        )
+        self.log("info", f"Identified {entry_points.get('urls_found', 0)} entry URLs and {len(api_endpoints)} API endpoints")
 
     def _handle_execution_paths(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         if not isinstance(data, dict):
@@ -1243,20 +1238,7 @@ Operate autonomously without human guidance.
         snapshot["discovered_endpoints"] = payload
 
         # Add finding with detailed stats
-        self.add_finding(
-            "WSTG-INFO",
-            f"Katana JS parsing discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload['js_files'])} JS files, {len(payload['xhr_endpoints'])} XHR)",
-            severity="info",
-            evidence={
-                "total_found": total_found,
-                "api_count": len(payload["api_endpoints"]),
-                "js_count": len(payload.get("js_files", [])),
-                "xhr_count": len(payload.get("xhr_endpoints", [])),
-                "forms_count": len(payload.get("forms", [])),
-                "admin_count": len(payload.get("admin_endpoints", [])),
-                "sample": [ep["url"] for ep in endpoints[:10]]
-            }
-        )
+        self.log("info", f"Katana JS parsing discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload.get('js_files', []))} JS files, {len(payload.get('xhr_endpoints', []))} XHR)")
 
         self.log("info", f"✓ Katana crawl found {total_found} endpoints via JS parsing (API: {len(payload['api_endpoints'])}, JS: {len(payload.get('js_files', []))}, XHR: {len(payload.get('xhr_endpoints', []))})")
 
@@ -1318,12 +1300,7 @@ Operate autonomously without human guidance.
         self.write_context("discovered_endpoints", payload)
         baseline_snapshot["discovered_endpoints"] = payload
 
-        self.add_finding(
-            "WSTG-INFO",
-            f"Discovered {len(endpoints)} candidate endpoints",
-            severity="info",
-            evidence={"sample": [ep["endpoint"] for ep in endpoints[:10]]}
-        )
+        self.log("info", f"Discovered {len(endpoints)} candidate endpoints")
 
     async def _discover_endpoints(self, target: str) -> List[Dict[str, Any]]:
         target_url = target if target.startswith(("http://", "https://")) else f"https://{target.lstrip('/')}"
@@ -1610,12 +1587,7 @@ Operate autonomously without human guidance.
             return
 
         if report.get("risk_summary"):
-            self.add_finding(
-                "WSTG-INFO",
-                "Recon analytic summary",
-                severity="info",
-                evidence={"highlights": report["risk_summary"][:5]},
-            )
+            self.log("info", f"Recon analytic summary: {report['risk_summary'][:2]}")
             self.write_context("recon_summary", {"insights": report["risk_summary"]})
 
         context_updates = report.get("context_updates")
@@ -1790,12 +1762,7 @@ Operate autonomously without human guidance.
             if not isinstance(payload, dict):
                 payload = {"value": payload}
             self.write_context(context_key, payload)
-            self.add_finding(
-                "WSTG-INFO",
-                f"Follow-up tool executed: {tool_key}",
-                severity="info",
-                evidence={"reason": follow.get("reason"), "context_key": context_key}
-            )
+            self.log("info", f"Follow-up tool executed: {tool_key} (reason: {follow.get('reason', 'N/A')})")
 
     def _resolve_value_source(self, source: Optional[str], baseline_snapshot: Dict[str, Any]) -> Any:
         if not source:
