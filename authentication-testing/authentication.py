@@ -513,9 +513,10 @@ async def test_alternative_channel_auth(base_url: str, mobile_endpoints: List[st
                 try:
                     # 1. Check if endpoint exists
                     resp = await client.get(url)
-                    
-                    if resp.status_code == 404:
-                        continue
+
+                    content_type = resp.headers.get("content-type", "")
+                    if resp.status_code == 404 or "text/html" in content_type:
+                        continue  # not an API auth endpoint — skip HTML error pages and missing routes
                     
                     # 2. Try weak credentials
                     weak_auth_tests = [
