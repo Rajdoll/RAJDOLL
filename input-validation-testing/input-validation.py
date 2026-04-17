@@ -319,8 +319,7 @@ async def run_dalfox_scan(
         "--skip-bav",  # Skip boring parameter values (faster scanning)
         "--worker", "50",  # Parallel workers for speed
         "--delay", "100",  # 100ms delay (fast but not overwhelming)
-        "--timeout", "30",  # 30s timeout per request
-        "--only-poc"  # Only show PoC (cleaner output)
+        "--timeout", "30"  # 30s timeout per request
     ]
 
     # PHASE 2.2 ENHANCEMENT: POST method support
@@ -364,7 +363,7 @@ async def run_dalfox_scan(
     # Aggression level can be controlled by LLM based on reconnaissance findings
     aggression = (config.get("aggression") or "aggressive").lower()
     if aggression == "aggressive":
-        cmd += ["--deep-dom", "--mining-dom-depth", "5"]  # Deep DOM traversal for SPA frameworks
+        cmd += ["--deep-dom"]  # Deep DOM traversal for SPA frameworks
 
     # Additional headers from config
     headers = config.get("headers")
