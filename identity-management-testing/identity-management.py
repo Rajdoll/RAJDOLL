@@ -838,16 +838,18 @@ async def test_registration_mass_assignment(url: str, auth_session: Optional[Dic
                                     "recommendation": "Whitelist allowed fields in registration endpoint",
                                 })
 
-                        # Empty field test
+                        # Empty field test — only flag if server returned a real user object (has an id)
                         if test["name"] == "empty_fields" and resp.status_code in (200, 201):
-                            findings.append({
-                                "type": "empty_registration",
-                                "test": test["name"],
-                                "endpoint": endpoint,
-                                "severity": "medium",
-                                "description": "Registration accepted with empty email and password",
-                                "evidence": str(resp_data)[:300],
-                            })
+                            data_obj = resp_data.get("data", resp_data) if isinstance(resp_data, dict) else {}
+                            if isinstance(data_obj, dict) and data_obj.get("id"):
+                                findings.append({
+                                    "type": "empty_registration",
+                                    "test": test["name"],
+                                    "endpoint": endpoint,
+                                    "severity": "medium",
+                                    "description": "Registration accepted with empty email and password",
+                                    "evidence": str(resp_data)[:300],
+                                })
 
                         # Even if check field not in response, registration succeeded with extra params
                         if check and resp.status_code == 201:

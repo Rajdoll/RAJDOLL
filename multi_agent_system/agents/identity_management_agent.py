@@ -73,7 +73,7 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
                     users = res.get("data", {}).get("generated_usernames", [])
                     if users:
                         self.write_context("idm_usernames", {"list": users})
-                        self.add_finding("WSTG-IDNT", "Prepared test usernames for enumeration checks", severity="info", evidence={"count": len(users)})
+                        self.log("info", f"Generated {len(users)} test usernames for enumeration checks")
             except Exception as e:
                 self.log("warning", f"generate_test_usernames failed: {e}")
 
