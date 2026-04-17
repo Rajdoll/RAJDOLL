@@ -244,8 +244,10 @@ async def test_xxe_via_svg(
             
             try:
                 files = {file_param: (filename, payload, "image/svg+xml")}
-                resp = await client.post(url, files=files, headers=headers)
-                
+                resp = await asyncio.wait_for(
+                    client.post(url, files=files, headers=headers), timeout=10.0
+                )
+
                 if resp.status_code in [200, 201]:
                     # Check for file content disclosure
                     if "root:" in resp.text or "daemon:" in resp.text:
@@ -294,7 +296,9 @@ async def test_xxe_via_svg(
                     # Generic XXE detection (XML parsing enabled)
                     upload_url = _extract_upload_url(resp.text, filename)
                     if upload_url:
-                        verify_resp = await client.get(upload_url, headers=headers)
+                        verify_resp = await asyncio.wait_for(
+                            client.get(upload_url, headers=headers), timeout=10.0
+                        )
                         if "<?xml" in verify_resp.text or "<!DOCTYPE" in verify_resp.text:
                             findings.append({
                                 "type": "xxe_possible",
