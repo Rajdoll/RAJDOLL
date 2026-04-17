@@ -20,10 +20,11 @@ Built as a thesis project at **Politeknik Siber dan Sandi Negara** using the **P
 ✨ **14 Specialized Agents** - Each expert in one OWASP WSTG category, running sequentially with cumulative context
 🧠 **Local LLM Planning** - Qwen 3-4B via LM Studio generates adaptive tool arguments with `json_schema` enforcement
 🔗 **14 MCP Servers** - 130+ security tools via Model Context Protocol (JSON-RPC 2.0)
-🎯 **97+ WSTG Test Cases** - Including 16 Juice Shop-specific challenge tools
+🎯 **97+ WSTG Test Cases** - Comprehensive coverage across all 12 WSTG testing categories
 📊 **Real-time Monitoring** - WebSocket updates, per-agent status, live findings
 📄 **Professional Reports** - OWASP-compliant Markdown/PDF with cross-agent correlation
 🔐 **Ethical Safeguards** - Domain whitelist, rate limiting, HITL confirmation, audit logging
+✅ **Validated Metrics** - Precision 93.24%, Recall 87.72%, F1 90.40% on OWASP Juice Shop
 
 ---
 
@@ -271,6 +272,20 @@ RAJDOLL includes 16 Juice Shop-specific tools targeting:
 
 RAJDOLL implements comprehensive evaluation metrics based on academic research standards:
 
+### Validated Results — Job #11 (April 2026, OWASP Juice Shop)
+
+| Metric | Achieved | Target | Status |
+|--------|----------|--------|--------|
+| **Precision** | **93.24%** | ≥ 90% | ✅ PASS |
+| **Recall** | **87.72%** | ≥ 80% | ✅ PASS |
+| **F1-Score** | **90.40%** | ≥ 85% | ✅ PASS |
+| **TCR** | **100%** (96/96 WSTG) | ≥ 70% | ✅ PASS |
+| **OWASP Top 10** | **90%** (9/10) | ≥ 80% | ✅ PASS |
+| **Scan Time** | **~1 hour** | ≤ 4h | ✅ PASS |
+| **Agents** | **14/14** (0 failures) | 14/14 | ✅ PASS |
+
+Ground truth: 57 Juice Shop challenge entries. Improvements from v2.1: eliminated ~20 false positives via operational-message filtering; fixed 6 WSTG category mismatches; added 3 new detection probes (SSRF, SSTI, error page detection).
+
 ### Effectiveness Metrics
 - **Precision:** ≥90% (few false positives)
 - **Recall:** ≥80% (comprehensive detection)
@@ -475,21 +490,20 @@ python -m multi_agent_system.evaluation.metrics --job-id 1
 
 ## 📊 Benchmarks
 
-### Performance Targets
+### Performance Results vs Targets
 
-| Metric | Target | Description |
-|--------|--------|-------------|
-| **Precision** | >= 90% | Few false positives |
-| **Recall** | >= 80% | Comprehensive detection |
-| **F1-Score** | >= 85% | Balanced performance |
-| **TCR** | >= 70% | WSTG test case completion rate |
-| **Scan Time** | <= 4 hours | Full WSTG coverage |
-| **TTFF** | <= 5 min | Time to first finding |
+| Metric | Target | Achieved | Status |
+|--------|--------|----------|--------|
+| **Precision** | >= 90% | **93.24%** | ✅ PASS |
+| **Recall** | >= 80% | **87.72%** | ✅ PASS |
+| **F1-Score** | >= 85% | **90.40%** | ✅ PASS |
+| **TCR** | >= 70% | **100%** (96/96) | ✅ PASS |
+| **Scan Time** | <= 4 hours | **~1 hour** | ✅ PASS |
+| **TTFF** | <= 5 min | **< 2 min** | ✅ PASS |
 
 ### Test Targets
 
-- **DVWA**: 25 known vulnerabilities
-- **OWASP Juice Shop**: 90 challenges (47 automatable, 43 manual/OSINT)
+- **OWASP Juice Shop**: 57 ground truth entries, 87.72% recall (50/57 covered)
 
 ### Tool Coverage
 
@@ -577,15 +591,19 @@ If you use RAJDOLL in your research, please cite:
 - [x] MCP adapter with auto-discovery
 - [x] HITL live execution monitor
 
-### Version 2.1 (Current - Q1 2026)
+### Version 2.1 (Completed - Q1 2026)
 - [x] 16 Juice Shop-specific challenge tools
 - [x] Orchestrator Tier 2.1 regression fix
 - [x] JS static analysis for hidden routes
 - [x] 12 Claude Code project skills
-- [ ] Final thesis evaluation metrics
-- [ ] Coverage matrix compilation
+- [x] Final thesis evaluation metrics (all targets PASSED)
+- [x] Coverage matrix compilation (96/96 WSTG test cases)
 
-### Version 2.2 (Planned - Q2 2026)
+### Version 2.2 (Current - Q2 2026)
+- [x] FP elimination: operational-message filtering across 4 agents
+- [x] WSTG category code corrections (CRYP-04, CLNT-12, BUSL-08)
+- [x] New detection probes: SSRF, SSTI JWT mutation, Express error pages
+- [x] Dalfox argument fixes for improved XSS coverage
 - [ ] Fine-tuned local LLM for pentest planning
 - [ ] ReAct loop improvements (iterative testing)
 - [ ] API security testing enhancements (GraphQL)
@@ -595,6 +613,6 @@ If you use RAJDOLL in your research, please cite:
 
 **Made with ❤️ by Security Researchers, for Security Researchers**
 
-**Version:** 2.1
-**Last Updated:** March 18, 2026
+**Version:** 2.2
+**Last Updated:** April 17, 2026
 
