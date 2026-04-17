@@ -80,13 +80,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                     upload_endpoints = data.get("endpoints", [])
                     if upload_endpoints:
                         self.log("info", f"✓ Discovered {len(upload_endpoints)} upload endpoints")
-                        # Add finding for discovered endpoints
-                        self.add_finding(
-                            "WSTG-BUSL-08",
-                            f"Discovered {len(upload_endpoints)} file upload endpoints",
-                            severity="info",
-                            evidence={"endpoints": [ep["url"] for ep in upload_endpoints[:5]]}
-                        )
+                        self.write_context("upload_endpoints", {"endpoints": [ep["url"] for ep in upload_endpoints]})
             except Exception as e:
                 self.log("warning", f"Upload endpoint discovery failed: {e}")
         
@@ -102,7 +96,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
             self.log("info", f"Using {len(upload_endpoints)} common upload patterns")
         
         # Step 2: Test each discovered endpoint
-        for endpoint in upload_endpoints[:5]:  # Test up to 5 endpoints
+        for endpoint in upload_endpoints[:2]:  # Test up to 2 endpoints (5 caused cascading timeout issues)
             upload_url = endpoint.get("url")
             self.log("info", f"🔥 Testing upload endpoint: {upload_url}")
             
@@ -261,7 +255,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                             findings = data.get("findings", [])
                             for finding in findings:
                                 self.add_finding(
-                                    "WSTG-BUSL-09",
+                                    "WSTG-BUSL-08",
                                     f"Upload size limit bypass: {finding.get('file_size', 'unknown')}",
                                     severity=finding.get("severity", "medium"),
                                     evidence={"url": upload_url, "description": finding.get("description", "")}
