@@ -617,7 +617,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                         server="input-validation-testing",
                         tool="test_nosql_injection",
                         args={"url": ep_url},
-                        auth_session=auth_data, timeout=120
+                        auth_session=auth_data, timeout=300
                     )
                     if isinstance(result, dict) and result.get("status") == "success":
                         data = result.get("data", {})
@@ -636,7 +636,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     server="input-validation-testing",
                     tool="test_sqli_login",
                     args={"url": target},
-                    auth_session=auth_data, timeout=120
+                    auth_session=auth_data, timeout=300
                 )
                 if isinstance(result, dict) and result.get("status") == "success":
                     data = result.get("data", {})
@@ -956,10 +956,15 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         """Execute XXE test on LLM-selected URL."""
         self.log("info", f"   🔍 XXE testing: {url}")
 
+        # Derive base URL and add Juice Shop's file upload endpoint for SVG XXE testing
+        from urllib.parse import urlparse as _urlparse
+        _parsed = _urlparse(url)
+        _base = f"{_parsed.scheme}://{_parsed.netloc}"
+
         result = await self.execute_tool(
             server="input-validation-testing",
             tool="test_xxe",
-            args={"url": url},
+            args={"url": url, "upload_endpoint": f"{_base}/file-upload"},
             auth_session=auth_data,
             timeout=120
         )
