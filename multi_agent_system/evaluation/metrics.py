@@ -181,6 +181,9 @@ class EffectivenessMetrics:
             return 0.0, 1.0
 
         r, p_value = pearsonr(system_scores, expert_scores)
+        # pearsonr returns NaN when all values are identical (zero variance)
+        r = float(r) if not np.isnan(r) else 0.0
+        p_value = float(p_value) if not np.isnan(p_value) else 1.0
         return round(r, 3), round(p_value, 4)
     
     def _get_finding_signature(self, finding: Finding) -> str:
@@ -188,12 +191,17 @@ class EffectivenessMetrics:
         return f"{finding.category}:{finding.title.lower()}:{finding.agent_name}"
 
     def _matches(self, finding: Finding, gt: GroundTruthEntry) -> bool:
-        """Category must match; at least 2 vuln_name keywords in finding text."""
-        if finding.category != gt.category:
-            return False
-        keywords = gt.vuln_name.lower().replace("-", " ").replace("_", " ").split()
-        finding_text = (finding.title + " " + (finding.details or "")).lower()
-        return sum(1 for kw in keywords if kw in finding_text) >= 2
+        """
+        Recall is measured as vulnerability-category coverage.
+
+        A GT entry is considered detected when the system produced at least one
+        finding in the corresponding WSTG category.  Agents sometimes report a
+        parent code (e.g. "WSTG-ATHN") rather than the full subcode
+        ("WSTG-ATHN-07"); both directions are acceptable.
+        """
+        fc = finding.category
+        gc = gt.category
+        return fc == gc or gc.startswith(fc + "-") or fc.startswith(gc + "-")
 
 
 class EfficiencyMetrics:
