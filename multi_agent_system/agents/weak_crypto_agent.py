@@ -310,7 +310,7 @@ Write to shared_context:
                             critical_count = sum(1 for f in findings if f.get("severity") == "CRITICAL")
                             high_count = sum(1 for f in findings if f.get("severity") == "HIGH")
                             severity = "critical" if critical_count > 0 else ("high" if high_count > 0 else "medium")
-                            self.add_finding("WSTG-CRYP-02", f"JWT vulnerabilities found: {len(findings)} issues ({critical_count} critical, {high_count} high)", severity=severity, evidence={"findings": findings, "token_info": data.get("token_info", {})})
+                            self.add_finding("WSTG-CRYP-04", f"JWT vulnerabilities found: {len(findings)} issues ({critical_count} critical, {high_count} high)", severity=severity, evidence={"findings": findings, "token_info": data.get("token_info", {})})
                             self.log("info", f"JWT weakness test found {len(findings)} vulnerabilities")
                         else:
                             self.log("info", "No JWT vulnerabilities detected")

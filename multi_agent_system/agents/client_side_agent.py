@@ -358,7 +358,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             except Exception as e:
                 self.log("warning", f"test_web_messaging failed: {e}")
 
-        # WSTG-CLNT-15: CSP bypass testing for XSS
+        # WSTG-CLNT-12: CSP bypass testing for XSS
         if self.should_run_tool("test_csp_bypass"):
             try:
                 self.log("info", "Testing CSP bypass vectors")
