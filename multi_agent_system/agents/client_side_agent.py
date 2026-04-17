@@ -373,7 +373,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     if data.get("vulnerable"):
                         for finding in data.get("findings", []):
                             self.add_finding(
-                                "WSTG-CLNT-15",
+                                "WSTG-CLNT-12",
                                 f"CSP issue: {finding.get('type', 'unknown')}",
                                 severity=finding.get("severity", "medium"),
                                 evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
