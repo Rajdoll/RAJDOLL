@@ -105,41 +105,55 @@ async def probe_for_error_leaks(base_url: str, auth_session: Optional[Dict[str, 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
 async def check_generic_error_pages(base_url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    [BARU] Checks default server responses for 404 and 403 errors to find info leaks.
-    
-    Args:
-        base_url: Target URL to check for generic error pages
-        auth_session: Optional authentication session with cookies/headers/token
+    Checks server responses for error information disclosure.
+    Probes both HTML 404 paths and API paths that return Express/framework error messages.
     """
     logger.info(f"🔍 Executing check_generic_error_pages")
     try:
-        # Meminta path yang pasti tidak ada
-        random_path = f"/{''.join(random.choices(string.ascii_lowercase, k=12))}.html"
-        test_url = f"{base_url.rstrip('/')}{random_path}"
-        
-        # Build request kwargs with auth support
         req_kwargs = {"timeout": 10, "verify": False}
         if auth_session:
             if 'cookies' in auth_session:
                 req_kwargs['cookies'] = auth_session['cookies']
-            if 'headers' in auth_session:
-                req_kwargs['headers'] = auth_session.get('headers', {})
-            elif 'token' in auth_session:
-                req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
-        
+            if 'token' in auth_session:
+                req_kwargs.setdefault('headers', {})['Authorization'] = f"Bearer {auth_session['token']}"
+
+        info_leaks = []
+        base = base_url.rstrip('/')
+
         async with httpx.AsyncClient(**req_kwargs) as client:
-            resp = await client.get(test_url)
-        
-        # Pola untuk banner server umum
-        server_pattern = re.compile(r"\b(Apache|IIS|nginx|LiteSpeed|gws|Jetty)[\s/][\d\.]+", re.I)
-        banner_found = server_pattern.search(resp.text)
-        
+            # Probe 1: Random HTML path (SPA check)
+            random_path = f"/{''.join(random.choices(string.ascii_lowercase, k=12))}.html"
+            html_resp = await client.get(f"{base}{random_path}")
+            server_pattern = re.compile(r"\b(Apache|IIS|nginx|LiteSpeed|Jetty)[\s/][\d\.]+", re.I)
+            if server_pattern.search(html_resp.text):
+                info_leaks.append({"type": "server_banner", "path": random_path,
+                                   "evidence": server_pattern.search(html_resp.text).group(0)})
+
+            # Probe 2: API path that doesn't exist — reveals Express error messages
+            api_paths = ["/api/NonExistentEndpoint12345", "/api/Users/notanumber"]
+            for api_path in api_paths:
+                try:
+                    api_resp = await client.get(f"{base}{api_path}")
+                    ct = api_resp.headers.get("content-type", "")
+                    # Express.js error pages are HTML with "Error:" in the title
+                    if "text/html" in ct and ("Error:" in api_resp.text or "at Object." in api_resp.text
+                                               or "UnauthorizedError" in api_resp.text
+                                               or "SyntaxError" in api_resp.text):
+                        info_leaks.append({
+                            "type": "verbose_error_page",
+                            "path": api_path,
+                            "status_code": api_resp.status_code,
+                            "evidence": api_resp.text[api_resp.text.find("<title>"):api_resp.text.find("<title>") + 200]
+                                        if "<title>" in api_resp.text else api_resp.text[:200]
+                        })
+                except Exception:
+                    pass
+
         return {"status": "success", "data": {
-            "url_tested": test_url,
-            "status_code": resp.status_code,
-            "content_type": resp.headers.get("content-type"),
-            "server_banner_leaked": banner_found.group(0) if banner_found else "None",
-            "description": "Checks the response for a non-existent page. Leaking server versions is an information disclosure vulnerability."
+            "url_tested": base,
+            "info_leaks": info_leaks,
+            "info_leaks_found": len(info_leaks),
+            "description": "Checks error pages for server version banners and verbose framework error messages."
         }}
     except Exception as e:
         return {"status": "error", "message": str(e)}
