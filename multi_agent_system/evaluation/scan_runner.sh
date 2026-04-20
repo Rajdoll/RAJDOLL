@@ -32,7 +32,7 @@ RESPONSE=$(curl -s -X POST "$API_BASE/api/scans" \
   -d "$BODY")
 echo "$RESPONSE" | tee "$OUTPUT_DIR/scan_start.json"
 
-JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null)
+JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('job_id') or d.get('id'))" 2>/dev/null)
 if [ -z "$JOB_ID" ]; then
   echo "ERROR: Could not extract job ID from response"
   exit 1
