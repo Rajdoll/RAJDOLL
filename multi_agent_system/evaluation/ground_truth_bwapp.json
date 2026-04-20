@@ -1,0 +1,150 @@
+{
+  "target": "bwapp",
+  "target_url": "http://bwapp:80",
+  "security_level": "low",
+  "description": "bWAPP A1-A7 OWASP Top 10 categories at Low security",
+  "source": "bWAPP bug catalog — http://www.itsecgames.com",
+  "total_count": 14,
+  "entries": [
+    {
+      "id": "bwapp-sqli-get-001",
+      "vuln_category": "SQL Injection (GET)",
+      "cwe_id": "CWE-89",
+      "owasp_wstg": "WSTG-INPV-05",
+      "severity": "high",
+      "endpoint": "/bWAPP/sqli_1.php",
+      "proof_payload": "' OR 1=1--",
+      "description": "Movie search — title parameter injectable"
+    },
+    {
+      "id": "bwapp-sqli-post-002",
+      "vuln_category": "SQL Injection (POST)",
+      "cwe_id": "CWE-89",
+      "owasp_wstg": "WSTG-INPV-05",
+      "severity": "high",
+      "endpoint": "/bWAPP/sqli_2.php",
+      "proof_payload": "' OR '1'='1",
+      "description": "POST-based SQL injection in login field"
+    },
+    {
+      "id": "bwapp-xss-reflected-003",
+      "vuln_category": "XSS (Reflected)",
+      "cwe_id": "CWE-79",
+      "owasp_wstg": "WSTG-CLNT-01",
+      "severity": "medium",
+      "endpoint": "/bWAPP/xss_get.php",
+      "proof_payload": "<script>alert(1)</script>",
+      "description": "First name parameter reflected in response"
+    },
+    {
+      "id": "bwapp-xss-stored-004",
+      "vuln_category": "XSS (Stored)",
+      "cwe_id": "CWE-79",
+      "owasp_wstg": "WSTG-CLNT-01",
+      "severity": "high",
+      "endpoint": "/bWAPP/xss_stored_1.php",
+      "proof_payload": "<script>alert('bwapp')</script>",
+      "description": "Blog entry stored and rendered unescaped"
+    },
+    {
+      "id": "bwapp-lfi-004",
+      "vuln_category": "File Inclusion (LFI)",
+      "cwe_id": "CWE-98",
+      "owasp_wstg": "WSTG-INPV-11",
+      "severity": "high",
+      "endpoint": "/bWAPP/rlfi.php",
+      "proof_payload": "?language=../../etc/passwd",
+      "description": "Language parameter passed to include()"
+    },
+    {
+      "id": "bwapp-cmd-injection-005",
+      "vuln_category": "Command Injection",
+      "cwe_id": "CWE-78",
+      "owasp_wstg": "WSTG-INPV-12",
+      "severity": "critical",
+      "endpoint": "/bWAPP/commandi.php",
+      "proof_payload": "localhost; id",
+      "description": "DNS lookup input passed to shell command"
+    },
+    {
+      "id": "bwapp-xxe-006",
+      "vuln_category": "XXE",
+      "cwe_id": "CWE-611",
+      "owasp_wstg": "WSTG-INPV-07",
+      "severity": "high",
+      "endpoint": "/bWAPP/xxe-1.php",
+      "proof_payload": "<?xml version='1.0'?><!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><foo>&xxe;</foo>",
+      "description": "XML parser processes external entities"
+    },
+    {
+      "id": "bwapp-ssrf-007",
+      "vuln_category": "SSRF",
+      "cwe_id": "CWE-918",
+      "owasp_wstg": "WSTG-INPV-19",
+      "severity": "high",
+      "endpoint": "/bWAPP/ssrf-1.php",
+      "proof_payload": "?url=http://127.0.0.1:22",
+      "description": "URL parameter fetched server-side without validation"
+    },
+    {
+      "id": "bwapp-csrf-008",
+      "vuln_category": "CSRF",
+      "cwe_id": "CWE-352",
+      "owasp_wstg": "WSTG-SESS-05",
+      "severity": "medium",
+      "endpoint": "/bWAPP/csrf_1.php",
+      "proof_payload": "forged password reset request",
+      "description": "Password change endpoint lacks CSRF token"
+    },
+    {
+      "id": "bwapp-insecure-upload-009",
+      "vuln_category": "Insecure File Upload",
+      "cwe_id": "CWE-434",
+      "owasp_wstg": "WSTG-BUSL-08",
+      "severity": "critical",
+      "endpoint": "/bWAPP/unrestricted_file_upload.php",
+      "proof_payload": "upload .php webshell",
+      "description": "No extension validation on file upload"
+    },
+    {
+      "id": "bwapp-broken-auth-010",
+      "vuln_category": "Broken Authentication",
+      "cwe_id": "CWE-287",
+      "owasp_wstg": "WSTG-ATHN-01",
+      "severity": "high",
+      "endpoint": "/bWAPP/ba_insecure_login_1.php",
+      "proof_payload": "plaintext credentials in GET params",
+      "description": "Login credentials transmitted in GET parameters"
+    },
+    {
+      "id": "bwapp-idor-011",
+      "vuln_category": "IDOR",
+      "cwe_id": "CWE-639",
+      "owasp_wstg": "WSTG-ATHZ-04",
+      "severity": "high",
+      "endpoint": "/bWAPP/idor_1.php",
+      "proof_payload": "?id=2 (access another user's record)",
+      "description": "User ID in GET parameter not validated against session"
+    },
+    {
+      "id": "bwapp-misconfig-013",
+      "vuln_category": "Security Misconfiguration",
+      "cwe_id": "CWE-16",
+      "owasp_wstg": "WSTG-CONF-05",
+      "severity": "medium",
+      "endpoint": "/bWAPP/",
+      "proof_payload": "directory listing enabled",
+      "description": "Apache directory listing exposes file structure"
+    },
+    {
+      "id": "bwapp-sensitive-data-014",
+      "vuln_category": "Sensitive Data Exposure",
+      "cwe_id": "CWE-312",
+      "owasp_wstg": "WSTG-CRYP-01",
+      "severity": "medium",
+      "endpoint": "/bWAPP/crypto_secret_to_keep.php",
+      "proof_payload": "plaintext secret in page source",
+      "description": "Secret key hardcoded and exposed in HTML response"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "target": "ctf",
+  "description": "NYU CTF Bench web-exploitation subset — 8 challenges",
+  "source": "https://github.com/NYU-LLM-CTF/LLM_CTF_Database",
+  "total_count": 8,
+  "entries": [
+    {
+      "id": "ctf-web-001",
+      "challenge_name": "TBD — fill after Day 13 challenge selection",
+      "vuln_category": "TBD",
+      "cwe_id": "TBD",
+      "flag_format": "flag{...}",
+      "solved": null,
+      "time_to_flag_seconds": null,
+      "notes": "Populate after Day 13"
+    }
+  ]
+}
