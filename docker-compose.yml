@@ -258,3 +258,27 @@ services:
     # Host access: http://localhost:8081/WebGoat
     # Register account at /WebGoat/registration before scanning
     # Suggested scan credentials: {"username": "guest", "password": "guest"}
+
+  dvwa:
+    image: vulnerables/web-dvwa
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      - RECAPTCHA_PRIV_KEY=
+      - RECAPTCHA_PUB_KEY=
+    # Scan target (internal): http://dvwa:80
+    # Host access: http://localhost:8082
+    # Login: admin / password  |  Security level: Low
+    # Init: POST http://localhost:8082/setup.php d="create_db=Create+%2F+Reset+Database"
+    # Set Low: POST http://localhost:8082/security.php d="security=low&seclev_submit=Submit"
+
+  bwapp:
+    image: raesene/bwapp
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    # Scan target (internal): http://bwapp:80
+    # Host access: http://localhost:8083
+    # Login: bee / bug  |  Security level: Low (security_level=0)
+    # Install: GET http://localhost:8083/install.php?install=yes (first boot only)
