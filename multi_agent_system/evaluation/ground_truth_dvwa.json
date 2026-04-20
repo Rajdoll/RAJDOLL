@@ -1,0 +1,110 @@
+{
+  "target": "dvwa",
+  "target_url": "http://dvwa:80",
+  "security_level": "low",
+  "description": "DVWA Low security — all vulnerabilities exposed by design",
+  "source": "DVWA source code + https://github.com/digininja/DVWA",
+  "total_count": 10,
+  "entries": [
+    {
+      "id": "dvwa-sqli-001",
+      "vuln_category": "SQL Injection",
+      "cwe_id": "CWE-89",
+      "owasp_wstg": "WSTG-INPV-05",
+      "severity": "high",
+      "endpoint": "/dvwa/vulnerabilities/sqli/",
+      "proof_payload": "1' OR '1'='1",
+      "description": "GET parameter 'id' concatenated directly into SQL query"
+    },
+    {
+      "id": "dvwa-sqli-blind-002",
+      "vuln_category": "SQL Injection (Blind)",
+      "cwe_id": "CWE-89",
+      "owasp_wstg": "WSTG-INPV-05",
+      "severity": "high",
+      "endpoint": "/dvwa/vulnerabilities/sqli_blind/",
+      "proof_payload": "1' AND SLEEP(5)--",
+      "description": "Blind SQLi via time-based detection"
+    },
+    {
+      "id": "dvwa-xss-reflected-003",
+      "vuln_category": "XSS (Reflected)",
+      "cwe_id": "CWE-79",
+      "owasp_wstg": "WSTG-CLNT-01",
+      "severity": "medium",
+      "endpoint": "/dvwa/vulnerabilities/xss_r/",
+      "proof_payload": "<script>alert(1)</script>",
+      "description": "GET parameter 'name' reflected unescaped in response"
+    },
+    {
+      "id": "dvwa-xss-stored-004",
+      "vuln_category": "XSS (Stored)",
+      "cwe_id": "CWE-79",
+      "owasp_wstg": "WSTG-CLNT-01",
+      "severity": "high",
+      "endpoint": "/dvwa/vulnerabilities/xss_s/",
+      "proof_payload": "<script>alert('stored')</script>",
+      "description": "Guestbook message stored and rendered without sanitization"
+    },
+    {
+      "id": "dvwa-cmd-injection-005",
+      "vuln_category": "Command Injection",
+      "cwe_id": "CWE-78",
+      "owasp_wstg": "WSTG-INPV-12",
+      "severity": "critical",
+      "endpoint": "/dvwa/vulnerabilities/exec/",
+      "proof_payload": "127.0.0.1; id",
+      "description": "IP address field passed to shell_exec() without sanitization"
+    },
+    {
+      "id": "dvwa-file-inclusion-006",
+      "vuln_category": "File Inclusion (LFI/RFI)",
+      "cwe_id": "CWE-98",
+      "owasp_wstg": "WSTG-INPV-11",
+      "severity": "high",
+      "endpoint": "/dvwa/vulnerabilities/fi/",
+      "proof_payload": "?page=../../etc/passwd",
+      "description": "File parameter passed to include() allowing path traversal"
+    },
+    {
+      "id": "dvwa-file-upload-007",
+      "vuln_category": "Insecure File Upload",
+      "cwe_id": "CWE-434",
+      "owasp_wstg": "WSTG-BUSL-08",
+      "severity": "critical",
+      "endpoint": "/dvwa/vulnerabilities/upload/",
+      "proof_payload": "upload PHP webshell as .php",
+      "description": "No file type validation — PHP files accepted and executed"
+    },
+    {
+      "id": "dvwa-csrf-008",
+      "vuln_category": "CSRF",
+      "cwe_id": "CWE-352",
+      "owasp_wstg": "WSTG-SESS-05",
+      "severity": "medium",
+      "endpoint": "/dvwa/vulnerabilities/csrf/",
+      "proof_payload": "cross-origin password change form",
+      "description": "Password change form lacks CSRF token"
+    },
+    {
+      "id": "dvwa-weak-session-009",
+      "vuln_category": "Weak Session IDs",
+      "cwe_id": "CWE-330",
+      "owasp_wstg": "WSTG-SESS-02",
+      "severity": "medium",
+      "endpoint": "/dvwa/vulnerabilities/weak_id/",
+      "proof_payload": "sequential session ID prediction",
+      "description": "Session IDs are sequential integers — predictable"
+    },
+    {
+      "id": "dvwa-brute-force-010",
+      "vuln_category": "Broken Authentication (Brute Force)",
+      "cwe_id": "CWE-307",
+      "owasp_wstg": "WSTG-ATHN-03",
+      "severity": "high",
+      "endpoint": "/dvwa/vulnerabilities/brute/",
+      "proof_payload": "no rate limiting on login",
+      "description": "No account lockout or rate limiting on login endpoint"
+    }
+  ]
+}
