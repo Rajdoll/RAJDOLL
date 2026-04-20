@@ -22,6 +22,7 @@ class CreateScanRequest(BaseModel):
     user_email: Optional[str] = None  # Audit logging: who initiated the scan
     credentials: Optional[ScanCredentials] = None  # Custom credentials for auto-login
     whitelist_domain: Optional[Union[str, List[str]]] = None  # Auto-add this domain to whitelist at scan time
+    skip_agents: Optional[List[str]] = None  # Ablation: agent names to skip
 
     def get_whitelist_list(self) -> List[str]:
         """Normalize whitelist_domain to always return a list."""

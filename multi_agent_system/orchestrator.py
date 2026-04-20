@@ -936,7 +936,8 @@ class Orchestrator:
 		# PHASE 3: Execute the plan with LLM-selected tools
 		print(f"[Orchestrator] Phase 3: Executing testing plan with {len(plan)} steps...")
 		agent_hitl_auto = False  # Set True when user chooses "auto" at a checkpoint
-		skip_agents_set: set = set()  # Agents the user chose to skip
+		# Initialize skip set from scan options (ablation mode) or HITL responses
+		skip_agents_set: set = set(options.get("skip_agents", []) or [])
 
 		for idx, step in enumerate(plan):
 			agent_name = step if isinstance(step, str) else str(step)

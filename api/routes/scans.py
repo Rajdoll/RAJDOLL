@@ -115,6 +115,7 @@ async def create_scan(req: CreateScanRequest):
 			"enable_tool_hitl": req.enable_tool_hitl,
 			"hitl_mode": req.hitl_mode,
 			"auto_approve_agents": req.auto_approve_agents,
+			"skip_agents": req.skip_agents or [],
 		}
 	}
 
