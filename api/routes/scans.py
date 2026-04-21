@@ -214,13 +214,17 @@ def cancel_scan(job_id: int):
 		if not job:
 			raise HTTPException(status_code=404, detail="Job not found")
 		
-		# Only allow cancelling queued or running jobs
-		if job.status not in [JobStatus.queued, JobStatus.running]:
+		# Allow cancelling queued, running, or paused jobs
+		if job.status not in [JobStatus.queued, JobStatus.running, JobStatus.paused]:
 			raise HTTPException(
-				status_code=400, 
+				status_code=400,
 				detail=f"Cannot cancel job with status: {job.status}"
 			)
-		
+
+		# Clear any pending pause flag so orchestrator cannot act on it later
+		from multi_agent_system.utils import pause_manager
+		pause_manager.clear_pause_flag(job_id)
+
 		# Update job status to cancelled
 		job.status = JobStatus.cancelled
 		job.updated_at = datetime.utcnow()
@@ -251,6 +255,69 @@ def cancel_scan(job_id: int):
 			print(f"[API] Warning: Could not revoke Celery task: {e}")
 		
 	return {"message": "Scan cancelled successfully", "job_id": job_id}
+
+
+@router.post("/scans/{job_id}/pause", status_code=202)
+def pause_scan(job_id: int):
+	"""Request pause. Queued jobs flip to paused immediately; running jobs get a Redis flag."""
+	from multi_agent_system.utils import pause_manager
+	with get_db() as db:
+		job = db.query(Job).get(job_id)
+		if not job:
+			raise HTTPException(status_code=404, detail="Job not found")
+
+		if job.status == JobStatus.queued:
+			job.status = JobStatus.paused
+			job.paused_state = {
+				"step_idx": 0,
+				"paused_at": datetime.utcnow().isoformat() + "Z",
+				"paused_by": "api",
+			}
+			job.updated_at = datetime.utcnow()
+			db.commit()
+			return {"message": "Queued job paused immediately", "job_id": job_id, "status": "paused"}
+
+		if job.status == JobStatus.running:
+			pause_manager.set_pause_requested(job_id)
+			return {
+				"message": "Pause requested; will take effect at next agent boundary (up to 45 min)",
+				"job_id": job_id,
+				"status": "running",
+				"eta_hint": "pause_at_next_agent",
+			}
+
+		raise HTTPException(status_code=409, detail=f"Cannot pause job with status: {job.status.value}")
+
+
+@router.post("/scans/{job_id}/resume", status_code=202)
+def resume_scan(job_id: int):
+	"""Resume a paused scan by dispatching a new Celery task at the saved step index."""
+	from multi_agent_system.tasks.tasks import run_job_task
+	with get_db() as db:
+		job = db.query(Job).get(job_id)
+		if not job:
+			raise HTTPException(status_code=404, detail="Job not found")
+
+		if job.status != JobStatus.paused:
+			raise HTTPException(status_code=409, detail=f"Cannot resume job with status: {job.status.value}")
+
+		if not job.paused_state or "step_idx" not in job.paused_state:
+			raise HTTPException(status_code=500, detail="paused_state missing or corrupt")
+
+		step_idx = int(job.paused_state["step_idx"])
+		job.status = JobStatus.running
+		job.paused_state = None
+		job.updated_at = datetime.utcnow()
+		db.commit()
+
+	run_job_task.delay(job_id=job_id, resume_from_step_idx=step_idx)
+
+	return {
+		"message": f"Scan resumed from step {step_idx}",
+		"job_id": job_id,
+		"status": "running",
+		"resume_from_step_idx": step_idx,
+	}
 
 
 # ============================================================================
