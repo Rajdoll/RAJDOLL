@@ -111,3 +111,13 @@ def test_run_phase_3_returns_true_on_pause():
 
     assert result is True
     orch._save_paused_state.assert_called_once_with(step_idx=0)
+
+
+import inspect
+
+
+def test_run_job_task_accepts_resume_from_step_idx():
+    from multi_agent_system.tasks.tasks import run_job_task
+    sig = inspect.signature(run_job_task)
+    assert "resume_from_step_idx" in sig.parameters
+    assert sig.parameters["resume_from_step_idx"].default is None
