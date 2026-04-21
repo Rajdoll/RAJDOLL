@@ -67,9 +67,13 @@ def run_agent_task(self, job_id: int, agent_name: str) -> str:
 
 
 @shared_task(bind=True, soft_time_limit=settings.job_total_timeout, time_limit=settings.job_total_timeout + 60, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 0})
-def run_job_task(self, job_id: int) -> str:
-    """Top-level orchestration task; creates plan, executes agents sequentially/parallel, aggregates."""
-    orch = Orchestrator(job_id=job_id)
+def run_job_task(self, job_id: int, resume_from_step_idx: int | None = None) -> str:
+    """Top-level orchestration task; creates plan, executes agents sequentially/parallel, aggregates.
+
+    When resume_from_step_idx is not None, skips Phases 1/1.5/2 and enters Phase 3
+    at the given offset (pause/resume feature).
+    """
+    orch = Orchestrator(job_id=job_id, resume_from_step_idx=resume_from_step_idx)
     try:
         orch.run()
     except Exception:  # pragma: no cover
@@ -81,8 +85,8 @@ def run_job_task(self, job_id: int) -> str:
         if not job:
             return JobStatus.failed.value
 
-        # Respect explicit cancellation.
-        if job.status == JobStatus.cancelled:
+        # Respect explicit cancellation or pause — do not overwrite.
+        if job.status in (JobStatus.cancelled, JobStatus.paused):
             job.updated_at = _now()
             db.commit()
             return job.status.value
