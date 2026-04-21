@@ -28,6 +28,7 @@ class JobStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
     cancelled = "cancelled"
+    paused = "paused"
 
 
 class AgentStatus(str, enum.Enum):
@@ -66,6 +67,7 @@ class Job(Base):
     status: Mapped[JobStatus] = Column(Enum(JobStatus), default=JobStatus.queued, nullable=False)
     plan: Mapped[Optional[dict]] = Column(JSON, nullable=True)
     summary: Mapped[Optional[str]] = Column(Text, nullable=True)
+    paused_state: Mapped[Optional[dict]] = Column(JSON, nullable=True)
 
     agents: Mapped[list[JobAgent]] = relationship("JobAgent", back_populates="job", cascade="all, delete-orphan")
     findings: Mapped[list[Finding]] = relationship("Finding", back_populates="job", cascade="all, delete-orphan")
