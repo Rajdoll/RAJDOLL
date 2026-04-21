@@ -49,3 +49,25 @@ def test_is_pause_requested_returns_false_on_redis_error():
     fake.exists.side_effect = RuntimeError("redis down")
     with patch.object(pause_manager, "_get_client", return_value=fake):
         assert pause_manager.is_pause_requested(job_id=42) is False
+
+
+def test_save_paused_state_writes_step_idx_and_updates_status():
+    """_save_paused_state should write paused_state JSON and flip status to paused."""
+    from multi_agent_system.orchestrator import Orchestrator
+
+    fake_job = MagicMock()
+    fake_db = MagicMock()
+    fake_db.query.return_value.get.return_value = fake_job
+
+    with patch("multi_agent_system.orchestrator.get_db") as mock_get_db:
+        mock_get_db.return_value.__enter__.return_value = fake_db
+        orch = Orchestrator.__new__(Orchestrator)  # bypass __init__
+        orch.job_id = 99
+        orch._save_paused_state(step_idx=5)
+
+    assert fake_job.paused_state["step_idx"] == 5
+    assert "paused_at" in fake_job.paused_state
+    assert fake_job.paused_state["paused_by"] == "api"
+    from multi_agent_system.models.models import JobStatus
+    assert fake_job.status == JobStatus.paused
+    fake_db.commit.assert_called_once()
