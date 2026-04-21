@@ -317,18 +317,18 @@ class Orchestrator:
 
 	def _save_paused_state(self, step_idx: int) -> None:
 		"""Persist pause checkpoint to DB and flip job status to paused."""
-		from datetime import datetime as _dt
+		now = datetime.utcnow()
 		with get_db() as db:
 			job = db.query(Job).get(self.job_id)
 			if not job:
 				return
 			job.paused_state = {
 				"step_idx": step_idx,
-				"paused_at": _dt.utcnow().isoformat() + "Z",
+				"paused_at": now.isoformat() + "Z",
 				"paused_by": "api",
 			}
 			job.status = JobStatus.paused
-			job.updated_at = _dt.utcnow()
+			job.updated_at = now
 			db.commit()
 
 	def _build_plan(self) -> List[Any]:
@@ -966,7 +966,7 @@ class Orchestrator:
 			# Check if pause was requested (cooperative pause at agent boundary)
 			from .utils import pause_manager
 			if pause_manager.is_pause_requested(self.job_id):
-				print(f"[Orchestrator] Pause requested — saving state at step {idx} ({agent_name})")
+				print(f"[Orchestrator] Pause requested - saving state at step {idx} ({agent_name})")
 				self._save_paused_state(step_idx=idx)
 				pause_manager.clear_pause_flag(self.job_id)
 				return
