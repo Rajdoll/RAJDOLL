@@ -14,19 +14,21 @@ echo "=== RAJDOLL Benchmark Scan Suite ==="
 echo "Started: $(date)"
 echo ""
 
-# ── DVWA (3 runs) ─────────────────────────────────────────────────
+# ── DVWA (3 runs) — credentials: admin/password ──────────────────
+DVWA_CREDS='{"username":"admin","password":"password"}'
 for N in 1 2 3; do
   echo ""
   echo ">>> DVWA run $N of 3 ($(date '+%H:%M'))"
-  bash "$RUNNER" "http://dvwa:80" "dvwa_run${N}" "dvwa"
+  bash "$RUNNER" "http://dvwa:80" "dvwa_run${N}" "dvwa" "$DVWA_CREDS"
   echo "<<< DVWA run $N complete"
 done
 
-# ── bWAPP (3 runs) ────────────────────────────────────────────────
+# ── bWAPP (3 runs) — credentials: bee/bug ────────────────────────
+BWAPP_CREDS='{"username":"bee","password":"bug"}'
 for N in 1 2 3; do
   echo ""
   echo ">>> bWAPP run $N of 3 ($(date '+%H:%M'))"
-  bash "$RUNNER" "http://bwapp:80" "bwapp_run${N}" "bwapp"
+  bash "$RUNNER" "http://bwapp:80" "bwapp_run${N}" "bwapp" "$BWAPP_CREDS"
   echo "<<< bWAPP run $N complete"
 done
 
