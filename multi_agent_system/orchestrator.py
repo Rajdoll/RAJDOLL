@@ -1090,6 +1090,7 @@ class Orchestrator:
 		# Resume path: Phases 1/1.5/2 already ran before pause — skip them
 		if self.resume_from_step_idx is not None:
 			print(f"[Orchestrator] RESUME mode: skipping Phases 1/1.5/2, jumping to Phase 3 at step {self.resume_from_step_idx}")
+			self.cumulative_summary = self.shared_context.get("cumulative_summary", "")
 			plan = self._remove_recon(plan_with_recon)
 			self._update_plan_sequence(["ReconnaissanceAgent", *plan])
 			if not self._run_phase_3(plan, start_idx=self.resume_from_step_idx):

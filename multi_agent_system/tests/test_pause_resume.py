@@ -105,12 +105,14 @@ def test_run_phase_3_returns_true_on_pause():
     orch._is_job_cancelled = MagicMock(return_value=False)
     orch._get_failures = MagicMock(return_value=0)
 
+    clear_mock = MagicMock()
     with patch.object(pm, "is_pause_requested", return_value=True), \
-         patch.object(pm, "clear_pause_flag"):
+         patch.object(pm, "clear_pause_flag", clear_mock):
         result = orch._run_phase_3(["AgentA", "AgentB"], start_idx=0)
 
     assert result is True
     orch._save_paused_state.assert_called_once_with(step_idx=0)
+    clear_mock.assert_called_once_with(99)
 
 
 import inspect
