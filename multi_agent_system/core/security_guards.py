@@ -83,6 +83,7 @@ class SecurityGuardRails:
             "owaspjuiceshop",  # External Juice Shop container
             "dvwa",  # Docker hostname
             "webgoat",  # WebGoat Docker hostname
+            "bwapp",    # bWAPP Docker hostname
         }
         
         # Token storage (in production: use database or secure vault)

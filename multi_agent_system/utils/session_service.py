@@ -46,6 +46,12 @@ class SessionService:
          "payload_template": {"username": "{username}", "password": "{password}"}},
         {"path": "/login", "method": "POST", "content_type": "form",
          "payload_template": {"email": "{username}", "password": "{password}"}},
+        # DVWA-style PHP login (with CSRF token auto-extraction)
+        {"path": "/login.php", "method": "POST", "content_type": "form",
+         "payload_template": {"username": "{username}", "password": "{password}", "Login": "Login"}},
+        # bWAPP-style login
+        {"path": "/login.php", "method": "POST", "content_type": "form",
+         "payload_template": {"login": "{username}", "password": "{password}", "security_level": "0", "form": "submit"}},
     ]
     
     # Common default credentials to try
@@ -113,8 +119,27 @@ class SessionService:
             for endpoint in endpoints_to_try:
                 url = urljoin(self.base_url, endpoint["path"])
                 payload = self._build_payload(endpoint["payload_template"], username, password)
-                
+
                 try:
+                    if endpoint["content_type"] == "form":
+                        # Extract hidden CSRF tokens from login page before POSTing
+                        try:
+                            login_page = await client.get(url)
+                            import re
+                            hidden = re.findall(
+                                r'<input[^>]+type=["\']hidden["\'][^>]+name=["\']([^"\']+)["\'][^>]+value=["\']([^"\']*)["\']',
+                                login_page.text, re.IGNORECASE
+                            )
+                            hidden += re.findall(
+                                r'<input[^>]+name=["\']([^"\']+)["\'][^>]+type=["\']hidden["\'][^>]+value=["\']([^"\']*)["\']',
+                                login_page.text, re.IGNORECASE
+                            )
+                            for name, value in hidden:
+                                if name not in payload:
+                                    payload[name] = value
+                        except Exception:
+                            pass
+
                     if endpoint["content_type"] == "json":
                         resp = await client.post(url, json=payload)
                     else:
