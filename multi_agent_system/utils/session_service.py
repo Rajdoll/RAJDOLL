@@ -144,8 +144,10 @@ class SessionService:
                         resp = await client.post(url, json=payload)
                     else:
                         resp = await client.post(url, data=payload)
-                    
-                    success, session = self._parse_login_response(resp, username, endpoint["path"])
+
+                    # After redirects, cookies may live in client.cookies rather than response.cookies
+                    client_cookies = dict(client.cookies)
+                    success, session = self._parse_login_response(resp, username, endpoint["path"], extra_cookies=client_cookies)
                     
                     if success:
                         logger.info(f"[SessionService] Login successful via {endpoint['path']} as {username}")
@@ -166,17 +168,18 @@ class SessionService:
         }
     
     def _parse_login_response(
-        self, 
-        response: httpx.Response, 
+        self,
+        response: httpx.Response,
         username: str,
-        endpoint: str
+        endpoint: str,
+        extra_cookies: Optional[Dict[str, str]] = None,
     ) -> Tuple[bool, Dict[str, Any]]:
         """Parse login response and extract session data."""
-        
+
         # Check for successful status
         if response.status_code not in (200, 201, 302):
             return False, {}
-        
+
         session_data = {
             "logged_in": False,
             "jwt_token": None,
@@ -186,8 +189,10 @@ class SessionService:
             "auth_method": None,
             "login_endpoint": endpoint,
         }
-        
-        # Extract cookies
+
+        # Extract cookies — merge client jar (catches post-redirect cookies) then response cookies
+        if extra_cookies:
+            session_data["cookies"].update(extra_cookies)
         for cookie_name, cookie_value in response.cookies.items():
             session_data["cookies"][cookie_name] = cookie_value
         
@@ -290,6 +295,49 @@ class SessionService:
                 "login_endpoint": self.session_data.get("login_endpoint"),
             }
         }
+
+    async def extract_authenticated_links(self, home_url: Optional[str] = None) -> List[str]:
+        """
+        After login, fetch the home page with session cookies and extract all href links.
+        Returns a list of absolute URLs found on the authenticated home page.
+        This supplements Katana for targets where Katana fails (e.g. old PHP apps).
+        """
+        if not self.session_data.get("logged_in"):
+            return []
+
+        url = home_url or self.base_url
+        cookies = self.session_data.get("cookies", {})
+        headers = dict(self.session_data.get("headers", {}))
+
+        import re as _re
+        try:
+            async with httpx.AsyncClient(
+                timeout=15, follow_redirects=True, verify=False
+            ) as client:
+                resp = await client.get(url, cookies=cookies, headers=headers)
+                if resp.status_code != 200:
+                    return []
+                hrefs = _re.findall(r'href=["\']([^"\'#?][^"\']*)["\']', resp.text, _re.IGNORECASE)
+                links = []
+                for h in hrefs:
+                    if h.startswith("http"):
+                        links.append(h)
+                    elif h.startswith("/"):
+                        links.append(f"{self.base_url}{h}")
+                    else:
+                        links.append(urljoin(url, h))
+                # Deduplicate, keep only same-origin links
+                seen: set = set()
+                result = []
+                for lnk in links:
+                    if lnk not in seen and lnk.startswith(self.base_url):
+                        seen.add(lnk)
+                        result.append(lnk)
+                logger.info(f"[SessionService] Extracted {len(result)} authenticated links from {url}")
+                return result
+        except Exception as e:
+            logger.debug(f"[SessionService] Failed to extract authenticated links: {e}")
+            return []
 
 
 async def create_authenticated_session(

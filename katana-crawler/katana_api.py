@@ -44,6 +44,7 @@ class KatanaCrawlRequest(BaseModel):
     scope: List[str] = Field(default_factory=list, description="In-scope domains")
     exclude: List[str] = Field(default_factory=list, description="Exclude patterns")
     config: Dict[str, Any] = Field(default_factory=dict, description="Additional config")
+    cookies: Optional[str] = Field(default=None, description="Cookie header value (e.g. PHPSESSID=abc; security=low)")
 
 
 class HealthResponse(BaseModel):
@@ -271,6 +272,10 @@ async def crawl_with_katana(request: KatanaCrawlRequest):
         cmd.append("-headless")
         cmd.append("-headless-options")
         cmd.append("--disable-gpu,--disable-dev-shm-usage,--no-sandbox")
+
+    # Auth cookies — pass as Cookie header so Katana crawls authenticated pages
+    if request.cookies:
+        cmd.extend(["-H", f"Cookie: {request.cookies}"])
 
     # Scope control
     if request.scope:
