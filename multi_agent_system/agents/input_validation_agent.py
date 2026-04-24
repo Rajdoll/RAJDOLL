@@ -17,7 +17,7 @@ REACT_MAX_ITERATIONS = int(os.getenv("REACT_MAX_ITERATIONS", "3"))
 # Performance caps to prevent combinatorial explosion (configurable via env vars)
 # With ReAct mode (3 LLM calls/test × ~60s each), budget per URL = ~540s.
 # 5 URLs × 3 tests × 3 iterations × 60s = 2700s = exactly the timeout limit.
-MAX_PRIORITY_URLS = int(os.getenv("MAX_PRIORITY_URLS", "5"))
+MAX_PRIORITY_URLS = int(os.getenv("MAX_PRIORITY_URLS", "20"))
 MAX_TESTS_PER_URL = int(os.getenv("MAX_TESTS_PER_URL", "3"))
 
 
@@ -234,78 +234,52 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             sample_endpoints = [ep.get("endpoint", ep.get("url", "N/A")) for ep in endpoints_list[:5]]
             self.log("info", f"   Sample: {sample_endpoints}")
             
-            # Prioritize endpoints likely to have input validation issues
+            # Prioritize endpoints likely to have input validation issues.
+            # Keywords are generic indicators — NOT application-specific patterns.
+            HIGH_PRIORITY_KEYWORDS = [
+                "search", "login", "upload", "comment", "review", "feedback",
+                # vulnerability lab paths (e.g. DVWA /vulnerabilities/*, WebGoat, bWAPP)
+                "vulnerabilit", "sqli", "sql", "xss", "exec", "inject",
+                "lfi", "rfi", "inclusion", "traversal", "csrf", "upload",
+            ]
             for ep in endpoints_list:
                 url = ep.get("url", "")
-                endpoint_path = ep.get("endpoint", "")
-                
-                # HIGH PRIORITY: Search, login, feedback, upload endpoints
-                if any(keyword in endpoint_path.lower() for keyword in ["search", "login", "feedback", "upload", "comment", "review"]):
+                endpoint_path = ep.get("endpoint", ep.get("url", ""))
+                ep_lower = endpoint_path.lower()
+
+                if any(kw in ep_lower for kw in HIGH_PRIORITY_KEYWORDS):
                     priority_endpoints.append(url)
-                # MEDIUM PRIORITY: API endpoints that accept data
-                elif "/api/" in endpoint_path and ep.get("status", 500) < 400:
+                elif ep.get("status", 500) < 400 and url not in priority_endpoints:
                     discovered_urls.append(url)
-                # Include REST endpoints
-                elif "/rest/" in endpoint_path:
-                    discovered_urls.append(url)
-            
+
+            # auth_discovered_links always get priority — they are pages only
+            # reachable after login and are the highest-value targets on any app.
+            auth_links_data = self.shared_context.get("auth_discovered_links", {})
+            auth_urls = auth_links_data.get("urls", []) if isinstance(auth_links_data, dict) else []
+            for au in auth_urls:
+                if au not in priority_endpoints and au not in discovered_urls:
+                    priority_endpoints.append(au)
+
             # Test priority endpoints first
             discovered_urls = priority_endpoints + discovered_urls
 
             self.log("info", f"✓ Testing {len(priority_endpoints)} high-priority + {len(discovered_urls)-len(priority_endpoints)} standard endpoints")
 
-        # GENERIC PATH COMBINATION: If crawler found base paths, test common subpaths
-        # This is GENERIC - works on any application, not hardcoded to Juice Shop
         from urllib.parse import urljoin
         additional_test_urls = []
 
-        # 🔥 CRITICAL: Always test these common vulnerable patterns (REST API)
-        # These are high-value SQLi/XSS targets found in many web applications
-        # GENERIC patterns based on common REST API conventions - NOT application-specific
-        critical_api_patterns = [
-            # Search endpoints (high SQLi risk)
-            "/rest/products/search",
-            "/api/products/search",
-            "/rest/users/search",
-            "/api/users/search",
-            "/rest/search",
-            "/api/search",
-            # Authentication endpoints (SQLi bypass risk)
-            "/rest/user/login",
-            "/api/user/login",
-            "/rest/auth/login",
-            "/api/auth/login",
-            # Resource listing endpoints (filter/sorting SQLi)
-            "/rest/products",
-            "/api/products",
-            "/rest/users",
-            "/api/users",
-            # User-generated content (XSS/SQLi risk)
-            "/api/comments",
-            "/rest/comments",
-            "/api/reviews",
-            "/rest/reviews",
-            "/api/feedback",
-            "/rest/feedback",
-            # E-commerce operations (business logic)
-            "/api/cart",
-            "/rest/cart",
-            "/api/orders",
-            "/rest/orders",
-            # Account management
-            "/api/account",
-            "/rest/account",
-            "/api/profile",
-            "/rest/profile",
-        ]
-
-        for pattern in critical_api_patterns:
-            critical_url = urljoin(target, pattern)
-            if critical_url not in discovered_urls:
-                additional_test_urls.insert(0, critical_url)  # Add to front (HIGHEST PRIORITY)
-
-        if critical_api_patterns:
-            self.log("info", f"🔥 Added {len(critical_api_patterns)} critical API patterns for guaranteed testing")
+        # REST API subpath expansion — only when the target actually exposes REST/API paths.
+        # Derived from discovered endpoints, NOT hardcoded per-application patterns.
+        rest_bases = [u for u in discovered_urls if "/api/" in u or "/rest/" in u]
+        if rest_bases:
+            common_subpaths = ["search", "list", "filter", "query"]
+            for base_url in rest_bases[:5]:  # cap expansion
+                for sub in common_subpaths:
+                    candidate = f"{base_url.rstrip('/')}/{sub}"
+                    if candidate not in discovered_urls and candidate not in additional_test_urls:
+                        additional_test_urls.append(candidate)
+            if additional_test_urls:
+                self.log("info", f"✅ Expanded {len(additional_test_urls)} REST subpath variants from discovered API endpoints")
 
         # Common API subpaths to test if base path exists
         common_subpaths = ["search", "list", "reviews", "items", "details", "filter", "query"]
@@ -333,15 +307,10 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             self.log("info", f"   Sample paths: {dir_paths[:5]}")
 
             # Convert paths to full URLs and add to discovered_urls
-            from urllib.parse import urljoin
             for path in dir_paths:
                 full_url = urljoin(target, path)
                 if full_url not in discovered_urls:
-                    # Prioritize search, products, api endpoints
-                    if any(keyword in path.lower() for keyword in ["search", "products", "product", "api", "login"]):
-                        discovered_urls.insert(0, full_url)  # Add to front (HIGH PRIORITY!)
-                    else:
-                        discovered_urls.append(full_url)
+                    discovered_urls.append(full_url)
 
             self.log("info", f"✅ Merged directory paths into URL list")
         else:
@@ -434,10 +403,27 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             'nosql_injection': []
         }
 
-        # Cap priority URLs to prevent combinatorial explosion
-        capped_urls = priority_urls[:MAX_PRIORITY_URLS]
-        if len(priority_urls) > MAX_PRIORITY_URLS:
-            self.log("info", f"⚡ Performance cap: testing top {MAX_PRIORITY_URLS} of {len(priority_urls)} prioritized URLs (sorted by priority score)")
+        # Split URLs into two buckets:
+        # 1. auth_discovered_links — pages confirmed to exist behind login; ALWAYS test all of them.
+        # 2. Everything else (speculative patterns, combined paths) — cap to MAX_PRIORITY_URLS.
+        auth_link_urls = {
+            u for u in (
+                self.shared_context.get("auth_discovered_links", {}).get("urls", [])
+                if isinstance(self.shared_context.get("auth_discovered_links"), dict)
+                else []
+            )
+        }
+
+        auth_bucket = [u for u in priority_urls if u.get("url", "") in auth_link_urls]
+        speculative_bucket = [u for u in priority_urls if u.get("url", "") not in auth_link_urls]
+        capped_speculative = speculative_bucket[:MAX_PRIORITY_URLS]
+
+        capped_urls = auth_bucket + capped_speculative
+        self.log("info",
+            f"⚡ URL buckets: {len(auth_bucket)} auth_links (no cap) + "
+            f"{len(capped_speculative)}/{len(speculative_bucket)} speculative (capped) "
+            f"= {len(capped_urls)} total"
+        )
 
         # Execute tests for each LLM-selected URL
         _skip_agent = False
@@ -1214,11 +1200,20 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 merged_item['reason'] = f"[Rule] {rule_item.get('reason', 'Comprehensive coverage')}"
                 merged_urls.append(merged_item)
 
-        # Sort by priority score (highest first) - this ensures intelligent execution order
+        # Sort by priority score (highest first)
         merged_urls.sort(key=lambda x: x.get('priority_score', 50), reverse=True)
 
-        # Cap merged URLs to prevent the 80% rule from re-inflating beyond performance limit
-        merged_urls = merged_urls[:MAX_PRIORITY_URLS]
+        # auth_discovered_links are never capped — only speculative/combined URLs are capped.
+        auth_link_urls = {
+            u for u in (
+                self.shared_context.get("auth_discovered_links", {}).get("urls", [])
+                if isinstance(self.shared_context.get("auth_discovered_links"), dict)
+                else []
+            )
+        }
+        auth_merged = [u for u in merged_urls if u.get("url", "") in auth_link_urls]
+        spec_merged = [u for u in merged_urls if u.get("url", "") not in auth_link_urls]
+        merged_urls = auth_merged + spec_merged[:MAX_PRIORITY_URLS]
 
         # Calculate statistics
         llm_count = len(llm_plan.get('priority_urls', []))

@@ -339,6 +339,10 @@ Operate autonomously without human guidance.
         self.log("warning", "🔐 [PHASE 4 DEBUG] Endpoint discovery COMPLETE")
         print("🔴 [STDERR TRACE] _perform_endpoint_discovery() COMPLETED", file=sys.stderr, flush=True)
 
+        # Merge auth_discovered_links AFTER all discovery tools — reads live DB state
+        # Fills the gap when Katana fails on targets like DVWA (old Apache/PHP apps)
+        self._merge_auth_discovered_links(baseline_snapshot)
+
         self.log("warning", "🔐 [PHASE 4 DEBUG] About to call _attempt_auto_login...")
         print("🔴🔴🔴 [STDERR TRACE] About to call _attempt_auto_login()", file=sys.stderr, flush=True)
         await self._attempt_auto_login(target, baseline_snapshot)
@@ -352,6 +356,40 @@ Operate autonomously without human guidance.
 
         self.log("info", "Reconnaissance complete")
         print("🔴🔴🔴 [STDERR TRACE] ReconAgent.run() FINISHED", file=sys.stderr, flush=True)
+
+    def _merge_auth_discovered_links(self, baseline_snapshot: Dict[str, Any]) -> None:
+        """Merge links extracted from authenticated home page into discovered_endpoints.
+        Reads both auth_discovered_links and discovered_endpoints from live DB state
+        so the merge sees everything collected by the discovery tools above.
+        """
+        auth_links_data = self._shared_context_snapshot.get("auth_discovered_links", {})
+        urls = auth_links_data.get("urls", []) if isinstance(auth_links_data, dict) else []
+        if not urls:
+            return
+        self.log("info", f"[Recon] Merging {len(urls)} auth_discovered_links into discovered_endpoints")
+        # Read live DB state (not stale snapshot) so we see what discovery tools wrote
+        existing = self.context_manager.read("discovered_endpoints") or {}
+        existing_eps = existing.get("endpoints", []) if isinstance(existing, dict) else []
+        existing_urls = {ep.get("url", ep.get("endpoint", "")) for ep in existing_eps}
+        new_eps = []
+        for url in urls:
+            if url not in existing_urls:
+                path = url.split("://", 1)[-1].split("/", 1)[-1]
+                path = f"/{path}" if not path.startswith("/") else path
+                new_eps.append({
+                    "url": url, "endpoint": path,
+                    "status": 200, "method": "GET",
+                    "requires_auth": True, "source": "auth_link"
+                })
+        all_eps = existing_eps + new_eps
+        updated = {
+            "endpoints": all_eps, "count": len(all_eps),
+            "api_endpoints": [e for e in all_eps if e.get("type") == "api"],
+            "admin_endpoints": [e for e in all_eps if e.get("type") == "admin"],
+        }
+        self.write_context("discovered_endpoints", updated)
+        baseline_snapshot["discovered_endpoints"] = updated
+        self.log("info", f"[Recon] discovered_endpoints now has {len(all_eps)} total endpoints ({len(new_eps)} from auth links)")
 
     async def _collect_baseline_data(self, client: MCPClient, target: str, domain: str, baseline_snapshot: Dict[str, Any]) -> None:
         baseline_snapshot.setdefault("baseline_results", {})
@@ -385,6 +423,14 @@ Operate autonomously without human guidance.
             except Exception as arg_err:
                 self.log("warning", f"Failed to build args for {tool_name}: {arg_err}")
                 continue
+
+            # Inject auth cookies into Katana so it crawls authenticated paths
+            if tool_name == "katana_js_crawl":
+                auth = self._shared_context_snapshot.get("authenticated_session", {})
+                if auth.get("logged_in") and auth.get("cookies"):
+                    cookies_str = "; ".join(f"{k}={v}" for k, v in auth["cookies"].items())
+                    args["cookies"] = cookies_str
+                    self.log("info", f"[Recon] Injecting auth cookies into Katana: {list(auth['cookies'].keys())}")
 
             # Handle local tools (non-MCP)
             if config["server"] == "local":

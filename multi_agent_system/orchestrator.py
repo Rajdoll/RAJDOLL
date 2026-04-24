@@ -1097,21 +1097,10 @@ class Orchestrator:
 				self._run_phases_4_5()
 			return  # Either paused (return early) or done (phases_4_5 already ran)
 
-		# PHASE 1: Always run ReconnaissanceAgent first
-		print("[Orchestrator] Phase 1: Running reconnaissance...")
-		if self._is_job_cancelled():
-			print("[Orchestrator] Job cancelled by user, aborting...")
-			return
-		self._run_step_sync("ReconnaissanceAgent")
-		
-		# Populate shared_context from recon results for other agents
-		self._populate_shared_context_from_recon()
-		
-		# PHASE 1.5: Attempt auto-login to enable authenticated testing
-		# This creates an authenticated session that all subsequent agents can use
+		# PHASE 1.5: Auto-login BEFORE Recon so Katana crawls with authenticated session
 		import warnings
 		import time as _time
-		warnings.warn("[Orchestrator] Phase 1.5: Attempting auto-login for authenticated testing...")
+		warnings.warn("[Orchestrator] Phase 1.5: Attempting auto-login before reconnaissance...")
 		_t_autologin_start = _time.monotonic()
 		try:
 			target_url = self._get_target()
@@ -1132,9 +1121,25 @@ class Orchestrator:
 					warnings.warn(f"[Orchestrator]   Auth method: {auth_session.get('auth_method')}")
 					warnings.warn(f"[Orchestrator]   JWT token: {'Present' if auth_session.get('jwt_token') else 'None'}")
 					self._timing_autologin_detail = f"Logged in as {auth_session.get('username', 'unknown')}"
+					# Extract links from authenticated home page and seed SharedContext
+					# Helps when Katana fails on target (e.g. old PHP/Apache apps like DVWA)
+					try:
+						from .utils.session_service import SessionService
+						_svc = SessionService(target_url)
+						_svc.session_data.update({
+							"logged_in": True,
+							"cookies": auth_session.get("cookies", {}),
+							"headers": auth_session.get("headers", {}),
+							"jwt_token": auth_session.get("jwt_token"),
+						})
+						auth_links = loop.run_until_complete(_svc.extract_authenticated_links())
+						if auth_links:
+							self.context_manager.write("auth_discovered_links", {"urls": auth_links, "count": len(auth_links)})
+							warnings.warn(f"[Orchestrator]   Extracted {len(auth_links)} authenticated links from home page")
+					except Exception as _le:
+						warnings.warn(f"[Orchestrator]   Link extraction skipped: {_le}")
 				else:
 					warnings.warn("[Orchestrator] ⚠ Auto-login failed - continuing with unauthenticated testing")
-					# Store empty auth session to indicate login was attempted
 					self.context_manager.write("authenticated_session", {"logged_in": False, "login_attempted": True})
 					self._timing_autologin_detail = "Login attempted but failed"
 		except Exception as e:
@@ -1144,6 +1149,16 @@ class Orchestrator:
 			self._timing_autologin_detail = f"Error: {str(e)[:80]}"
 		finally:
 			self._timing_autologin_s = _time.monotonic() - _t_autologin_start
+
+		# PHASE 1: ReconnaissanceAgent — runs with auth session already in SharedContext
+		print("[Orchestrator] Phase 1: Running reconnaissance...")
+		if self._is_job_cancelled():
+			print("[Orchestrator] Job cancelled by user, aborting...")
+			return
+		self._run_step_sync("ReconnaissanceAgent")
+
+		# Populate shared_context from recon results for other agents
+		self._populate_shared_context_from_recon()
 		
 		plan = self._remove_recon(plan_with_recon)
 		
