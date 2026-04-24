@@ -225,8 +225,6 @@ async def run_sqlmap_scan(
         "BEUSTQ",  # ALL techniques: Boolean, Error, UNION, Stacked, Time-based, Query-based
         "--output-dir",
         str(output_dir),
-        # GENERIC OPTIMIZATIONS: Work for any SQLite-based application
-        "--dbms=SQLite",  # Many modern apps use SQLite (lightweight, embedded)
         "--forms",  # Auto-test all forms found
         "--crawl=2",  # Crawl 2 levels deep to discover more endpoints
         "--tamper=space2comment",  # Generic WAF evasion technique
