@@ -210,29 +210,22 @@ async def run_sqlmap_scan(
         SQLMAP_BIN,
         "-u",
         url,
-        "--batch",  # Never ask for user input
+        "--batch",
         "--disable-coloring",
-        "--random-agent",
         "--level",
-        os.getenv("SQLMAP_LEVEL", "5"),  # Level 5: Test ALL parameters, cookies, headers, User-Agent (COMPREHENSIVE!)
+        os.getenv("SQLMAP_LEVEL", "3"),
         "--risk",
-        os.getenv("SQLMAP_RISK", "3"),  # Risk 3: Test ALL aggressive payloads, OR-based, heavy queries (MAXIMUM!)
+        os.getenv("SQLMAP_RISK", "2"),
         "--threads",
-        "10",  # Parallel testing for speed
+        os.getenv("SQLMAP_THREADS", "4"),
         "--time-sec",
-        "30",  # Time-based blind SQLi detection timeout (increased for better detection)
+        "30",
         "--technique",
-        "BEUSTQ",  # ALL techniques: Boolean, Error, UNION, Stacked, Time-based, Query-based
+        "BEUSTQ",
         "--output-dir",
         str(output_dir),
-        "--forms",  # Auto-test all forms found
-        "--crawl=2",  # Crawl 2 levels deep to discover more endpoints
-        "--tamper=space2comment",  # Generic WAF evasion technique
-        # CRITICAL FIX: Skip all interactive prompts that bypass --batch
-        "--skip-urlencode",  # Skip URL encoding warnings
-        "--skip-static",  # Skip testing static parameters
-        "--skip-waf",  # Skip WAF/IPS detection heuristics (can trigger prompts)
-        "--answers=follow=Y,other=N",  # Auto-answer common prompts
+        "--skip-waf",
+        "--answers=follow=Y,other=N",
     ]
 
     # PHASE 2.1 ENHANCEMENT: POST body support for REST APIs and modern web apps
@@ -266,7 +259,14 @@ async def run_sqlmap_scan(
             cmd += ["--cookie", cookie_str]
             logger.info(f"[run_sqlmap_scan] Cookies added: {cookie_str[:50]}...")
 
-    # Add specific parameter if provided by LLM analysis
+    # Add specific parameter if provided by LLM analysis.
+    # If not provided, auto-extract GET params from URL — focuses sqlmap on those params
+    # only, avoiding cookie/header injection that mutates auth cookies (e.g. DVWA PHPSESSID).
+    if not param:
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(url).query)
+        if qs:
+            param = ",".join(qs.keys())
     if param:
         cmd += ["-p", param]
 
@@ -308,17 +308,17 @@ async def run_dalfox_scan(
         target,
         "--silence",
         "--format",
-        "json",
+        "jsonl",
         "--no-spinner",
-        # GENERIC XSS ENHANCEMENTS: Comprehensive testing for any web application
-        "--mining-dom",  # DOM XSS mining (critical for modern JS frameworks: React, Angular, Vue)
-        "--mining-dict",  # Dictionary-based parameter mining (discovers hidden parameters)
-        "--follow-redirects",  # Follow redirects to find XSS in downstream pages
-        "--skip-bav",  # Skip boring parameter values (faster scanning)
-        "--worker", "50",  # Parallel workers for speed
-        "--delay", "100",  # 100ms delay (fast but not overwhelming)
-        "--timeout", "30"  # 30s timeout per request
+        "--follow-redirects",
+        "--skip-bav",
+        "--worker", "50",
+        "--timeout", "30",
     ]
+    # Parameter mining is only useful when we don't know the param to test.
+    # With a known param, skip it — mining adds minutes of headless rendering.
+    if not param:
+        cmd += ["--mining-dom", "--mining-dict"]
 
     # PHASE 2.2 ENHANCEMENT: POST method support
     if method == "POST":
@@ -358,10 +358,9 @@ async def run_dalfox_scan(
     if param:
         cmd += ["--param", param]
 
-    # Aggression level can be controlled by LLM based on reconnaissance findings
-    aggression = (config.get("aggression") or "aggressive").lower()
+    aggression = (config.get("aggression") or "balanced").lower()
     if aggression == "aggressive":
-        cmd += ["--deep-dom"]  # Deep DOM traversal for SPA frameworks
+        cmd += ["--deep-domxss"]
 
     # Additional headers from config
     headers = config.get("headers")
@@ -2838,7 +2837,7 @@ async def test_lfi(url: str, param: Optional[str] = None, auth_session: Optional
     Reference: https://owasp.org/www-community/attacks/Path_Traversal
     """
     try:
-        ffuf_report = await run_ffuf_lfi_scan(url, param)
+        ffuf_report = await run_ffuf_lfi_scan(url, param, {"auth_session": auth_session or {}})
         ffuf_meta = {
             "status": ffuf_report.get("status"),
             "message": ffuf_report.get("message"),
