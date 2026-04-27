@@ -563,14 +563,23 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         if self.should_run_tool("test_stored_xss"):
             try:
                 self.log("info", "🔍 Testing Stored XSS (WSTG-INPV-02)")
-                # Test common user-content endpoints
-                from urllib.parse import urljoin
-                stored_xss_endpoints = [
-                    "/api/Feedbacks/", "/rest/products/1/reviews",
-                    "/api/Complaints", "/api/Recycles/",
-                    "/profile", "/api/Users/",
+                from urllib.parse import urljoin, urlparse
+                # Derive endpoints from SharedContext — look for paths that typically
+                # accept user-generated content (comments, reviews, profiles, API writes).
+                all_links = (
+                    self.shared_context.get("auth_discovered_links", [])
+                    if isinstance(self.shared_context.get("auth_discovered_links"), list)
+                    else []
+                ) or list(discovered_urls or [])
+                user_content_patterns = [
+                    "feedback", "comment", "review", "message", "post", "note",
+                    "profile", "account", "user", "complaint", "recycle", "submit",
                 ]
-                for ep in stored_xss_endpoints:
+                stored_xss_endpoints = [
+                    urlparse(u).path for u in all_links
+                    if any(p in u.lower() for p in user_content_patterns)
+                ] or ["/"]  # fallback: at least test the root
+                for ep in stored_xss_endpoints[:6]:
                     ep_url = urljoin(target, ep)
                     result = await self.execute_tool(
                         server="input-validation-testing",
@@ -591,14 +600,25 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         if self.should_run_tool("test_nosql_injection"):
             try:
                 self.log("info", "🔍 Testing NoSQL Injection (standalone)")
-                from urllib.parse import urljoin
-                nosql_endpoints = [
-                    "/rest/products/search?q=test",
-                    "/rest/track-order/1",
-                    "/rest/user/login",
+                from urllib.parse import urljoin, urlparse
+                # Derive endpoints from SharedContext — search/query/login paths are
+                # prime NoSQLi targets (operator injection, auth bypass).
+                all_links = (
+                    self.shared_context.get("auth_discovered_links", [])
+                    if isinstance(self.shared_context.get("auth_discovered_links"), list)
+                    else []
+                ) or list(discovered_urls or [])
+                nosql_patterns = [
+                    "search", "query", "find", "filter", "login", "auth",
+                    "signin", "track", "order", "lookup", "api",
                 ]
-                for ep in nosql_endpoints:
-                    ep_url = urljoin(target, ep)
+                nosql_endpoints = [
+                    u if "?" in u else urlparse(u).path
+                    for u in all_links
+                    if any(p in u.lower() for p in nosql_patterns)
+                ] or [target]  # fallback: test root
+                for ep in nosql_endpoints[:4]:
+                    ep_url = ep if ep.startswith("http") else urljoin(target, ep)
                     result = await self.execute_tool(
                         server="input-validation-testing",
                         tool="test_nosql_injection",
