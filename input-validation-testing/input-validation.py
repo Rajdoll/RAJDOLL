@@ -198,7 +198,11 @@ async def run_sqlmap_scan(
     """Invoke sqlmap against the supplied URL/parameter with enhanced POST and authentication support."""
     if not shutil.which(SQLMAP_BIN):
         return {"status": "error", "message": "sqlmap binary not found"}
-    output_dir = Path(os.getenv("SQLMAP_OUTPUT_DIR", "/tmp/sqlmap-output"))
+    # Use a per-scan unique output dir so sqlmap never loads stale session cache
+    # from a previous scan that tested the same URL (cached "not injectable" would
+    # cause sqlmap to skip the target entirely on re-runs).
+    import uuid as _uuid
+    output_dir = Path(os.getenv("SQLMAP_OUTPUT_DIR", "/tmp/sqlmap-output")) / _uuid.uuid4().hex[:8]
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = config or {}

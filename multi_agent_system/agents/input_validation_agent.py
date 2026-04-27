@@ -891,21 +891,25 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     all_findings['xss'].extend(data.get('findings', []))
                     self.log("info", f"      ✓ XSS found in POST endpoint!")
 
-        # Test GET parameters.
-        # Pass each known parameter explicitly via -p so dalfox targets it directly,
-        # rather than appending fake ?param=test values that point dalfox at wrong params
-        # (e.g. DVWA xss_r uses 'name', not 'q' — fake params cause dalfox to miss the vuln).
-        # For URLs that already have a query string, test them as-is.
-        if '?' in url:
-            test_pairs = [(url, None)]
-        else:
-            test_pairs = [(url, p) for p in (parameters[:3] if parameters else [None])]
+        # Test for XSS using dalfox with param mining.
+        # Pass the base URL (no fake ?param=test appended) with param=None so dalfox
+        # uses --mining-dom/--mining-dict to discover the real reflected param.
+        # Appending wrong params (e.g. ?q=test when DVWA uses 'name') directs dalfox
+        # to test only that param and miss the real one, or focuses it away from mining.
+        # For URLs that already have a query string, test with explicit params too.
+        base_url = url.split('?')[0] if '?' not in url else url
 
-        for test_url, test_param in test_pairs:
+        test_cases = [(base_url, None)]  # mining mode — always run first
+        if '?' in url:
+            # URL already has params — also try known candidates explicitly
+            for p in (parameters[:2] if parameters else []):
+                test_cases.append((url, p))
+
+        for test_url, test_param in test_cases:
             result = await self.execute_tool(
                 server="input-validation-testing",
                 tool="test_xss_reflected",
-                args={"url": test_url, "param": test_param},
+                args={"url": test_url, **({"param": test_param} if test_param else {})},
                 auth_session=auth_data,
                 timeout=120
             )
@@ -914,7 +918,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 if data.get("vulnerable"):
                     all_findings['xss'].extend(data.get('findings', []))
                     self.log("info", f"      ✓ XSS found!")
-                    break  # Found it — no need to test remaining params
+                    break  # Found it — skip remaining test cases
 
     async def _execute_lfi_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
         """Execute LFI test on LLM-selected URL."""
