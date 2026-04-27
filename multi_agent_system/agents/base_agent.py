@@ -974,7 +974,12 @@ class BaseAgent:
 		# Check if LLM provided non-empty arguments
 		if isinstance(planned, dict) and planned and any(v for v in planned.values()):
 			merged = dict(base)
-			merged.update(planned)
+			# Merge LLM args but preserve URL/domain from base — the agent loop sets
+			# the URL explicitly for each test target; the LLM plan may only contain a
+			# single representative URL that would override all per-URL iterations.
+			_url_keys = {'url', 'target', 'domain', 'host', 'target_url'}
+			llm_without_urls = {k: v for k, v in planned.items() if k not in _url_keys}
+			merged.update(llm_without_urls)
 			self.log("info", f"✓ Using LLM arguments for {tool_name}", {
 				"base_args": base,
 				"llm_args": planned,
