@@ -1374,6 +1374,27 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 reason = "Health/monitoring endpoint - limited attack surface"
                 parameters = ['check', 'service']
 
+            # 🔴 HIGH: XSS-specific endpoints (score: 90)
+            elif any(pattern in url_lower for pattern in ['xss', 'cross-site', 'script', 'markup']):
+                tests = ['xss', 'sqli']
+                priority_score = 90
+                reason = "XSS-specific endpoint - reflected/stored XSS risk"
+                parameters = ['q', 'search', 'name', 'input', 'param', 'msg', 'default']
+
+            # 🔴 HIGH: File inclusion / LFI endpoints (score: 88)
+            elif any(pattern in url_lower for pattern in ['/fi/', 'inclusion', '/lfi', '/rfi', 'include', 'page=']):
+                tests = ['lfi', 'sqli']
+                priority_score = 88
+                reason = "File inclusion endpoint - LFI/RFI path traversal risk"
+                parameters = ['page', 'file', 'path', 'include', 'doc']
+
+            # 🔴 HIGH: SQLi-explicit endpoints (score: 88)
+            elif any(pattern in url_lower for pattern in ['sqli', 'sql-inject', 'sqlinject', 'blind']):
+                tests = ['sqli']
+                priority_score = 88
+                reason = "SQLi-specific endpoint - direct SQL injection testing"
+                parameters = ['id', 'q', 'search', 'user', 'name']
+
             # ⚪ DEFAULT: Test everything for SQLi at minimum (score: 60)
             else:
                 tests = ['sqli']
