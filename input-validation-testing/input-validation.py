@@ -262,11 +262,15 @@ async def run_sqlmap_scan(
     # Add specific parameter if provided by LLM analysis.
     # If not provided, auto-extract GET params from URL — focuses sqlmap on those params
     # only, avoiding cookie/header injection that mutates auth cookies (e.g. DVWA PHPSESSID).
+    # For parameterless URLs (no '?' in URL), use --forms so sqlmap discovers form fields
+    # automatically (e.g. DVWA sqli endpoint requires Submit=Submit to execute the query).
     if not param:
         from urllib.parse import urlparse, parse_qs
         qs = parse_qs(urlparse(url).query)
         if qs:
             param = ",".join(qs.keys())
+        else:
+            cmd += ["--forms"]
     if param:
         cmd += ["-p", param]
 
