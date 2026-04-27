@@ -891,19 +891,21 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     all_findings['xss'].extend(data.get('findings', []))
                     self.log("info", f"      ✓ XSS found in POST endpoint!")
 
-        # Test GET parameters
-        test_urls = []
+        # Test GET parameters.
+        # Pass each known parameter explicitly via -p so dalfox targets it directly,
+        # rather than appending fake ?param=test values that point dalfox at wrong params
+        # (e.g. DVWA xss_r uses 'name', not 'q' — fake params cause dalfox to miss the vuln).
+        # For URLs that already have a query string, test them as-is.
         if '?' in url:
-            test_urls.append(url)
+            test_pairs = [(url, None)]
         else:
-            for param in parameters[:3]:
-                test_urls.append(f"{url}?{param}=test")
+            test_pairs = [(url, p) for p in (parameters[:3] if parameters else [None])]
 
-        for test_url in test_urls:
+        for test_url, test_param in test_pairs:
             result = await self.execute_tool(
                 server="input-validation-testing",
                 tool="test_xss_reflected",
-                args={"url": test_url},
+                args={"url": test_url, "param": test_param},
                 auth_session=auth_data,
                 timeout=120
             )
@@ -912,6 +914,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 if data.get("vulnerable"):
                     all_findings['xss'].extend(data.get('findings', []))
                     self.log("info", f"      ✓ XSS found!")
+                    break  # Found it — no need to test remaining params
 
     async def _execute_lfi_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
         """Execute LFI test on LLM-selected URL."""
@@ -940,11 +943,15 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 self.log("info", f"      ✅ ReAct found {len(react_result['vulnerabilities'])} LFI vulnerabilities!")
             return  # ReAct already tested this URL — skip traditional tests
 
-        # Traditional LFI test
+        # Traditional LFI test — extract param from URL query string if present
+        # (test_lfi signature is (url, param, auth_session); 'fuzz' was silently dropped)
+        from urllib.parse import urlparse as _lfi_urlparse, parse_qs as _lfi_parse_qs
+        _qs = _lfi_parse_qs(_lfi_urlparse(url).query)
+        lfi_param = parameters[0] if parameters else (next(iter(_qs), None))
         result = await self.execute_tool(
             server="input-validation-testing",
             tool="test_lfi",
-            args={"url": url, "fuzz": True},
+            args={"url": url, "param": lfi_param},
             auth_session=auth_data,
             timeout=300
         )
@@ -962,15 +969,22 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         """Execute XXE test on LLM-selected URL."""
         self.log("info", f"   🔍 XXE testing: {url}")
 
-        # Derive base URL and add Juice Shop's file upload endpoint for SVG XXE testing
+        # Derive upload endpoint from discovered endpoints (prefer /upload, /file-upload,
+        # /attachments etc.) rather than hardcoding Juice Shop's /file-upload path.
         from urllib.parse import urlparse as _urlparse
         _parsed = _urlparse(url)
         _base = f"{_parsed.scheme}://{_parsed.netloc}"
+        _upload_patterns = ["upload", "file", "attach", "media", "import"]
+        _disc = self.shared_context.get("discovered_endpoints", [])
+        _upload_ep = next(
+            (e for e in _disc if any(p in e.lower() for p in _upload_patterns)),
+            None
+        )
 
         result = await self.execute_tool(
             server="input-validation-testing",
             tool="test_xxe",
-            args={"url": url, "upload_endpoint": f"{_base}/file-upload"},
+            args={"url": url, **({"upload_endpoint": _upload_ep} if _upload_ep else {})},
             auth_session=auth_data,
             timeout=120
         )
