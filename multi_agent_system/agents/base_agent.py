@@ -443,6 +443,31 @@ class BaseAgent:
 				self._tool_arguments_map[tool_name] = args
 			self.log("info", f"[Directive] Force-injected tool: {tool_name}")
 
+	def _select_tool_targets(self, tool_name: str, fallback_url: str) -> list:
+		"""Return discovered endpoints relevant for this tool. Falls back to fallback_url."""
+		TOOL_ENDPOINT_PATTERNS: dict = {
+			"test_ssti_comprehensive":  ["profile", "feedback", "review", "comment", "name", "bio", "search"],
+			"test_xxe":                 ["ftp", "xml", "upload", "svg", "import", "export"],
+			"test_ssrf_comprehensive":  ["url=", "redirect", "fetch", "callback", "webhook", "link"],
+			"test_unrestricted_upload": ["upload", "image", "photo", "avatar", "profile", "file", "attachment"],
+			"test_mime_type_bypass":    ["upload", "image", "photo", "avatar", "profile", "file"],
+			"test_password_policy":     ["register", "signup", "sign-up", "account/new", "create-account"],
+		}
+		patterns = TOOL_ENDPOINT_PATTERNS.get(tool_name)
+		if not patterns:
+			return [fallback_url]
+		endpoints = self._shared_context_snapshot.get("discovered_endpoints", [])
+		if not endpoints:
+			return [fallback_url]
+		urls = []
+		for ep in endpoints:
+			if isinstance(ep, str):
+				urls.append(ep)
+			elif isinstance(ep, dict) and ep.get("url"):
+				urls.append(ep["url"])
+		matched = [u for u in urls if any(p in u.lower() for p in patterns)]
+		return matched[:3] if matched else [fallback_url]
+
 	async def _execute_round2(self) -> None:
 		"""LLM reviews Round 1 findings and executes 0-5 targeted escalation tools.
 
