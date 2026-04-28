@@ -68,6 +68,8 @@ class Job(Base):
     plan: Mapped[Optional[dict]] = Column(JSON, nullable=True)
     summary: Mapped[Optional[str]] = Column(Text, nullable=True)
     paused_state: Mapped[Optional[dict]] = Column(JSON, nullable=True)
+    accumulated_directive: Mapped[Optional[dict]] = Column(JSON, nullable=True)
+    directive_history: Mapped[Optional[list]] = Column(JSON, nullable=True)
 
     agents: Mapped[list[JobAgent]] = relationship("JobAgent", back_populates="job", cascade="all, delete-orphan")
     findings: Mapped[list[Finding]] = relationship("Finding", back_populates="job", cascade="all, delete-orphan")
