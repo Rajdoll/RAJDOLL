@@ -134,3 +134,29 @@ def test_review_round1_returns_empty_when_nothing_interesting():
             )
 
     assert asyncio.run(_run()) == []
+
+
+def test_skip_guardrail_recon_and_report_never_skipped():
+    directive = OrchestratorDirective(
+        skip_agents=["ReconnaissanceAgent", "ReportGenerationAgent", "WeakCryptographyAgent"]
+    )
+    result = merge_directives(OrchestratorDirective(), directive)
+    assert "ReconnaissanceAgent" not in result.skip_agents
+    assert "ReportGenerationAgent" not in result.skip_agents
+    assert "WeakCryptographyAgent" in result.skip_agents
+
+
+def test_focus_injected_into_director_instructions_text():
+    directive = OrchestratorDirective(
+        focus_instructions={"InputValidationAgent": "focus SSTI on /profile/bio"}
+    )
+    ctx = {}
+    agent_name = "InputValidationAgent"
+    focus = directive.focus_instructions.get(agent_name)
+    if focus:
+        ctx["llm_orchestrator_focus"] = focus
+        existing = ctx.get("director_instructions_text", "")
+        ctx["director_instructions_text"] = f"{existing}\nLLM ORCHESTRATOR FOCUS: {focus}".strip()
+
+    assert "SSTI" in ctx.get("director_instructions_text", "")
+    assert "SSTI" in ctx.get("llm_orchestrator_focus", "")

@@ -204,6 +204,11 @@ class Orchestrator:
 		else:
 			agent._orchestrator_had_plan = False
 
+		# Inject tools from LLM orchestrator directive
+		inject_specs = self._accumulated_directive.inject_tools.get(agent_name, [])
+		if inject_specs and hasattr(agent, '_inject_directive_tools'):
+			agent._inject_directive_tools(inject_specs)
+
 		loop = self._ensure_event_loop()
 		error_message: Optional[str] = None
 		try:
@@ -833,6 +838,20 @@ class Orchestrator:
 				ctx["director_instructions_text"] = format_for_llm(directives)
 		# Layer 1: Scope enforcement via LLM prompt
 		ctx["scope_constraints"] = self._build_scope_context_block()
+
+		# Layer 2: LLM Active Orchestrator — inject accumulated directive context
+		if agent_name:
+			focus = self._accumulated_directive.focus_instructions.get(agent_name)
+			if focus:
+				ctx["llm_orchestrator_focus"] = focus
+				existing = ctx.get("director_instructions_text", "")
+				ctx["director_instructions_text"] = (
+					f"{existing}\nLLM ORCHESTRATOR FOCUS: {focus}".strip()
+				)
+			inject_specs = self._accumulated_directive.inject_tools.get(agent_name)
+			if inject_specs:
+				ctx["llm_orchestrator_inject_tools"] = inject_specs
+
 		return ctx
 
 	def _get_tool_plan_for_agent(self, agent_name: str) -> Optional[Dict[str, Any]]:
@@ -1005,6 +1024,23 @@ class Orchestrator:
 				print(f"[Orchestrator] Circuit breaker triggered: {self._get_failures()} failures")
 				break
 
+			# Check if LLM orchestrator directive says to skip this agent
+			if (
+				isinstance(step, str)
+				and agent_name in self._accumulated_directive.skip_agents
+			):
+				print(f"[Orchestrator] LLM directive: skipping {agent_name} — {self._accumulated_directive.reasoning}")
+				with get_db() as db:
+					ja = db.query(JobAgent).filter(
+						JobAgent.job_id == self.job_id, JobAgent.agent_name == agent_name
+					).one_or_none()
+					if ja:
+						ja.status = AgentStatus.skipped if hasattr(AgentStatus, "skipped") else AgentStatus.failed
+						ja.error = f"Skipped by LLM directive: {self._accumulated_directive.reasoning[:200]}"
+						ja.finished_at = datetime.utcnow()
+						db.commit()
+				continue
+
 			# Check if user requested to skip this agent
 			if agent_name in skip_agents_set:
 				print(f"[Orchestrator] Skipping {agent_name} (user requested)")
@@ -1066,6 +1102,14 @@ class Orchestrator:
 					continue
 
 			self._run_step_sync(step, tool_plan)
+
+			# ── LLM Active Orchestrator: generate directive after agent ──
+			if isinstance(step, str) and step != "ReportGenerationAgent":
+				remaining_for_directive = [
+					s for s in plan[idx + 1:]
+					if isinstance(s, str) and s not in skip_agents_set
+				]
+				self._generate_and_merge_directive(step, remaining_for_directive)
 
 			# ── Agent-Level HITL Checkpoint ──────────────────────────────
 			# After each agent completes + summarization, pause for user review
