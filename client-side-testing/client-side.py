@@ -1979,8 +1979,134 @@ async def test_open_redirect(url: str, auth_session: Optional[Dict[str, Any]] = 
         return {"status": "error", "message": str(e)}
 
 
+async def scan_vulnerable_components(
+    url: str,
+    auth_session: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Detect known-vulnerable JavaScript libraries via HTTP response analysis (WSTG-CONF-01)."""
+    import re
+
+    KNOWN_VULNERABLE: dict = {
+        "jquery": [
+            ("jquery-1.", "Prototype Pollution / XSS - CVE-2011-4969, CVE-2019-11358"),
+            ("jquery-2.", "Prototype Pollution - CVE-2019-11358"),
+            ("jquery-3.0", "XSS - CVE-2020-11023"),
+            ("jquery-3.1", "XSS - CVE-2020-11023"),
+            ("jquery-3.2", "XSS - CVE-2020-11023"),
+            ("jquery-3.3", "XSS - CVE-2020-11023"),
+            ("jquery-3.4", "XSS - CVE-2020-11023"),
+            ("jquery/1.", "Prototype Pollution / XSS - CVE-2011-4969, CVE-2019-11358"),
+            ("jquery/2.", "Prototype Pollution - CVE-2019-11358"),
+            ("jquery/3.0", "XSS - CVE-2020-11023"),
+            ("jquery/3.1", "XSS - CVE-2020-11023"),
+            ("jquery/3.2", "XSS - CVE-2020-11023"),
+            ("jquery/3.3", "XSS - CVE-2020-11023"),
+            ("jquery/3.4", "XSS - CVE-2020-11023"),
+        ],
+        "angular": [
+            ("angular/1.", "Template Injection / Sandbox Escape - CVE-2019-14863"),
+            ("angular@1.", "Template Injection / Sandbox Escape - CVE-2019-14863"),
+            ("angular.min.js", "Template Injection / Sandbox Escape - CVE-2019-14863"),
+            ("angular.js", "Template Injection / Sandbox Escape (version check required)"),
+        ],
+        "bootstrap": [
+            ("bootstrap-3.0", "XSS - CVE-2018-20676"),
+            ("bootstrap-3.1", "XSS - CVE-2018-20676"),
+            ("bootstrap-3.2", "XSS - CVE-2018-20676"),
+            ("bootstrap-3.3", "XSS - CVE-2018-20676"),
+            ("bootstrap-4.0", "XSS - CVE-2019-8331"),
+            ("bootstrap-4.1", "XSS - CVE-2019-8331"),
+            ("bootstrap-4.2", "XSS - CVE-2019-8331"),
+            ("bootstrap/3.", "XSS - CVE-2018-20676"),
+            ("bootstrap/4.0", "XSS - CVE-2019-8331"),
+            ("bootstrap/4.1", "XSS - CVE-2019-8331"),
+            ("bootstrap/4.2", "XSS - CVE-2019-8331"),
+        ],
+        "lodash": [
+            ("lodash-4.17.0", "Prototype Pollution - CVE-2019-10744"),
+            ("lodash-4.17.1", "Prototype Pollution - CVE-2019-10744"),
+            ("lodash/4.17.0", "Prototype Pollution - CVE-2019-10744"),
+            ("lodash/4.17.1", "Prototype Pollution - CVE-2019-10744"),
+        ],
+    }
+
+    INLINE_VERSION_PATTERNS: list = [
+        (r"jQuery\s+v?(1\.\d+\.\d+)", "jQuery", "Prototype Pollution / XSS - CVE-2011-4969, CVE-2019-11358"),
+        (r"jQuery\s+v?(2\.\d+\.\d+)", "jQuery", "Prototype Pollution - CVE-2019-11358"),
+        (r"jQuery\s+v?(3\.[0-4]\.\d+)", "jQuery", "XSS - CVE-2020-11023"),
+        (r"angular\.version\s*=\s*\{.*?major\s*:\s*1", "AngularJS", "Template Injection / Sandbox Escape - CVE-2019-14863"),
+        (r"AngularJS\s+v?(1\.\d+\.\d+)", "AngularJS", "Template Injection / Sandbox Escape - CVE-2019-14863"),
+    ]
+
+    try:
+        headers = {}
+        cookies = {}
+        if auth_session:
+            if auth_session.get("token"):
+                headers["Authorization"] = f"Bearer {auth_session['token']}"
+            if auth_session.get("cookies"):
+                cookies = auth_session["cookies"]
+
+        async with httpx.AsyncClient(verify=False, timeout=20, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers, cookies=cookies)
+
+        html = resp.text or ""
+        script_srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html, re.IGNORECASE)
+
+        findings = []
+        checked_srcs = set()
+
+        for src in script_srcs:
+            src_lower = src.lower()
+            if src_lower in checked_srcs:
+                continue
+            checked_srcs.add(src_lower)
+
+            for lib, patterns in KNOWN_VULNERABLE.items():
+                for needle, cve_desc in patterns:
+                    if needle in src_lower:
+                        findings.append({
+                            "library": lib,
+                            "source": src,
+                            "cve": cve_desc,
+                            "severity": "high",
+                            "detection": "script_src",
+                        })
+                        break
+
+        for pattern, lib, cve_desc in INLINE_VERSION_PATTERNS:
+            m = re.search(pattern, html)
+            if m:
+                version = m.group(1) if m.lastindex else "detected"
+                findings.append({
+                    "library": lib,
+                    "source": f"inline ({version})",
+                    "cve": cve_desc,
+                    "severity": "high",
+                    "detection": "inline_pattern",
+                })
+
+        if findings:
+            msg = f"Found {len(findings)} vulnerable component(s) in {url}"
+        else:
+            msg = f"No known-vulnerable components detected in {url}"
+
+        return {
+            "status": "success",
+            "data": {
+                "url": url,
+                "findings": findings,
+                "vulnerable": len(findings) > 0,
+                "scripts_checked": len(checked_srcs),
+                "message": msg,
+            },
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # ============================================================================
-# MODULE COMPLETE: 15 client-side testing tools implemented
-# Coverage: WSTG 4.11.1-4.11.15 + Open Redirect (DOM XSS, Prototype Pollution, postMessage, CSTI, Resource Manipulation, Web Messaging, Open Redirect)
+# MODULE COMPLETE: 16 client-side testing tools implemented
+# Coverage: WSTG 4.11.1-4.11.15 + Open Redirect + Vulnerable Components (CONF-01)
 # ============================================================================
 

@@ -406,9 +406,42 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
 
         self.log("info", "Client-side checks complete - all 15 WSTG-CLNT enhanced tests executed")
 
+        # 16) Vulnerable Components scan (WSTG-CONF-01) — always runs (CRITICAL)
+        if self.should_run_tool("scan_vulnerable_components"):
+            try:
+                self.log("info", "Scanning for known-vulnerable JavaScript libraries")
+                vc_res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="scan_vulnerable_components",
+                        args={"url": target}, auth_session=auth_data
+                    ),
+                    timeout=60
+                )
+                if isinstance(vc_res, dict) and vc_res.get("status") == "success":
+                    data = vc_res.get("data", {})
+                    for f in data.get("findings", []):
+                        self.add_finding(
+                            "WSTG-CONF-01",
+                            f"Vulnerable component detected: {f.get('library', 'unknown')} {f.get('source', '')}",
+                            severity="high",
+                            evidence={"source": f.get("source"), "cve": f.get("cve"), "detection": f.get("detection")},
+                            details=f.get("cve", ""),
+                        )
+                    if not data.get("findings"):
+                        self.log("info", f"No known-vulnerable components found: {data.get('message', '')}")
+            except Exception as e:
+                self.log("warning", f"scan_vulnerable_components failed: {e}")
+
+    def _get_tool_info(self) -> dict:
+        return {
+            "scan_vulnerable_components": {"priority": "CRITICAL", "description": "Detect known-vulnerable JS libraries (jQuery, Angular, Bootstrap) via HTTP analysis"},
+        }
+
     def _get_available_tools(self) -> list[str]:
         """Return client-side security testing tools for LLM planning"""
         return [
+            'scan_vulnerable_components',
             'test_dom_xss',
             'test_javascript_execution',
             'test_html_injection',
