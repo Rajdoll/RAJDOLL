@@ -209,7 +209,7 @@ Write to shared_context:
                     if findings and vuln_count > 0:
                         critical_count = sum(1 for f in findings if f.get("severity", "").lower() == "critical")
                         severity = "critical" if critical_count > 0 else "high"
-                        self.add_finding("WSTG-BUSL", f"Business data validation flaws: {vuln_count} found ({critical_count} critical)", severity=severity, evidence={"findings": findings[:3]})
+                        self.add_finding("WSTG-BUSL-01", f"Business data validation flaws: {vuln_count} found ({critical_count} critical)", severity=severity, evidence={"findings": findings[:3]})
             except Exception as e:
                 self.log("warning", f"test_business_data_validation failed: {e}")
 
@@ -227,7 +227,7 @@ Write to shared_context:
                     findings = data.get("findings", [])
                     vuln_count = data.get("vulnerabilities_found", 0)
                     if findings and vuln_count > 0:
-                        self.add_finding("WSTG-BUSL", f"Workflow bypasses: {vuln_count} multi-step process bypass(es)", severity="high", evidence={"findings": findings[:2]})
+                        self.add_finding("WSTG-BUSL-07", f"Workflow bypasses: {vuln_count} multi-step process bypass(es)", severity="high", evidence={"findings": findings[:2]})
             except Exception as e:
                 self.log("warning", f"test_workflow_bypass failed: {e}")
 
@@ -245,7 +245,7 @@ Write to shared_context:
                     findings = data.get("findings", [])
                     vuln_count = data.get("vulnerabilities_found", 0)
                     if findings and vuln_count > 0:
-                        self.add_finding("WSTG-BUSL", f"Race condition vulnerabilities: {vuln_count} TOCTOU issue(s)", severity="high", evidence={"findings": findings[:2]})
+                        self.add_finding("WSTG-BUSL-07", f"Race condition vulnerabilities: {vuln_count} TOCTOU issue(s)", severity="high", evidence={"findings": findings[:2]})
             except Exception as e:
                 self.log("warning", f"test_race_conditions failed: {e}")
 
@@ -263,7 +263,7 @@ Write to shared_context:
                     findings = data.get("findings", [])
                     vuln_count = data.get("vulnerabilities_found", 0)
                     if findings and vuln_count > 0:
-                        self.add_finding("WSTG-BUSL", f"Function limit bypasses: {vuln_count} rate limit bypass(es)", severity="medium", evidence={"findings": findings[:3]})
+                        self.add_finding("WSTG-BUSL-05", f"Function limit bypasses: {vuln_count} rate limit bypass(es)", severity="medium", evidence={"findings": findings[:3]})
             except Exception as e:
                 self.log("warning", f"test_function_limits failed: {e}")
 
@@ -500,6 +500,25 @@ Write to shared_context:
             'test_captcha_and_rate_limit',
             'test_coupon_forgery',
         ]
+
+    def _get_tool_info(self) -> dict:
+        return {
+            'test_race_conditions':              {'priority': 'HIGH', 'description': 'TOCTOU race condition testing'},
+            'test_process_timing_race_condition': {'priority': 'HIGH', 'description': 'Process timing race conditions'},
+            'test_captcha_and_rate_limit':        {'priority': 'HIGH', 'description': 'CAPTCHA and rate limit bypass'},
+            'test_shopping_cart_manipulation':    {'priority': 'HIGH', 'description': 'Cart price/quantity manipulation'},
+            'test_integrity_checks':              {'priority': 'HIGH', 'description': 'Integrity check bypass'},
+            'test_workflow_bypass':               {'priority': 'HIGH', 'description': 'Multi-step workflow bypass'},
+            'test_forge_requests':                {'priority': 'HIGH', 'description': 'Request forgery (coupon, payment)'},
+            'test_coupon_forgery':                {'priority': 'HIGH', 'description': 'Coupon code forgery'},
+            'test_business_data_validation':      {'priority': 'MEDIUM', 'description': 'Numeric/string validation extremes'},
+            'test_parameter_tampering':           {'priority': 'MEDIUM', 'description': 'URL parameter manipulation'},
+            'test_mass_assignment':               {'priority': 'MEDIUM', 'description': 'Mass assignment via extra fields'},
+            'test_function_limits':               {'priority': 'MEDIUM', 'description': 'Function invocation limits'},
+            'test_usage_limits_burst':            {'priority': 'MEDIUM', 'description': 'Burst usage limit bypass'},
+            'test_unexpected_file_upload':        {'priority': 'MEDIUM', 'description': 'Unexpected file upload paths'},
+            'test_application_misuse_defenses':   {'priority': 'MEDIUM', 'description': 'Misuse defense testing'},
+        }
 
     def _get_target(self) -> str | None:
         from ..core.db import get_db
