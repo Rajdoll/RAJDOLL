@@ -297,6 +297,36 @@ Write to shared_context:
 			except Exception as e:
 				self.log("warning", f"test_password_reset failed: {e}")
 
+		# WSTG-ATHN-07: Test password policy strength
+		if self.should_run_tool("test_password_policy"):
+			try:
+				register_targets = self._select_tool_targets("test_password_policy", target)
+				for reg_url in register_targets:
+					self.log("info", f"🔍 Testing password policy at: {reg_url}")
+					result = await self.execute_tool(
+						server="auth-mcp",
+						tool="test_password_policy",
+						args={
+							"register_url": reg_url,
+							"username_field": "email",
+							"password_field": "password",
+						},
+						auth_session=auth_data,
+						timeout=120,
+					)
+					if isinstance(result, dict) and result.get("status") == "success":
+						data = result.get("data", {})
+						issues = data.get("policy_issues", [])
+						if issues:
+							self.add_finding(
+								"WSTG-ATHN-07",
+								f"Weak password policy: {len(issues)} issue(s) found",
+								severity="medium",
+								evidence={"issues": issues[:5]},
+							)
+			except Exception as e:
+				self.log("warning", f"test_password_policy failed: {e}")
+
 		# OPSI B: Alternative Channel Authentication
 		if self.should_run_tool("test_alternative_channel_auth"):
 			try:
@@ -476,7 +506,25 @@ Write to shared_context:
 			'test_remember_me',
 			'analyze_jwt',
 			'test_2fa_bypass',
+			'test_password_policy',
 		]
+
+	def _get_tool_info(self) -> dict:
+		return {
+			'test_default_credentials':    {'priority': 'CRITICAL', 'description': 'Test default/common credentials'},
+			'test_lockout_mechanism':       {'priority': 'CRITICAL', 'description': 'Test account lockout'},
+			'test_password_reset':          {'priority': 'CRITICAL', 'description': 'Test password reset flow'},
+			'test_password_policy':         {'priority': 'CRITICAL', 'description': 'Test password complexity requirements'},
+			'analyze_jwt':                  {'priority': 'CRITICAL', 'description': 'Analyze JWT for weak algorithms'},
+			'test_2fa_bypass':              {'priority': 'CRITICAL', 'description': 'Test 2FA bypass'},
+			'test_auth_bypass':             {'priority': 'HIGH', 'description': 'Test auth bypass with SQL/special chars'},
+			'test_auth_bypass_schema':      {'priority': 'HIGH', 'description': 'Schema-based auth bypass'},
+			'test_tls_credentials':         {'priority': 'HIGH', 'description': 'Test credentials over TLS'},
+			'test_remember_me':             {'priority': 'MEDIUM', 'description': 'Test remember-me cookie security'},
+			'test_cache_headers':           {'priority': 'MEDIUM', 'description': 'Test caching of auth pages'},
+			'test_security_questions':      {'priority': 'MEDIUM', 'description': 'Test security question strength'},
+			'test_alternative_channel_auth': {'priority': 'MEDIUM', 'description': 'Test alternative auth channels'},
+		}
 
 	def _get_target(self) -> str | None:
 		from ..core.db import get_db
