@@ -851,3 +851,56 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
         except Exception as e:
             print(f"[SimpleLLMClient] generate_orchestrator_directive failed: {e}")
             return None
+
+    async def review_round1_for_escalation(
+        self,
+        agent_name: str,
+        tool_server_map: dict,
+        round1_summary: str,
+    ) -> list:
+        """LLM reviews Round 1 findings and selects 0-5 targeted escalation tools.
+
+        Returns list of {tool, server, arguments, reason} dicts. Empty list = no escalation.
+        tool_server_map: {tool_name: server_name} for all tools this agent can run.
+        """
+        import json, re
+        if not tool_server_map:
+            return []
+
+        tool_list = "\n".join(
+            f"- {tool} (server: {server})" for tool, server in sorted(tool_server_map.items())
+        )
+        prompt = (
+            f"You reviewed Round 1 results for {agent_name}.\n\n"
+            f"Round 1 findings summary:\n{round1_summary[:1500]}\n\n"
+            f"Available tools for Round 2 escalation:\n{tool_list}\n\n"
+            "Select 0-5 tools for targeted Round 2 testing.\n"
+            "ONLY select tools if you have HIGH CONFIDENCE a specific vulnerability needs deeper probing.\n"
+            "Return empty round2_tools if Round 1 coverage was sufficient.\n\n"
+            "Return ONLY valid JSON (no markdown):\n"
+            "{\n"
+            '  "round2_tools": [\n'
+            '    {"tool": "tool_name", "server": "server_name", "arguments": {}, "reason": "why"}\n'
+            '  ]\n'
+            "}"
+        )
+        messages = [
+            {"role": "system", "content": f"You are an OWASP expert reviewing {agent_name} results. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            raw = await self.chat_completion(messages, max_tokens=600, temperature=0.2)
+            raw = self._strip_thinking_tags(raw)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return []
+            data = json.loads(match.group())
+            tools = data.get("round2_tools") or []
+            valid = [
+                t for t in tools
+                if isinstance(t, dict) and t.get("tool") in tool_server_map
+            ]
+            return valid[:5]
+        except Exception as e:
+            print(f"[SimpleLLMClient] review_round1_for_escalation failed: {e}")
+            return []

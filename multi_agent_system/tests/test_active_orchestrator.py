@@ -87,3 +87,50 @@ def test_generate_orchestrator_directive_returns_none_on_bad_json():
             )
 
     assert asyncio.run(_run()) is None
+
+
+def test_review_round1_selects_escalation_tools():
+    client = SimpleLLMClient.__new__(SimpleLLMClient)
+    client.provider = "openai"
+    client.model = "gpt-4o-mini"
+    client._strip_thinking_tags = lambda x: x
+
+    llm_response = '''{
+        "round2_tools": [
+            {"tool": "run_sqlmap", "server": "input-validation-testing",
+             "arguments": {"url": "http://juice-shop:3000/rest/products/search?q=test", "level": 5},
+             "reason": "search endpoint reflected input in error — union injection likely"}
+        ]
+    }'''
+
+    async def _run():
+        with patch.object(client, 'chat_completion', new=AsyncMock(return_value=llm_response)):
+            return await client.review_round1_for_escalation(
+                agent_name="InputValidationAgent",
+                tool_server_map={"run_sqlmap": "input-validation-testing"},
+                round1_summary="run_sqlmap on /login: no vuln. test_sqli on /search?q=: SQL error in response.",
+            )
+
+    tools = asyncio.run(_run())
+    assert len(tools) == 1
+    assert tools[0]["tool"] == "run_sqlmap"
+    assert tools[0]["server"] == "input-validation-testing"
+
+
+def test_review_round1_returns_empty_when_nothing_interesting():
+    client = SimpleLLMClient.__new__(SimpleLLMClient)
+    client.provider = "openai"
+    client.model = "gpt-4o-mini"
+    client._strip_thinking_tags = lambda x: x
+
+    llm_response = '{"round2_tools": []}'
+
+    async def _run():
+        with patch.object(client, 'chat_completion', new=AsyncMock(return_value=llm_response)):
+            return await client.review_round1_for_escalation(
+                agent_name="ErrorHandlingAgent",
+                tool_server_map={"check_stack_traces": "error-handling-testing"},
+                round1_summary="No error disclosure found.",
+            )
+
+    assert asyncio.run(_run()) == []
