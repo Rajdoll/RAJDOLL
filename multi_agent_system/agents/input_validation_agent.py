@@ -1003,46 +1003,44 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 self.log("info", f"      ✓ XXE found!")
 
     async def _execute_ssrf_test(self, url: str, all_findings: dict, auth_data: dict = None):
-        """Execute SSRF test on LLM-selected URL."""
-        self.log("info", f"   🔍 SSRF testing: {url}")
-
-        result = await self.execute_tool(
-            server="input-validation-testing",
-            tool="test_ssrf_comprehensive",
-            args={"url": url},
-            auth_session=auth_data,
-            timeout=300
-        )
-
-        if isinstance(result, dict) and result.get("status") == "success":
-            data = result.get("data", {})
-            if data.get("vulnerable"):
-                all_findings['ssrf'].append({
-                    "url": url,
-                    "details": data.get("message", "SSRF detected")
-                })
-                self.log("info", f"      ✓ SSRF found!")
+        """Execute SSRF test — uses discovered endpoints when available."""
+        for target_url in self._select_tool_targets("test_ssrf_comprehensive", url):
+            self.log("info", f"   🔍 SSRF testing: {target_url}")
+            result = await self.execute_tool(
+                server="input-validation-testing",
+                tool="test_ssrf_comprehensive",
+                args={"url": target_url},
+                auth_session=auth_data,
+                timeout=300
+            )
+            if isinstance(result, dict) and result.get("status") == "success":
+                data = result.get("data", {})
+                if data.get("vulnerable"):
+                    all_findings['ssrf'].append({
+                        "url": target_url,
+                        "details": data.get("message", "SSRF detected")
+                    })
+                    self.log("info", f"      ✓ SSRF found!")
 
     async def _execute_ssti_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
-        """Execute SSTI test on LLM-selected URL."""
-        self.log("info", f"   🔍 SSTI testing: {url}")
-
-        result = await self.execute_tool(
-            server="input-validation-testing",
-            tool="test_ssti_comprehensive",
-            args={"url": url},
-            auth_session=auth_data,
-            timeout=300
-        )
-
-        if isinstance(result, dict) and result.get("status") == "success":
-            data = result.get("data", {})
-            if data.get("vulnerable"):
-                all_findings['ssti'].append({
-                    "url": url,
-                    "details": data.get("message", "SSTI detected")
-                })
-                self.log("info", f"      ✓ SSTI found!")
+        """Execute SSTI test — uses discovered form endpoints when available."""
+        for target_url in self._select_tool_targets("test_ssti_comprehensive", url):
+            self.log("info", f"   🔍 SSTI testing: {target_url}")
+            result = await self.execute_tool(
+                server="input-validation-testing",
+                tool="test_ssti_comprehensive",
+                args={"url": target_url},
+                auth_session=auth_data,
+                timeout=300
+            )
+            if isinstance(result, dict) and result.get("status") == "success":
+                data = result.get("data", {})
+                if data.get("vulnerable"):
+                    all_findings['ssti'].append({
+                        "url": target_url,
+                        "details": data.get("message", "SSTI detected")
+                    })
+                    self.log("info", f"      ✓ SSTI found!")
 
     async def _execute_command_injection_test(self, url: str, parameters: list, all_findings: dict, auth_data: dict = None):
         """Execute command injection test on LLM-selected URL."""
