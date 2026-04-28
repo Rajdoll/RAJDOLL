@@ -368,7 +368,8 @@ class SimpleLLMClient:
 
             # CRITICAL: Increase max_tokens for comprehensive test cases with URLs and payloads
             # LOW TEMPERATURE: 0.2 for deterministic, consistent tool selection
-            response = await self.chat_completion(messages, max_tokens=4000, temperature=0.5, response_schema=schema)
+            # No response_schema: OpenAI rejects strict json_schema when arguments object has no properties
+            response = await self.chat_completion(messages, max_tokens=4000, temperature=0.5, response_schema=None)
             # Parse JSON from response (robust)
             import json
             import re
@@ -798,3 +799,55 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
         if extracted:
             return "\n".join(s.strip() for s in extracted if s).strip()
         return ""
+
+    async def generate_orchestrator_directive(
+        self,
+        completed_agent: str,
+        remaining_agents: list,
+        agent_summary: str,
+        cumulative_summary: str,
+    ):
+        """After an agent completes, ask LLM to generate an OrchestratorDirective.
+
+        Returns an OrchestratorDirective on success, None on any failure.
+        """
+        import re
+        from .orchestrator_directive import OrchestratorDirective
+
+        NEVER_SKIP_NAMES = "ReconnaissanceAgent, ReportGenerationAgent"
+        prompt = (
+            f"You are the orchestrator for an OWASP WSTG penetration test.\n\n"
+            f"Completed agent: {completed_agent}\n"
+            f"Agent findings summary:\n{agent_summary[:1000]}\n\n"
+            f"Cumulative findings so far:\n{cumulative_summary[-2000:]}\n\n"
+            f"Remaining agents (in order): {', '.join(remaining_agents)}\n\n"
+            "Generate an OrchestratorDirective to guide the remaining agents.\n"
+            "Rules:\n"
+            f"- NEVER skip: {NEVER_SKIP_NAMES}\n"
+            "- Only skip agents that are clearly irrelevant given the findings\n"
+            "- focus_instructions: specific guidance per agent name (empty if no change needed)\n"
+            "- inject_tools: additional tool calls per agent (empty if none needed)\n"
+            "- reasoning: 1-2 sentences explaining your choices\n\n"
+            "Return ONLY valid JSON (no markdown):\n"
+            "{\n"
+            '  "skip_agents": [],\n'
+            '  "focus_instructions": {"AgentName": "focus text"},\n'
+            '  "inject_tools": {"AgentName": [{"tool": "tool_name", "arguments": {}}]},\n'
+            '  "reasoning": "explanation"\n'
+            "}"
+        )
+        messages = [
+            {"role": "system", "content": "You are a security testing orchestrator. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            raw = await self.chat_completion(messages, max_tokens=800, temperature=0.3)
+            raw = self._strip_thinking_tags(raw)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return None
+            data = json.loads(match.group())
+            return OrchestratorDirective.from_dict(data)
+        except Exception as e:
+            print(f"[SimpleLLMClient] generate_orchestrator_directive failed: {e}")
+            return None
