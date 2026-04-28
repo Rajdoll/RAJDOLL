@@ -2120,5 +2120,9 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         """Override BaseAgent method - return list of tool names for LLM planning"""
         return list(self._get_tool_info().keys())
 
+    def _get_tool_server_map(self) -> Dict[str, str]:
+        """Opt InputValidationAgent into Round 2 escalation."""
+        return {tool: "input-validation-testing" for tool in self._get_available_tools()}
+
     # should_run_tool override REMOVED — base class already forces CRITICAL priority
     # tools via ADAPTIVE_MODE (balanced→CRITICAL, aggressive→CRITICAL+HIGH)
