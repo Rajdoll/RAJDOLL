@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from multi_agent_system.utils.orchestrator_directive import (
     OrchestratorDirective, merge_directives, NEVER_SKIP
 )
@@ -160,3 +160,39 @@ def test_focus_injected_into_director_instructions_text():
 
     assert "SSTI" in ctx.get("director_instructions_text", "")
     assert "SSTI" in ctx.get("llm_orchestrator_focus", "")
+
+
+def _make_agent():
+    """Create a BaseAgent-like object without DB access for unit testing."""
+    from multi_agent_system.agents.base_agent import BaseAgent
+    agent = object.__new__(BaseAgent)
+    agent.job_id = 999
+    agent.agent_name = "TestAgent"
+    agent._tool_arguments_map = {}
+    agent.tool_plan = {"tools": ["tool_a", "tool_b"], "reasoning": "test"}
+    agent.log = MagicMock()
+    return agent
+
+
+def test_inject_directive_tools_adds_new_tools():
+    agent = _make_agent()
+    agent._inject_directive_tools([
+        {"tool": "tool_c", "arguments": {"url": "http://example.com"}}
+    ])
+    assert "tool_c" in agent.tool_plan["tools"]
+    assert agent._tool_arguments_map.get("tool_c") == {"url": "http://example.com"}
+
+
+def test_inject_directive_tools_skips_duplicates():
+    agent = _make_agent()
+    original_count = len(agent.tool_plan["tools"])
+    agent._inject_directive_tools([{"tool": "tool_a", "arguments": {}}])
+    assert len(agent.tool_plan["tools"]) == original_count
+
+
+def test_inject_directive_tools_handles_no_tool_plan():
+    agent = _make_agent()
+    agent.tool_plan = None
+    agent._inject_directive_tools([{"tool": "tool_x"}])
+    # Should not raise, just log warning
+    agent.log.assert_called()

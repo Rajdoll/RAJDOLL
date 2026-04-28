@@ -24,7 +24,7 @@ from ..utils.enrichment_service import EnrichmentService
 
 # Timeouts aligned with job_total_timeout (3600s) to prevent cascading delays
 AGENT_EXECUTION_TIMEOUT = 2700  # 45 minutes per agent (leaves room for other phases within 1hr job timeout)
-LLM_PLANNING_TIMEOUT = 120      # 2 minutes for LLM planning (Qwen 3-4B responds in 15-60s)
+LLM_PLANNING_TIMEOUT = 300      # 5 minutes safety fallback (GPT-4o-mini: 1-5s; was 120s which timed out on LM Studio)
 TOOL_EXECUTION_TIMEOUT = 600    # 10 minutes per tool (sufficient for SQLMap; was 1800s which let stuck tools block everything)
 MAX_LLM_RETRIES = 1             # No retry on timeout — LM Studio is single-threaded; a 2nd attempt immediately after a 120s timeout wastes another 120s with identical outcome
 MAX_TOOLS_PER_AGENT = 50        # Allow comprehensive testing (was 5)
@@ -401,6 +401,7 @@ class BaseAgent:
 		try:
 			await self.run()
 			self.log("info", "Agent execution completed")
+			await self._execute_round2()
 		except Exception as e:
 			self.log("error", f"Agent execution failed: {type(e).__name__}: {e}")
 			import traceback
@@ -417,6 +418,85 @@ class BaseAgent:
 		# Default: return empty list (agent will run all tools)
 		# Subclasses should override with their actual tool names
 		return []
+
+	def _get_tool_server_map(self) -> Dict[str, str]:
+		"""Return {tool_name: mcp_server_name} for this agent.
+
+		Override in agents that support Round 2 escalation.
+		Base returns {} which silently disables Round 2 for that agent.
+		"""
+		return {}
+
+	def _inject_directive_tools(self, tool_specs: List[dict]) -> None:
+		"""Force-add tools from the LLM orchestrator directive into the tool plan."""
+		if not self.tool_plan:
+			self.log("warning", "Cannot inject directive tools — no tool_plan set")
+			return
+		current_tools: list = self.tool_plan.setdefault("tools", [])
+		for spec in tool_specs:
+			tool_name = spec.get("tool")
+			if not tool_name or tool_name in current_tools:
+				continue
+			current_tools.append(tool_name)
+			args = spec.get("arguments")
+			if isinstance(args, dict) and args:
+				self._tool_arguments_map[tool_name] = args
+			self.log("info", f"[Directive] Force-injected tool: {tool_name}")
+
+	async def _execute_round2(self) -> None:
+		"""LLM reviews Round 1 findings and executes 0-5 targeted escalation tools.
+
+		Only runs if the agent provides a non-empty _get_tool_server_map().
+		Silent failure: any exception -> log warning and return.
+		"""
+		if not self._llm_client:
+			return
+		tool_server_map = self._get_tool_server_map()
+		if not tool_server_map:
+			return
+
+		with get_db() as db:
+			findings = (
+				db.query(Finding)
+				.filter(Finding.job_id == self.job_id, Finding.agent_name == self.agent_name)
+				.all()
+			)
+		if not findings:
+			return
+
+		round1_summary = "\n".join(
+			f"[{f.severity}] {f.title}: {(f.details or '')[:200]}"
+			for f in findings
+		)
+
+		try:
+			round2_specs = await asyncio.wait_for(
+				self._llm_client.review_round1_for_escalation(
+					agent_name=self.agent_name,
+					tool_server_map=tool_server_map,
+					round1_summary=round1_summary,
+				),
+				timeout=60,
+			)
+		except Exception as e:
+			self.log("warning", f"Round 2 LLM review failed: {e}")
+			return
+
+		if not round2_specs:
+			self.log("info", "Round 2: LLM found no escalation targets — skipping")
+			return
+
+		self.log("info", f"🔄 Round 2: executing {len(round2_specs)} escalation tools")
+		for spec in round2_specs:
+			tool_name = spec.get("tool")
+			server_name = spec.get("server") or tool_server_map.get(tool_name, "")
+			args = spec.get("arguments") or {}
+			if not tool_name or not server_name:
+				continue
+			try:
+				await self.execute_tool(server=server_name, tool=tool_name, args=args)
+			except Exception as e:
+				self.log("warning", f"Round 2 tool {tool_name} failed: {e}")
 
 	def log_tool_execution_plan(self):
 		"""Log which tools will be executed based on LLM plan and ADAPTIVE_MODE"""
