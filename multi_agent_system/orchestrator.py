@@ -105,6 +105,8 @@ class Orchestrator:
 		self.cumulative_summary: str = ""
 		self._llm_summarizer: Optional[SimpleLLMClient] = None
 		self._pending_director_directives: Dict[str, list] = {}
+		from .utils.orchestrator_directive import OrchestratorDirective
+		self._accumulated_directive: "OrchestratorDirective" = OrchestratorDirective()
 
 		# Timing tracking for scan_timing SharedContext
 		self._timing_autologin_s: float = 0.0
@@ -742,6 +744,61 @@ class Orchestrator:
 			self.context_manager.write("task_tree", task_tree)
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
+
+	def _generate_and_merge_directive(
+		self, completed_agent: str, remaining_agents: List[str]
+	) -> None:
+		"""Call LLM to generate an OrchestratorDirective, merge into accumulated state.
+
+		Persists the merged directive to jobs.accumulated_directive and appends to
+		jobs.directive_history for audit. Silent on any failure.
+		"""
+		from .utils.orchestrator_directive import merge_directives
+		summarizer = self._get_llm_summarizer()
+		if not summarizer or not remaining_agents:
+			return
+
+		loop = self._ensure_event_loop()
+		try:
+			new_directive = loop.run_until_complete(
+				asyncio.wait_for(
+					summarizer.generate_orchestrator_directive(
+						completed_agent=completed_agent,
+						remaining_agents=remaining_agents,
+						agent_summary=self._collect_agent_findings_text(completed_agent),
+						cumulative_summary=self.cumulative_summary[-3000:],
+					),
+					timeout=60,
+				)
+			)
+		except Exception as e:
+			print(f"[Orchestrator] Directive generation failed after {completed_agent}: {e}")
+			return
+
+		if new_directive is None:
+			print(f"[Orchestrator] No directive returned after {completed_agent}")
+			return
+
+		self._accumulated_directive = merge_directives(self._accumulated_directive, new_directive)
+		print(
+			f"[Orchestrator] Directive after {completed_agent}: "
+			f"skip={self._accumulated_directive.skip_agents}, "
+			f"focus={list(self._accumulated_directive.focus_instructions.keys())}, "
+			f"inject={list(self._accumulated_directive.inject_tools.keys())}"
+		)
+
+		with get_db() as db:
+			job = db.query(Job).get(self.job_id)
+			if job:
+				job.accumulated_directive = self._accumulated_directive.to_dict()
+				history = list(job.directive_history or [])
+				history.append({
+					"agent": completed_agent,
+					"directive": new_directive.to_dict(),
+					"merged": self._accumulated_directive.to_dict(),
+				})
+				job.directive_history = history
+				db.commit()
 
 	def _build_scope_context_block(self) -> str:
 		"""Build scope constraints block for LLM planning context (Layer 1)."""
