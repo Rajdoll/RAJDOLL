@@ -186,7 +186,7 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     accessible = res.get("data", {}).get("accessible_urls", [])
                     if accessible:
-                        self.add_finding("WSTG-ATHZ", "Vertical privilege escalation possible", severity="high", evidence={"accessible": accessible})
+                        self.add_finding("WSTG-ATHZ-04", "Vertical privilege escalation possible", severity="high", evidence={"accessible": accessible})
             except Exception as e:
                 self.log("warning", f"test_vertical_privilege_escalation failed: {e}")
 
@@ -206,7 +206,7 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     exposed = res.get("data", {}).get("exposed_ids", [])
                     if exposed:
-                        self.add_finding("WSTG-ATHZ", "IDOR vulnerability detected", severity="high", evidence={"exposed_ids": exposed})
+                        self.add_finding("WSTG-ATHZ-02", "IDOR vulnerability detected", severity="high", evidence={"exposed_ids": exposed})
             except Exception as e:
                 self.log("warning", f"test_idor_vulnerability failed: {e}")
 
@@ -243,7 +243,7 @@ Write to shared_context:
                             endpoint_findings = [f for f in findings if f.get("endpoint") == endpoint]
                             sample = endpoint_findings[0] if endpoint_findings else {}
                             self.add_finding(
-                                "WSTG-ATHZ",
+                                "WSTG-ATHZ-02",
                                 f"IDOR vulnerability: {endpoint}",
                                 severity="high",
                                 evidence={
@@ -272,7 +272,7 @@ Write to shared_context:
                     if results:
                         # Ensure results is list before slicing
                         sample = results[:3] if isinstance(results, list) else list(results.items())[:3] if isinstance(results, dict) else str(results)[:200]
-                        self.add_finding("WSTG-ATHZ", "Different responses to method tampering", severity="low", evidence={"sample": sample})
+                        self.add_finding("WSTG-ATHZ-02", "Different responses to method tampering", severity="low", evidence={"sample": sample})
             except Exception as e:
                 self.log("warning", f"test_http_method_tampering failed: {e}")
 
