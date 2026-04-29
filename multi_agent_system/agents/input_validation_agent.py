@@ -634,10 +634,10 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             except Exception as e:
                 self.log("warning", f"test_nosql_injection failed: {e}")
 
-        # WSTG-ATHN-03: SQL Injection Login Bypass
+        # WSTG-INPV-05: SQL Injection Login Bypass (input validation framing)
         if self.should_run_tool("test_sqli_login"):
             try:
-                self.log("info", "🔍 Testing SQL Injection Login Bypass (WSTG-ATHN-03)")
+                self.log("info", "🔍 Testing SQL Injection Login Bypass (WSTG-INPV-05)")
                 result = await self.execute_tool(
                     server="input-validation-testing",
                     tool="test_sqli_login",
@@ -658,14 +658,8 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                                 "evidence": finding.get("evidence", "")[:500]
                             }
                             self.add_finding(
-                                "WSTG-ATHN-03",
-                                f"SQL Injection Login Bypass: {finding.get('description', 'Auth bypass')} on {finding.get('endpoint', '/login')}",
-                                severity=severity, evidence=ev,
-                            )
-                            # SQLi login bypass is also SQL injection (INPV-05)
-                            self.add_finding(
                                 "WSTG-INPV-05",
-                                f"SQL Injection (login bypass): {finding.get('description', 'Auth bypass')} on {finding.get('endpoint', '/login')}",
+                                f"SQL Injection Login Bypass: {finding.get('description', 'Auth bypass')} on {finding.get('endpoint', '/login')}",
                                 severity=severity, evidence=ev,
                             )
                         self.log("info", f"   ✓ Found {len(sqli_login_findings)} SQLi login bypass vulnerabilities!")
@@ -2097,7 +2091,7 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
                 'priority': 'CRITICAL',
                 'description': 'SQL Injection login bypass on authentication endpoints',
                 'severity': 'Critical',
-                'owasp': 'WSTG-ATHN-03'
+                'owasp': 'WSTG-INPV-05'
             },
             'test_http_parameter_pollution': {
                 'priority': 'HIGH',
