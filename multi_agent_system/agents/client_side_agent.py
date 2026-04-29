@@ -310,7 +310,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     data = res.get("data", {})
                     if data.get("vulnerable"):
                         severity = "critical" if any(f.get('severity') == 'CRITICAL' for f in data.get('findings', [])) else "high"
-                        self.add_finding("WSTG-CLNT-15", "Client-side template injection detected",
+                        self.add_finding("WSTG-CLNT-13", "Client-side template injection detected",
                                        severity=severity, evidence=data,
                                        details="Template injection in AngularJS/Vue.js/Handlebars framework")
             except Exception as e:
