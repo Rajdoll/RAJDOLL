@@ -16,6 +16,8 @@ const WS_BASE_DELAY_MS = 1000;
 const scanForm = document.getElementById('scanForm');
 const startBtn = document.getElementById('startBtn');
 const cancelBtn = document.getElementById('cancelBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const resumeBtn = document.getElementById('resumeBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadPdfBtn = document.getElementById('downloadPdfBtn');
 const clearLogsBtn = document.getElementById('clearLogsBtn');
@@ -247,6 +249,38 @@ async function handleCancelScan() {
     }
 }
 
+async function handlePauseScan() {
+    if (!currentJobId) return;
+    try {
+        pauseBtn.disabled = true;
+        addLog(`[SYSTEM] Requesting pause for scan ${currentJobId}...`, 'warning');
+        const response = await fetch(`${API_BASE}/scans/${currentJobId}/pause`, { method: 'POST' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const data = await response.json();
+        addLog(`[SUCCESS] ${data.message}`, 'success');
+        pauseBtn.disabled = false;
+    } catch (error) {
+        addLog(`[ERROR] Failed to pause scan: ${error.message}`, 'error');
+        pauseBtn.disabled = false;
+    }
+}
+
+async function handleResumeScan() {
+    if (!currentJobId) return;
+    try {
+        resumeBtn.disabled = true;
+        addLog(`[SYSTEM] Resuming scan ${currentJobId}...`, 'info');
+        const response = await fetch(`${API_BASE}/scans/${currentJobId}/resume`, { method: 'POST' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const data = await response.json();
+        addLog(`[SUCCESS] ${data.message || 'Scan resumed'}`, 'success');
+        resumeBtn.disabled = false;
+    } catch (error) {
+        addLog(`[ERROR] Failed to resume scan: ${error.message}`, 'error');
+        resumeBtn.disabled = false;
+    }
+}
+
 async function handleDownloadReport() {
     if (!currentJobId) return;
     try {
@@ -332,17 +366,30 @@ function updateStatusDisplay(data) {
 
     const status = data.status || 'queued';
     if (['queued', 'running', 'waiting_checkpoint'].includes(status)) {
+        pauseBtn.style.display = 'inline-flex';
+        resumeBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-flex';
+        downloadBtn.style.display = 'none';
+        downloadPdfBtn.style.display = 'none';
+        startBtn.disabled = true;
+    } else if (status === 'paused') {
+        pauseBtn.style.display = 'none';
+        resumeBtn.style.display = 'inline-flex';
         cancelBtn.style.display = 'inline-flex';
         downloadBtn.style.display = 'none';
         downloadPdfBtn.style.display = 'none';
         startBtn.disabled = true;
     } else if (status === 'completed') {
+        pauseBtn.style.display = 'none';
+        resumeBtn.style.display = 'none';
         cancelBtn.style.display = 'none';
         downloadBtn.style.display = 'inline-flex';
         downloadPdfBtn.style.display = 'inline-flex';
         startBtn.disabled = false;
         startBtn.innerHTML = '<span class="btn-icon">⚡</span> Start Scan';
     } else {
+        pauseBtn.style.display = 'none';
+        resumeBtn.style.display = 'none';
         cancelBtn.style.display = 'none';
         downloadBtn.style.display = 'none';
         downloadPdfBtn.style.display = 'none';

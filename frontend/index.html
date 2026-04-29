@@ -112,6 +112,14 @@
                         <div class="progress-fill" id="progressBar"></div>
                     </div>
                     <div class="action-buttons">
+                        <button class="btn btn-warning" id="pauseBtn" style="display:none;" onclick="handlePauseScan()">
+                            <span class="btn-icon">⏸</span>
+                            Pause Scan
+                        </button>
+                        <button class="btn btn-success" id="resumeBtn" style="display:none;" onclick="handleResumeScan()">
+                            <span class="btn-icon">▶</span>
+                            Resume Scan
+                        </button>
                         <button class="btn btn-danger" id="cancelBtn" style="display:none;">
                             <span class="btn-icon">⊗</span>
                             Cancel Scan

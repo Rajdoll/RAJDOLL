@@ -1294,11 +1294,16 @@ Operate autonomously without human guidance.
             self.log("warning", f"JS route analysis did not return valid data: {self._brief_tool_result(data)}")
             return
 
-        findings = data.get("findings", [])
-        routes = data.get("routes_discovered", [])
-        api_endpoints = data.get("api_endpoints", [])
-        secrets_count = data.get("secrets_found", 0)
-        js_file = data.get("js_file", "")
+        # Unwrap MCP response envelope (same pattern as _handle_katana_crawl)
+        payload = data
+        if data.get("status") == "success" and isinstance(data.get("data"), dict):
+            payload = data["data"]
+
+        findings = payload.get("findings", [])
+        routes = payload.get("routes_discovered", [])
+        api_endpoints = payload.get("api_endpoints", [])
+        secrets_count = payload.get("secrets_found", 0)
+        js_file = payload.get("js_file", "")
 
         snapshot["js_routes_analysis"] = data
         self.write_context("js_routes_analysis", {
@@ -1324,6 +1329,41 @@ Operate autonomously without human guidance.
             )
 
         self.log("info", f"✓ JS route analysis: {len(routes)} routes, {len(api_endpoints)} API endpoints, {secrets_count} secrets from {js_file}")
+
+        # Merge discovered API endpoints into discovered_endpoints for downstream agents
+        if api_endpoints:
+            target = self.shared_context.get("target", "") or self.shared_context.get("target_url", "")
+            from urllib.parse import urlparse as _urlparse
+            parsed = _urlparse(target)
+            base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme else target.rstrip("/")
+
+            existing = self.context_manager.read("discovered_endpoints") or {}
+            existing_list = existing.get("endpoints", []) if isinstance(existing, dict) else []
+            existing_urls = {ep.get("url", "") for ep in existing_list}
+
+            new_eps = []
+            for ep_path in api_endpoints:
+                full_url = f"{base_url}{ep_path}" if ep_path.startswith("/") else f"{base_url}/{ep_path}"
+                if full_url not in existing_urls:
+                    new_eps.append({
+                        "url": full_url,
+                        "endpoint": ep_path,
+                        "method": "GET",
+                        "status_code": 200,
+                        "type": "api",
+                        "source": "js_analysis",
+                    })
+
+            if new_eps:
+                all_eps = existing_list + new_eps
+                updated = {
+                    "endpoints": all_eps,
+                    "count": len(all_eps),
+                    "api_endpoints": [e for e in all_eps if e.get("type") == "api"],
+                    "admin_endpoints": [e for e in all_eps if "admin" in e.get("endpoint", "").lower()],
+                }
+                self.write_context("discovered_endpoints", updated)
+                self.log("info", f"[JS] Merged {len(new_eps)} API endpoints into discovered_endpoints (total now {len(all_eps)})")
 
     async def _perform_endpoint_discovery(self, target: str, baseline_snapshot: Dict[str, Any]) -> None:
         self.log("info", "🔎 Executing custom endpoint discovery crawl")
