@@ -939,12 +939,9 @@ Operate autonomously without human guidance.
                 "source": "ffuf"
             })
 
-        # Merge with existing discovered_endpoints from other sources
-        existing_endpoints = self.shared_context.get("discovered_endpoints", {})
-        if isinstance(existing_endpoints, dict):
-            existing_list = existing_endpoints.get("endpoints", [])
-        else:
-            existing_list = []
+        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        existing_raw = self.context_manager.read("discovered_endpoints") or {}
+        existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate
         all_endpoints = existing_list + discovered_endpoints
@@ -1035,12 +1032,9 @@ Operate autonomously without human guidance.
                 "redirect": ep.get("redirect")
             })
 
-        # Merge with existing discovered_endpoints from other sources
-        existing_endpoints = self.shared_context.get("discovered_endpoints", {})
-        if isinstance(existing_endpoints, dict):
-            existing_list = existing_endpoints.get("endpoints", [])
-        else:
-            existing_list = []
+        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        existing_raw = self.context_manager.read("discovered_endpoints") or {}
+        existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate by endpoint path
         all_endpoints = existing_list + discovered_endpoints
@@ -1137,12 +1131,9 @@ Operate autonomously without human guidance.
                 "redirect": ep.get("redirect")
             })
 
-        # Merge with existing discovered_endpoints
-        existing_endpoints = self.shared_context.get("discovered_endpoints", {})
-        if isinstance(existing_endpoints, dict):
-            existing_list = existing_endpoints.get("endpoints", [])
-        else:
-            existing_list = []
+        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        existing_raw = self.context_manager.read("discovered_endpoints") or {}
+        existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate by endpoint path
         all_endpoints = existing_list + discovered_endpoints
@@ -1259,12 +1250,9 @@ Operate autonomously without human guidance.
                 "source": "katana",
             })
 
-        # Merge with existing discovered_endpoints from other sources
-        existing_endpoints = self.shared_context.get("discovered_endpoints", {})
-        if isinstance(existing_endpoints, dict):
-            existing_list = existing_endpoints.get("endpoints", [])
-        else:
-            existing_list = []
+        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        existing_raw = self.context_manager.read("discovered_endpoints") or {}
+        existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate by URL
         all_endpoints = existing_list + discovered_endpoints
