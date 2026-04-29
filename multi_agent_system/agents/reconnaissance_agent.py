@@ -826,7 +826,7 @@ Operate autonomously without human guidance.
         # Report backup files
         for backup_file in data.get('backup_files', []):
             self.add_finding(
-                "WSTG-CONFIG-04",
+                "WSTG-CONF-04",
                 f"Backup file found: {backup_file['path']}",
                 severity="high",
                 evidence={
@@ -840,7 +840,7 @@ Operate autonomously without human guidance.
         # Report directory listings
         for dir_listing in data.get('directory_listings', []):
             self.add_finding(
-                "WSTG-CONFIG-04",
+                "WSTG-CONF-04",
                 f"Directory listing enabled: {dir_listing['path']}",
                 severity="low",
                 evidence={
@@ -853,7 +853,7 @@ Operate autonomously without human guidance.
         # Report config files
         for config_file in data.get('config_files', []):
             self.add_finding(
-                "WSTG-CONFIG-04",
+                "WSTG-CONF-04",
                 f"Configuration file accessible: {config_file['path']}",
                 severity="high",
                 evidence={
