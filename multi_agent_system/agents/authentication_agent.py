@@ -351,7 +351,7 @@ Write to shared_context:
 			except Exception as e:
 				self.log("warning", f"test_alternative_channel_auth failed: {e}")
 
-		# WSTG-ATHN-06: Auth bypass via schema manipulation
+		# WSTG-ATHZ-02: Auth bypass via schema manipulation
 		if self.should_run_tool("test_auth_bypass_schema"):
 			try:
 				res = await self.run_tool_with_timeout(
@@ -368,7 +368,7 @@ Write to shared_context:
 						for finding in data.get("findings", [])[:5]:
 							severity_map = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
 							safe_evidence = {"type": finding.get("type", ""), "path": finding.get("path", "")}
-							self.add_finding("WSTG-ATHN-06", f"Auth bypass: {finding.get('description', 'Schema manipulation')}",
+							self.add_finding("WSTG-ATHZ-02", f"Auth bypass: {finding.get('description', 'Schema manipulation')}",
 										   severity=severity_map.get(finding.get("severity"), "high"),
 										   evidence=safe_evidence)
 			except Exception as e:
