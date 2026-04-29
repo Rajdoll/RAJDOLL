@@ -650,17 +650,23 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                         sqli_login_findings = data.get("findings", [])
                         for finding in sqli_login_findings:
                             severity = finding.get("severity", "critical")
+                            ev = {
+                                "endpoint": finding.get("endpoint"),
+                                "payload": finding.get("payload"),
+                                "method": finding.get("method"),
+                                "type": finding.get("type"),
+                                "evidence": finding.get("evidence", "")[:500]
+                            }
                             self.add_finding(
                                 "WSTG-ATHN-03",
                                 f"SQL Injection Login Bypass: {finding.get('description', 'Auth bypass')} on {finding.get('endpoint', '/login')}",
-                                severity=severity,
-                                evidence={
-                                    "endpoint": finding.get("endpoint"),
-                                    "payload": finding.get("payload"),
-                                    "method": finding.get("method"),
-                                    "type": finding.get("type"),
-                                    "evidence": finding.get("evidence", "")[:500]
-                                }
+                                severity=severity, evidence=ev,
+                            )
+                            # SQLi login bypass is also SQL injection (INPV-05)
+                            self.add_finding(
+                                "WSTG-INPV-05",
+                                f"SQL Injection (login bypass): {finding.get('description', 'Auth bypass')} on {finding.get('endpoint', '/login')}",
+                                severity=severity, evidence=ev,
                             )
                         self.log("info", f"   ✓ Found {len(sqli_login_findings)} SQLi login bypass vulnerabilities!")
             except Exception as e:
