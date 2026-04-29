@@ -70,6 +70,7 @@ GT_ALIAS_MAP: dict = {
     "WSTG-CLNT-04": ["WSTG-CLNT-12", "WSTG-CLNT-09"],   # Client-side allowlist ↔ open redirect
     "WSTG-CONF-05": ["WSTG-CONF-07", "WSTG-INFO-02"],    # Sensitive endpoint ↔ hidden endpoints
     "WSTG-BUSL-09": ["WSTG-ATHZ-02", "WSTG-BUSL-01"],   # Business Logic/IDOR ↔ IDOR
+    "WSTG-BUSL-01": ["WSTG-BUSL-09", "WSTG-BUSL-05"],   # Business logic validation ↔ logic bypass/rate-limit
     "WSTG-ATHZ-04": ["WSTG-ATHZ-02", "WSTG-ATHZ"],      # IDOR/Priv Escalation ↔ IDOR
 }
 
