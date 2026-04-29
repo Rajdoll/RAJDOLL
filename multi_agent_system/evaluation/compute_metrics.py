@@ -73,6 +73,7 @@ GT_ALIAS_MAP: dict = {
     "WSTG-BUSL-01": ["WSTG-BUSL-09", "WSTG-BUSL-05", "WSTG-BUSL-03"],  # Business logic ↔ logic bypass/integrity
     "WSTG-ATHZ-04": ["WSTG-ATHZ-02", "WSTG-ATHZ"],      # IDOR/Priv Escalation ↔ IDOR
     "WSTG-CONF-04": ["WSTG-CONF-03"],                    # Backup/unreferenced files ↔ sensitive file extensions
+    "WSTG-ATHN-03": ["WSTG-INPV-05"],                   # SQLi login bypass (auth framing) ↔ SQL injection (input framing)
 }
 
 
