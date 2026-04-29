@@ -1377,16 +1377,24 @@ Operate autonomously without human guidance.
             self.log("info", "Endpoint discovery produced no additional targets")
             return
 
+        # Merge with existing discovered_endpoints — do NOT overwrite; other handlers
+        # (katana, js_routes_analysis) may have already written valuable API paths.
+        existing = self.context_manager.read("discovered_endpoints") or {}
+        existing_eps = existing.get("endpoints", []) if isinstance(existing, dict) else []
+        existing_urls = {ep.get("url", "") for ep in existing_eps}
+        new_eps = [ep for ep in endpoints if ep.get("url", "") not in existing_urls]
+        all_eps = existing_eps + new_eps
+
         payload = {
-            "endpoints": endpoints,
-            "count": len(endpoints),
-            "api_endpoints": [ep for ep in endpoints if "/api" in ep["endpoint"] or "/rest" in ep["endpoint"]],
-            "admin_endpoints": [ep for ep in endpoints if "admin" in ep["endpoint"].lower()],
+            "endpoints": all_eps,
+            "count": len(all_eps),
+            "api_endpoints": [ep for ep in all_eps if "/api" in ep.get("endpoint", "") or "/rest" in ep.get("endpoint", "")],
+            "admin_endpoints": [ep for ep in all_eps if "admin" in ep.get("endpoint", "").lower()],
         }
         self.write_context("discovered_endpoints", payload)
         baseline_snapshot["discovered_endpoints"] = payload
 
-        self.log("info", f"Discovered {len(endpoints)} candidate endpoints")
+        self.log("info", f"Discovered {len(new_eps)} new candidate endpoints ({len(all_eps)} total including prior)")
 
     async def _discover_endpoints(self, target: str) -> List[Dict[str, Any]]:
         target_url = target if target.startswith(("http://", "https://")) else f"https://{target.lstrip('/')}"
