@@ -1,0 +1,200 @@
+[
+  {
+    "category": "WSTG-INFO",
+    "title": "5 HTML comments exposed in main page",
+    "severity": "low",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INFO-02",
+    "title": "Sensitive file discovered: /config",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Backup file found: /robots.txt",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Directory listing enabled: /docs",
+    "severity": "low",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Directory listing enabled: /config",
+    "severity": "low",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Configuration file accessible: /config",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INFO-07",
+    "title": "Directory bruteforcing discovered 3 hidden paths",
+    "severity": "info",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INFO",
+    "title": "dirsearch recursively discovered 14 endpoints (0 API, 0 search, 0 admin)",
+    "severity": "info",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Possible missing CSRF token on login form",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Login not fully over HTTPS",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Rate limiting detected (good security)",
+    "severity": "info",
+    "description": ""
+  },
+  {
+    "category": "WSTG-SESS-05",
+    "title": "Missing or weak CSRF protection",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-SESS-08",
+    "title": "Session variable pollution possible",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-SESS-09",
+    "title": "Weak session token entropy - hijacking risk",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-SESS-09",
+    "title": "Session cookies without HTTPOnly - XSS hijacking risk",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-01",
+    "title": "Reflected XSS detected (3 instances)",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-03",
+    "title": "HTTP Verb Tampering: 7 issue(s)",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-03",
+    "title": "Sensitive files exposed: 1 found",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-07",
+    "title": "HSTS issues: 1 found",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Hidden endpoints discovered: 1 path(s)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-09",
+    "title": "Clickjacking possible (missing XFO/CSP)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-13",
+    "title": "Prototype pollution vulnerabilities detected",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-12",
+    "title": "CSP issue: No CSP header",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ERRH",
+    "title": "Generic error pages reveal sensitive information",
+    "severity": "low",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CRYP-03",
+    "title": "Application does not enforce HTTPS \u2014 all traffic transmitted in plaintext",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CRYP-03",
+    "title": "Sensitive data transmitted over unencrypted HTTP",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-07",
+    "title": "Missing misuse defenses: 3 issue(s)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_login_brute_force",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_registration_spam",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_feedback_spam",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_complaint_spam",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_search_abuse",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT",
+    "title": "Account provisioning issues: 1 found",
+    "severity": "medium",
+    "description": ""
+  }
+]
