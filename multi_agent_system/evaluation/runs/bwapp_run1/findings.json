@@ -1,0 +1,26 @@
+[
+  {
+    "category": "WSTG-ATHN",
+    "title": "No account lockout or rate limiting detected",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-SESS-09",
+    "title": "Session cookies without HTTPOnly - XSS hijacking risk",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CRYP-03",
+    "title": "Application does not enforce HTTPS \u2014 all traffic transmitted in plaintext",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT",
+    "title": "Account provisioning issues: 1 found",
+    "severity": "medium",
+    "description": ""
+  }
+]
