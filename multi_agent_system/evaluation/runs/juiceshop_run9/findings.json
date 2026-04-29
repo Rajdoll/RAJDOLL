@@ -1,0 +1,482 @@
+[
+  {
+    "category": "WSTG-INFO",
+    "title": "1 HTML comments exposed in main page",
+    "severity": "low",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INFO-02",
+    "title": "Sensitive file discovered: /encryptionkeys",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Backup file found: /robots.txt",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Backup file found: /security.txt",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Backup file found: /.well-known/security.txt",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INFO-07",
+    "title": "Directory bruteforcing discovered 10 hidden paths",
+    "severity": "info",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INFO-06",
+    "title": "JS static analysis: 8 findings (30 routes, 20 API endpoints, 4 secrets)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Possible missing CSRF token on login form",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Login form may not use POST method",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Login not fully over HTTPS",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Sensitive pages may be cacheable",
+    "severity": "low",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Rate limiting detected (good security)",
+    "severity": "info",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Password reset: Reset token exposed in HTTP response",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Password reset: Password reset does not require current password verification",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN",
+    "title": "Password reset: No rate limiting on password reset requests",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "Auth bypass: Protected resource accessible without auth via direct_access",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "Auth bypass: Protected resource accessible without auth via path_traversal",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "Auth bypass: Protected resource accessible without auth via case_change",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN-09",
+    "title": "2FA bypass: 2fa_direct_access_bypass",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN-09",
+    "title": "2FA bypass: 2fa_no_rate_limit",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHN-09",
+    "title": "2FA bypass: 2fa_status_info_leak",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-SESS-05",
+    "title": "Missing or weak CSRF protection",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-SESS-09",
+    "title": "Session cookies without HTTPOnly - XSS hijacking risk",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection detected (8 instances)",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-19",
+    "title": "Server-Side Request Forgery detected (3 instances)",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-03",
+    "title": "HTTP Verb Tampering: 7 issue(s)",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection Login Bypass: Generic admin bypass via boolean tautology on /rest/user/login",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection Login Bypass: Boolean tautology variant with semicolon on /rest/user/login",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection Login Bypass: Specific user bypass targeting admin account on /rest/user/login",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection Login Bypass: Specific user bypass targeting Bender account on /rest/user/login",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection Login Bypass: Specific user bypass targeting Jim account on /rest/user/login",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection Login Bypass: Access soft-deleted user accounts via column reference on /rest/user/login",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-INPV-05",
+    "title": "SQL Injection Login Bypass: Specific deleted user bypass targeting Chris Pike on /rest/user/login",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /items/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /api/BasketItems/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /api/Products/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /api/Deliverys/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /api/users/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /api/Feedbacks/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /rest/products/{id}/reviews",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /api/Recycles/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "IDOR vulnerability: /users/{id}",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ATHZ-02",
+    "title": "User spoofing: nosql_mass_update",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF",
+    "title": "Dangerous file extensions allowed: 9 vulnerable extension(s)",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF",
+    "title": "File permission vulnerabilities: 7 found",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-03",
+    "title": "Sensitive files exposed: 29 found",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-07",
+    "title": "HSTS issues: 1 found",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Critical sensitive endpoints exposed: 1 path(s)",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Sensitive endpoints exposed: 6 high-severity path(s)",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CONF-04",
+    "title": "Hidden endpoints discovered: 11 path(s)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-07",
+    "title": "CORS misconfiguration detected",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-09",
+    "title": "Clickjacking possible (missing XFO/CSP)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-13",
+    "title": "Client-side template injection detected",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-12",
+    "title": "CSP issue: No CSP header",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CLNT-04",
+    "title": "Open redirect: Allowlisted redirect accepted: allowlisted_crypto_redirect",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-09",
+    "title": "Path traversal download: directory_listing",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-09",
+    "title": "Path traversal download: null_byte_bypass",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-09",
+    "title": "Path traversal download: sensitive_file_access",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-09",
+    "title": "Path traversal download: null_byte_file_access",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-ERRH",
+    "title": "Generic error pages reveal sensitive information",
+    "severity": "low",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CRYP-03",
+    "title": "Application does not enforce HTTPS \u2014 all traffic transmitted in plaintext",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-CRYP-04",
+    "title": "JWT vulnerabilities found: 1 issues (1 critical, 0 high)",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-03",
+    "title": "Integrity check failures: 3 found",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-07",
+    "title": "Missing misuse defenses: 7 issue(s)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_login_brute_force",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_registration_spam",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_feedback_spam",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_complaint_spam",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: no_rate_limiting_search_abuse",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: captcha_bypass",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-05",
+    "title": "Rate limiting bypass: captcha_not_validated",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-09",
+    "title": "Coupon/pricing vulnerability: Price manipulation to zero",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-BUSL-09",
+    "title": "Coupon/pricing vulnerability: Quantity data exposed",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT",
+    "title": "Account provisioning issues: 1 found",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT-05",
+    "title": "Weak username policy: 1 issue(s)",
+    "severity": "medium",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT-02",
+    "title": "Registration mass_assignment: Mass assignment: Register with admin role succeeded",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT-02",
+    "title": "Registration extra_fields_accepted: Registration accepted extra field 'role' without rejection",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT-02",
+    "title": "Registration extra_fields_accepted: Registration accepted extra field 'isAdmin' without rejection",
+    "severity": "high",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT-02",
+    "title": "Registration mass_assignment: Mass assignment: Register with deluxe membership succeeded",
+    "severity": "critical",
+    "description": ""
+  },
+  {
+    "category": "WSTG-IDNT-02",
+    "title": "Registration extra_fields_accepted: Registration accepted extra field 'deluxeToken' without rejection",
+    "severity": "high",
+    "description": ""
+  }
+]
