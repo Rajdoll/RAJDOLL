@@ -1,0 +1,46 @@
+{
+  "n_runs": 1,
+  "precision_mean": 94.87,
+  "precision_std": 0.0,
+  "recall_mean": 91.23,
+  "recall_std": 0.0,
+  "f1_mean": 93.01,
+  "f1_std": 0.0,
+  "tcr_mean": 85.19,
+  "tcr_std": 0.0,
+  "scan_time_mean_hours": null,
+  "scan_time_std_hours": null,
+  "per_run": [
+    {
+      "tp_findings": 74,
+      "fp_findings": 4,
+      "tp_gt_entries": 52,
+      "fn_gt_entries": 5,
+      "total_findings_non_info": 78,
+      "total_gt_entries": 57,
+      "detected_wstg_categories": 23,
+      "total_wstg_categories": 27,
+      "precision": 94.87,
+      "recall": 91.23,
+      "f1": 93.01,
+      "tcr": 85.19,
+      "findings_by_severity": {
+        "low": 3,
+        "medium": 22,
+        "high": 29,
+        "info": 2,
+        "critical": 24
+      },
+      "scan_time_hours": null,
+      "agent_stats": {
+        "total": 0,
+        "completed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "success_rate": 0.0
+      },
+      "run_label": "juiceshop_run9"
+    }
+  ],
+  "target": "juiceshop"
+}

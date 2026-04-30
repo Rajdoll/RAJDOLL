@@ -1,0 +1,30 @@
+{
+  "tp_findings": 6,
+  "fp_findings": 27,
+  "tp_gt_entries": 4,
+  "fn_gt_entries": 6,
+  "total_findings_non_info": 33,
+  "total_gt_entries": 10,
+  "detected_wstg_categories": 4,
+  "total_wstg_categories": 8,
+  "precision": 18.18,
+  "recall": 40.0,
+  "f1": 25.0,
+  "tcr": 50.0,
+  "findings_by_severity": {
+    "low": 4,
+    "medium": 14,
+    "high": 12,
+    "info": 3,
+    "critical": 3
+  },
+  "scan_time_hours": 0.48,
+  "agent_stats": {
+    "total": 14,
+    "completed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "success_rate": 100.0
+  },
+  "run_label": "dvwa_run1"
+}

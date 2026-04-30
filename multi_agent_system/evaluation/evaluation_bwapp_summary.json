@@ -1,0 +1,43 @@
+{
+  "n_runs": 1,
+  "precision_mean": 25.0,
+  "precision_std": 0.0,
+  "recall_mean": 7.14,
+  "recall_std": 0.0,
+  "f1_mean": 11.11,
+  "f1_std": 0.0,
+  "tcr_mean": 8.33,
+  "tcr_std": 0.0,
+  "scan_time_mean_hours": null,
+  "scan_time_std_hours": null,
+  "per_run": [
+    {
+      "tp_findings": 1,
+      "fp_findings": 3,
+      "tp_gt_entries": 1,
+      "fn_gt_entries": 13,
+      "total_findings_non_info": 4,
+      "total_gt_entries": 14,
+      "detected_wstg_categories": 1,
+      "total_wstg_categories": 12,
+      "precision": 25.0,
+      "recall": 7.14,
+      "f1": 11.11,
+      "tcr": 8.33,
+      "findings_by_severity": {
+        "high": 3,
+        "medium": 1
+      },
+      "scan_time_hours": null,
+      "agent_stats": {
+        "total": 0,
+        "completed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "success_rate": 0.0
+      },
+      "run_label": "bwapp_run1"
+    }
+  ],
+  "target": "bwapp"
+}

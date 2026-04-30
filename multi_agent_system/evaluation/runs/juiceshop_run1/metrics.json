@@ -1,0 +1,30 @@
+{
+  "tp_findings": 37,
+  "fp_findings": 25,
+  "tp_gt_entries": 39,
+  "fn_gt_entries": 18,
+  "total_findings_non_info": 62,
+  "total_gt_entries": 57,
+  "detected_wstg_categories": 17,
+  "total_wstg_categories": 27,
+  "precision": 59.68,
+  "recall": 68.42,
+  "f1": 63.75,
+  "tcr": 62.96,
+  "findings_by_severity": {
+    "low": 3,
+    "medium": 21,
+    "high": 21,
+    "info": 2,
+    "critical": 17
+  },
+  "scan_time_hours": 0.62,
+  "agent_stats": {
+    "total": 14,
+    "completed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "success_rate": 100.0
+  },
+  "run_label": "juiceshop_run1"
+}
