@@ -24,7 +24,7 @@ Built as a thesis project at **Politeknik Siber dan Sandi Negara** using the **P
 📊 **Real-time Monitoring** - WebSocket updates, per-agent status, live findings
 📄 **Professional Reports** - OWASP-compliant Markdown/PDF with cross-agent correlation
 🔐 **Ethical Safeguards** - Domain whitelist, rate limiting, HITL confirmation, audit logging
-✅ **Validated Metrics** - Precision 93.24%, Recall 87.72%, F1 90.40% on OWASP Juice Shop
+✅ **Validated Metrics** - Precision 94.87%, Recall 91.23%, F1 93.01% (TCR 85.19%) on OWASP Juice Shop
 
 ---
 
@@ -262,9 +262,9 @@ RAJDOLL includes 16 Juice Shop-specific tools targeting:
 - CAPTCHA and rate limiting abuse
 - User spoofing on feedback/reviews
 
-**Expected Results:**
-- **DVWA:** ~25 vulnerabilities detected (Precision: ~90%, Recall: ~85%)
-- **Juice Shop:** 40-60+ vulnerabilities detected across 12 WSTG categories
+**Expected Results (OWASP Juice Shop):**
+- 52/57 automatable challenges detected across 27 WSTG sub-categories
+- Precision 94.87%, Recall 91.23%, F1 93.01%, TCR 85.19%
 
 ---
 
@@ -272,19 +272,18 @@ RAJDOLL includes 16 Juice Shop-specific tools targeting:
 
 RAJDOLL implements comprehensive evaluation metrics based on academic research standards:
 
-### Validated Results — Job #11 (April 2026, OWASP Juice Shop)
+### Validated Results — juiceshop_run9 (April 2026, OWASP Juice Shop)
 
 | Metric | Achieved | Target | Status |
 |--------|----------|--------|--------|
-| **Precision** | **93.24%** | ≥ 90% | ✅ PASS |
-| **Recall** | **87.72%** | ≥ 80% | ✅ PASS |
-| **F1-Score** | **90.40%** | ≥ 85% | ✅ PASS |
-| **TCR** | **100%** (96/96 WSTG) | ≥ 70% | ✅ PASS |
-| **OWASP Top 10** | **90%** (9/10) | ≥ 80% | ✅ PASS |
-| **Scan Time** | **~1 hour** | ≤ 4h | ✅ PASS |
+| **Precision** | **94.87%** | ≥ 90% | ✅ PASS |
+| **Recall** | **91.23%** (52/57) | ≥ 80% | ✅ PASS |
+| **F1-Score** | **93.01%** | ≥ 85% | ✅ PASS |
+| **TCR** | **85.19%** (23/27 WSTG) | ≥ 70% | ✅ PASS |
+| **Scan Time** | **~65 min** | ≤ 4h | ✅ PASS |
 | **Agents** | **14/14** (0 failures) | 14/14 | ✅ PASS |
 
-Ground truth: 57 Juice Shop challenge entries. Improvements from v2.1: eliminated ~20 false positives via operational-message filtering; fixed 6 WSTG category mismatches; added 3 new detection probes (SSRF, SSTI, error page detection).
+Ground truth: 57 Juice Shop challenge entries across 27 WSTG sub-categories. Precision improved from 75.9% → 94.87% via 5 WSTG category code corrections and removal of a redundant dual-tag. Missed: 1 SSRF (requires out-of-band callback infra) + 4 Expert browser-interaction challenges.
 
 ### Effectiveness Metrics
 - **Precision:** ≥90% (few false positives)
@@ -494,16 +493,16 @@ python -m multi_agent_system.evaluation.metrics --job-id 1
 
 | Metric | Target | Achieved | Status |
 |--------|--------|----------|--------|
-| **Precision** | >= 90% | **93.24%** | ✅ PASS |
-| **Recall** | >= 80% | **87.72%** | ✅ PASS |
-| **F1-Score** | >= 85% | **90.40%** | ✅ PASS |
-| **TCR** | >= 70% | **100%** (96/96) | ✅ PASS |
-| **Scan Time** | <= 4 hours | **~1 hour** | ✅ PASS |
+| **Precision** | >= 90% | **94.87%** | ✅ PASS |
+| **Recall** | >= 80% | **91.23%** | ✅ PASS |
+| **F1-Score** | >= 85% | **93.01%** | ✅ PASS |
+| **TCR** | >= 70% | **85.19%** (23/27) | ✅ PASS |
+| **Scan Time** | <= 4 hours | **~65 min** | ✅ PASS |
 | **TTFF** | <= 5 min | **< 2 min** | ✅ PASS |
 
 ### Test Targets
 
-- **OWASP Juice Shop**: 57 ground truth entries, 87.72% recall (50/57 covered)
+- **OWASP Juice Shop**: 57 ground truth entries, 91.23% recall (52/57 covered)
 
 ### Tool Coverage
 
@@ -601,9 +600,11 @@ If you use RAJDOLL in your research, please cite:
 
 ### Version 2.2 (Current - Q2 2026)
 - [x] FP elimination: operational-message filtering across 4 agents
-- [x] WSTG category code corrections (CRYP-04, CLNT-12, BUSL-08)
+- [x] WSTG category code corrections (CRYP-04, CLNT-12, BUSL-08, CONFIG-04→CONF-04, ATHN-06→ATHZ-02, CLNT-15→CLNT-13)
 - [x] New detection probes: SSRF, SSTI JWT mutation, Express error pages
 - [x] Dalfox argument fixes for improved XSS coverage
+- [x] Precision improvement: 75.9% → 94.87% via alias fixes + dual-tag removal
+- [x] Evaluation methodology: per-WSTG-category ground truth matching (57 GT entries)
 - [ ] Fine-tuned local LLM for pentest planning
 - [ ] ReAct loop improvements (iterative testing)
 - [ ] API security testing enhancements (GraphQL)
@@ -614,5 +615,5 @@ If you use RAJDOLL in your research, please cite:
 **Made with ❤️ by Security Researchers, for Security Researchers**
 
 **Version:** 2.2
-**Last Updated:** April 17, 2026
+**Last Updated:** April 30, 2026
 
