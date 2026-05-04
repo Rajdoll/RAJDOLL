@@ -64,6 +64,17 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             self.log("error", "Target missing; aborting ClientSideAgent")
             return
 
+        # Read discovered endpoints from SharedContext
+        endpoints_data = self.shared_context.get("discovered_endpoints", {})
+        search_eps = endpoints_data.get("search_endpoints", [])
+        all_eps = endpoints_data.get("endpoints", [])
+
+        def _pick_urls(eps, fallback=target):
+            urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
+            return urls if urls else [fallback]
+
+        test_urls = _pick_urls(all_eps, fallback=target)[:10]
+
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
 
@@ -75,24 +86,25 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
 
         # 1) DOM-based XSS (WSTG-CLNT-01)
         if self.should_run_tool("test_dom_xss"):
-            try:
-                self.log("info", "Testing for DOM-based XSS")
-                dom_xss_res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="client-side-testing",
-                        tool="test_dom_xss",
-                        args={"url": target}, auth_session=auth_data
-                    ),
-                    timeout=180
-                )
-                if isinstance(dom_xss_res, dict) and dom_xss_res.get("status") == "success":
-                    data = dom_xss_res.get("data", {})
-                    if data.get("vulnerable"):
-                        self.add_finding("WSTG-CLNT-01", "DOM-based XSS detected", 
-                                       severity="high", evidence=data,
-                                       details=f"Found {len(data.get('sinks', []))} vulnerable DOM sinks")
-            except Exception as e:
-                self.log("warning", f"DOM XSS testing failed: {e}")
+            for test_url in test_urls[:5]:
+                try:
+                    self.log("info", f"Testing for DOM-based XSS on {test_url}")
+                    dom_xss_res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="client-side-testing",
+                            tool="test_dom_xss",
+                            args={"url": test_url}, auth_session=auth_data
+                        ),
+                        timeout=180
+                    )
+                    if isinstance(dom_xss_res, dict) and dom_xss_res.get("status") == "success":
+                        data = dom_xss_res.get("data", {})
+                        if data.get("vulnerable"):
+                            self.add_finding("WSTG-CLNT-01", "DOM-based XSS detected",
+                                           severity="high", evidence=data,
+                                           details=f"Found {len(data.get('sinks', []))} vulnerable DOM sinks")
+                except Exception as e:
+                    self.log("warning", f"DOM XSS testing failed: {e}")
 
         # 2) JavaScript Execution Context (WSTG-CLNT-02)
         try:
@@ -115,64 +127,67 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             self.log("warning", f"JavaScript execution testing failed: {e}")
 
         # 3) HTML Injection (WSTG-CLNT-03)
-        try:
-            self.log("info", "Testing for HTML Injection")
-            html_inj_res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="client-side-testing",
-                    tool="test_html_injection",
-                    args={"url": target}, auth_session=auth_data
-                ),
-                timeout=150
-            )
-            if isinstance(html_inj_res, dict) and html_inj_res.get("status") == "success":
-                data = html_inj_res.get("data", {})
-                if data.get("vulnerable"):
-                    self.add_finding("WSTG-CLNT-03", "HTML Injection detected", 
-                                   severity="medium", evidence=data,
-                                   details="User input reflected in HTML without encoding")
-        except Exception as e:
-            self.log("warning", f"HTML injection testing failed: {e}")
+        for test_url in test_urls[:5]:
+            try:
+                self.log("info", f"Testing for HTML Injection on {test_url}")
+                html_inj_res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="test_html_injection",
+                        args={"url": test_url}, auth_session=auth_data
+                    ),
+                    timeout=150
+                )
+                if isinstance(html_inj_res, dict) and html_inj_res.get("status") == "success":
+                    data = html_inj_res.get("data", {})
+                    if data.get("vulnerable"):
+                        self.add_finding("WSTG-CLNT-03", "HTML Injection detected",
+                                       severity="medium", evidence=data,
+                                       details="User input reflected in HTML without encoding")
+            except Exception as e:
+                self.log("warning", f"HTML injection testing failed: {e}")
 
         # 4) Client-side URL Redirect (WSTG-CLNT-04)
-        try:
-            self.log("info", "Testing for client-side URL redirects")
-            redirect_res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="client-side-testing",
-                    tool="test_client_url_redirect",
-                    args={"url": target}, auth_session=auth_data
-                ),
-                timeout=120
-            )
-            if isinstance(redirect_res, dict) and redirect_res.get("status") == "success":
-                data = redirect_res.get("data", {})
-                if data.get("vulnerable"):
-                    self.add_finding("WSTG-CLNT-04", "Client-side URL redirect vulnerability", 
-                                   severity="medium", evidence=data,
-                                   details="Open redirect via client-side JavaScript")
-        except Exception as e:
-            self.log("warning", f"URL redirect testing failed: {e}")
+        for test_url in test_urls[:5]:
+            try:
+                self.log("info", f"Testing for client-side URL redirects on {test_url}")
+                redirect_res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="test_client_url_redirect",
+                        args={"url": test_url}, auth_session=auth_data
+                    ),
+                    timeout=120
+                )
+                if isinstance(redirect_res, dict) and redirect_res.get("status") == "success":
+                    data = redirect_res.get("data", {})
+                    if data.get("vulnerable"):
+                        self.add_finding("WSTG-CLNT-04", "Client-side URL redirect vulnerability",
+                                       severity="medium", evidence=data,
+                                       details="Open redirect via client-side JavaScript")
+            except Exception as e:
+                self.log("warning", f"URL redirect testing failed: {e}")
 
         # 5) CSS Injection (WSTG-CLNT-05)
-        try:
-            self.log("info", "Testing for CSS Injection")
-            css_inj_res = await self.run_tool_with_timeout(
-                client.call_tool(
-                    server="client-side-testing",
-                    tool="test_css_injection",
-                    args={"url": target}, auth_session=auth_data
-                ),
-                timeout=120
-            )
-            if isinstance(css_inj_res, dict) and css_inj_res.get("status") == "success":
-                data = css_inj_res.get("data", {})
-                if data.get("vulnerable"):
-                    self.add_finding("WSTG-CLNT-05", "CSS Injection detected", 
-                                   severity="low", evidence=data,
-                                   details="CSS can be injected to leak data or deface")
-        except Exception as e:
-            self.log("warning", f"CSS injection testing failed: {e}")
+        for test_url in test_urls[:5]:
+            try:
+                self.log("info", f"Testing for CSS Injection on {test_url}")
+                css_inj_res = await self.run_tool_with_timeout(
+                    client.call_tool(
+                        server="client-side-testing",
+                        tool="test_css_injection",
+                        args={"url": test_url}, auth_session=auth_data
+                    ),
+                    timeout=120
+                )
+                if isinstance(css_inj_res, dict) and css_inj_res.get("status") == "success":
+                    data = css_inj_res.get("data", {})
+                    if data.get("vulnerable"):
+                        self.add_finding("WSTG-CLNT-05", "CSS Injection detected",
+                                       severity="low", evidence=data,
+                                       details="CSS can be injected to leak data or deface")
+            except Exception as e:
+                self.log("warning", f"CSS injection testing failed: {e}")
 
         # 6) CORS Misconfiguration (WSTG-CLNT-07)
         if self.should_run_tool("test_cors_misconfiguration"):
