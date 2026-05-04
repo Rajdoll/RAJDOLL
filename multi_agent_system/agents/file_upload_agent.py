@@ -84,16 +84,15 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
             except Exception as e:
                 self.log("warning", f"Upload endpoint discovery failed: {e}")
         
-        # If no endpoints discovered, try common patterns
+        # If no endpoints discovered, use SharedContext or fallback to target
         if not upload_endpoints:
-            common_upload_urls = [
-                f"{target}/file-upload",
-                f"{target}/rest/file-upload",
-                f"{target}/api/upload",
-                f"{target}/profile/image/upload",
-            ]
+            endpoints_data = self.shared_context.get("discovered_endpoints", {})
+            upload_eps = endpoints_data.get("upload_endpoints", []) + endpoints_data.get("file_endpoints", [])
+            common_upload_urls = [ep["url"] if isinstance(ep, dict) else ep for ep in upload_eps]
+            if not common_upload_urls:
+                common_upload_urls = [target]
             upload_endpoints = [{"url": url} for url in common_upload_urls]
-            self.log("info", f"Using {len(upload_endpoints)} common upload patterns")
+            self.log("info", f"Using {len(upload_endpoints)} upload endpoint(s) from SharedContext/fallback")
         
         # Step 2: Test each discovered endpoint
         for endpoint in upload_endpoints[:2]:  # Test up to 2 endpoints (5 caused cascading timeout issues)
