@@ -242,15 +242,18 @@ async def get_manual_checklist(topic: str) -> Dict[str, Any]:
 # ========== OPSI C: 7 COMPREHENSIVE BUSINESS LOGIC TOOLS ==========
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_business_data_validation(base_url: str, test_endpoints: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_business_data_validation(base_url: str, test_endpoints: List[str] = None, endpoints: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests business data validation for price/quantity manipulation.
     logger.info(f"🔍 Executing test_business_data_validation")
     Tests negative prices, zero amounts, extreme quantities, discount abuse.
     WSTG-BUSL-01: Test Business Logic Data Validation
     """
-    if test_endpoints is None:
-        test_endpoints = ["/api/cart/add", "/api/order/create", "/api/product/update", "/checkout"]
+    # Use endpoints param (new), test_endpoints (legacy), or fallback to base_url
+    if endpoints:
+        test_endpoints = endpoints
+    elif test_endpoints is None:
+        test_endpoints = [base_url.rstrip('/')]
     
     try:
         findings = []
@@ -274,8 +277,12 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
         async with httpx.AsyncClient(**req_kwargs) as client:
             for endpoint in test_endpoints:
-                url = f"{base_url.rstrip('/')}{endpoint}"
-                
+                # Support both full URLs and relative paths
+                if endpoint.startswith("http://") or endpoint.startswith("https://"):
+                    url = endpoint
+                else:
+                    url = f"{base_url.rstrip('/')}{endpoint}"
+
                 for test in price_tests:
                     try:
                         # POST manipulation
@@ -502,20 +509,18 @@ async def test_function_limits(target_url: str, burst_count: int = 50, auth_sess
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, endpoints: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     [OPSI C] Tests for workflow circumvention vulnerabilities.
     logger.info(f"🔍 Executing test_workflow_bypass")
     Attempts to skip steps in multi-step processes (checkout, registration).
     WSTG-BUSL-06: Test for Workflow Circumvention
     """
-    if workflow_steps is None:
-        workflow_steps = [
-            "/step1-cart",
-            "/step2-shipping",
-            "/step3-payment",
-            "/step4-confirmation"
-        ]
+    # Use endpoints param (new), workflow_steps (legacy), or fallback to base_url
+    if endpoints:
+        workflow_steps = endpoints
+    elif workflow_steps is None:
+        workflow_steps = [base_url.rstrip('/')]
     
     try:
         findings = []
@@ -531,7 +536,11 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
         async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Direct access to final step without completing previous steps
             final_step = workflow_steps[-1]
-            final_url = f"{base_url.rstrip('/')}{final_step}"
+            # Support both full URLs and relative paths
+            if final_step.startswith("http://") or final_step.startswith("https://"):
+                final_url = final_step
+            else:
+                final_url = f"{base_url.rstrip('/')}{final_step}"
             
             try:
                 resp = await client.get(final_url)
@@ -552,7 +561,11 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
             # Test 2: Access steps out of order
             for i in range(len(workflow_steps) - 1, 0, -1):
                 try:
-                    url = f"{base_url.rstrip('/')}{workflow_steps[i]}"
+                    step = workflow_steps[i]
+                    if step.startswith("http://") or step.startswith("https://"):
+                        url = step
+                    else:
+                        url = f"{base_url.rstrip('/')}{step}"
                     resp = await client.get(url)
                     
                     if resp.status_code == 200 and len(resp.text) > 100:
@@ -567,18 +580,19 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
             
             # Test 3: Submit final action via POST without session state
             try:
-                final_action_url = f"{base_url.rstrip('/')}/complete-order"
-                resp = await client.post(final_action_url, json={
-                    "order_id": "bypass_test",
-                    "bypass": True
-                })
-                
-                if resp.status_code in [200, 201]:
-                    findings.append({
-                        "type": "workflow_bypass_post",
-                        "severity": "Critical",
-                        "description": "Can complete order via POST without workflow validation"
+                # Use the final workflow step as the action URL
+                if final_url:
+                    resp = await client.post(final_url, json={
+                        "order_id": "bypass_test",
+                        "bypass": True
                     })
+
+                    if resp.status_code in [200, 201]:
+                        findings.append({
+                            "type": "workflow_bypass_post",
+                            "severity": "Critical",
+                            "description": "Can complete action via POST without workflow validation"
+                        })
             except Exception:
                 pass
         
@@ -741,6 +755,7 @@ async def test_malicious_file_upload(upload_url: str, auth_session: Optional[Dic
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
 async def test_shopping_cart_manipulation(
     base_url: str,
+    endpoints: Optional[List[str]] = None,
     auth_session: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -751,10 +766,12 @@ async def test_shopping_cart_manipulation(
     2. Price manipulation in basket
     3. Other user's basket access (IDOR)
     4. Coupon code replay attacks
-    5. Checkout process bypass
+    5. Quantity update tampering
+    6. Zero-price checkout
 
     Args:
         base_url: Target application base URL
+        endpoints: Optional list of cart/basket endpoint URLs to test
         auth_session: Authentication session dict with token/cookies
 
     Returns:
@@ -774,178 +791,152 @@ async def test_shopping_cart_manipulation(
                 cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
                 headers["Cookie"] = cookie_str
 
+        # Use provided endpoints or fall back to base_url
+        test_targets = endpoints if endpoints else [base_url.rstrip('/')]
+
         async with httpx.AsyncClient(timeout=30, verify=False, follow_redirects=True) as client:
-            # TEST 1: Negative Quantity Vulnerability
-            basket_endpoint = f"{base_url}/api/BasketItems"
-            try:
-                # Add product with negative quantity
-                negative_qty_payload = {
-                    "ProductId": 1,
-                    "BasketId": "1",
-                    "quantity": -100
-                }
+            for target_url in test_targets:
+                # TEST 1: Negative Quantity Vulnerability
+                try:
+                    negative_qty_payload = {
+                        "ProductId": 1,
+                        "BasketId": "1",
+                        "quantity": -100
+                    }
 
-                resp = await client.post(
-                    basket_endpoint,
-                    json=negative_qty_payload,
-                    headers=headers
-                )
+                    resp = await client.post(
+                        target_url,
+                        json=negative_qty_payload,
+                        headers=headers
+                    )
 
-                if resp.status_code in [200, 201]:
-                    # Check if negative quantity was accepted
-                    try:
-                        basket_resp = await client.get(
-                            f"{base_url}/rest/basket/1",
-                            headers=headers
-                        )
-                        if basket_resp.status_code == 200:
-                            basket_data = basket_resp.json()
-                            total = basket_data.get("data", {}).get("total", 0)
-                            if total < 0:
-                                findings.append({
-                                    "type": "NEGATIVE_QUANTITY",
-                                    "severity": "HIGH",
-                                    "endpoint": basket_endpoint,
-                                    "evidence": f"Cart total: {total} (negative value accepted)",
-                                    "description": "Shopping cart accepts negative quantities, allowing price manipulation"
-                                })
-                                logger.info(f"[shopping_cart] HIGH: Negative quantity accepted! Total: {total}")
-                    except:
-                        pass
-            except Exception as e:
-                logger.warning(f"[shopping_cart] Negative quantity test failed: {e}")
+                    if resp.status_code in [200, 201]:
+                        findings.append({
+                            "type": "NEGATIVE_QUANTITY",
+                            "severity": "HIGH",
+                            "endpoint": target_url,
+                            "evidence": "Negative quantity (-100) accepted by server",
+                            "description": "Shopping cart accepts negative quantities, allowing price manipulation"
+                        })
+                        logger.info(f"[shopping_cart] HIGH: Negative quantity accepted at {target_url}")
+                except Exception as e:
+                    logger.warning(f"[shopping_cart] Negative quantity test failed: {e}")
 
-            # TEST 2: Price Manipulation
-            try:
-                # Try to modify price directly
-                price_manip_payload = {
-                    "ProductId": 1,
-                    "BasketId": "1",
-                    "quantity": 1,
-                    "price": 0.01  # Attempt to set price to $0.01
-                }
+                # TEST 2: Price Manipulation
+                try:
+                    price_manip_payload = {
+                        "ProductId": 1,
+                        "BasketId": "1",
+                        "quantity": 1,
+                        "price": 0.01
+                    }
 
-                resp = await client.post(
-                    basket_endpoint,
-                    json=price_manip_payload,
-                    headers=headers
-                )
+                    resp = await client.post(
+                        target_url,
+                        json=price_manip_payload,
+                        headers=headers
+                    )
 
-                if resp.status_code in [200, 201]:
-                    findings.append({
-                        "type": "PRICE_MANIPULATION",
-                        "severity": "HIGH",
-                        "endpoint": basket_endpoint,
-                        "evidence": "Server accepted custom 'price' parameter in basket",
-                        "description": "Application allows client to set product price"
-                    })
-                    logger.info("[shopping_cart] HIGH: Price manipulation possible!")
-            except Exception as e:
-                logger.warning(f"[shopping_cart] Price manipulation test failed: {e}")
+                    if resp.status_code in [200, 201]:
+                        findings.append({
+                            "type": "PRICE_MANIPULATION",
+                            "severity": "HIGH",
+                            "endpoint": target_url,
+                            "evidence": "Server accepted custom 'price' parameter in basket",
+                            "description": "Application allows client to set product price"
+                        })
+                        logger.info(f"[shopping_cart] HIGH: Price manipulation possible at {target_url}")
+                except Exception as e:
+                    logger.warning(f"[shopping_cart] Price manipulation test failed: {e}")
 
-            # TEST 3: IDOR - Access other user's basket
-            try:
-                # Try to access baskets with IDs 1-10
-                for basket_id in range(1, 11):
-                    basket_url = f"{base_url}/rest/basket/{basket_id}"
-                    resp = await client.get(basket_url, headers=headers)
-
+                # TEST 3: IDOR - Access resource with different IDs
+                try:
+                    resp = await client.get(target_url, headers=headers)
                     if resp.status_code == 200:
                         try:
                             data = resp.json()
                             if data and "data" in data:
-                                # Successfully accessed another user's basket
                                 findings.append({
                                     "type": "BASKET_IDOR",
                                     "severity": "MEDIUM",
-                                    "endpoint": basket_url,
-                                    "evidence": f"Accessed basket ID {basket_id} without authorization check",
-                                    "description": "IDOR vulnerability allows viewing other users' shopping carts"
+                                    "endpoint": target_url,
+                                    "evidence": "Accessed resource without proper authorization check",
+                                    "description": "IDOR vulnerability allows viewing other users' data"
                                 })
-                                logger.info(f"[shopping_cart] MEDIUM: IDOR found for basket {basket_id}")
-                                break  # Report only once
-                        except:
+                                logger.info(f"[shopping_cart] MEDIUM: IDOR found at {target_url}")
+                        except Exception:
                             pass
-            except Exception as e:
-                logger.warning(f"[shopping_cart] IDOR test failed: {e}")
+                except Exception as e:
+                    logger.warning(f"[shopping_cart] IDOR test failed: {e}")
 
-            # TEST 4: Coupon Code Replay
-            try:
-                # Try applying the same coupon multiple times
-                coupon_endpoint = f"{base_url}/rest/basket/1/coupon/INVALID123"
+                # TEST 4: Coupon Code Replay
+                try:
+                    for attempt in range(3):
+                        resp = await client.put(target_url, headers=headers, json={"coupon": "REPLAY_TEST"})
 
-                for attempt in range(3):
-                    resp = await client.put(coupon_endpoint, headers=headers)
+                        if resp.status_code == 200:
+                            if attempt > 0:
+                                findings.append({
+                                    "type": "COUPON_REPLAY",
+                                    "severity": "MEDIUM",
+                                    "endpoint": target_url,
+                                    "evidence": f"Coupon applied {attempt + 1} times successfully",
+                                    "description": "Application allows same coupon to be applied multiple times"
+                                })
+                                logger.info(f"[shopping_cart] MEDIUM: Coupon replay possible at {target_url}")
+                                break
+                except Exception as e:
+                    logger.warning(f"[shopping_cart] Coupon replay test failed: {e}")
 
-                    if resp.status_code == 200:
-                        if attempt > 0:  # If second+ application succeeded
-                            findings.append({
-                                "type": "COUPON_REPLAY",
-                                "severity": "MEDIUM",
-                                "endpoint": coupon_endpoint,
-                                "evidence": f"Coupon applied {attempt + 1} times successfully",
-                                "description": "Application allows same coupon to be applied multiple times"
-                            })
-                            logger.info(f"[shopping_cart] MEDIUM: Coupon replay possible!")
-                            break
-            except Exception as e:
-                logger.warning(f"[shopping_cart] Coupon replay test failed: {e}")
+                # TEST 5: Quantity Update Tampering
+                try:
+                    tampered_qty = {"quantity": -999}
+                    resp = await client.put(
+                        target_url,
+                        json=tampered_qty,
+                        headers=headers
+                    )
 
-            # TEST 5: Quantity Update Tampering
-            try:
-                # Try to update quantity to negative value via PUT
-                quantity_endpoint = f"{base_url}/api/Quantitys/1"
-                tampered_qty = {"quantity": -999}
-
-                resp = await client.put(
-                    quantity_endpoint,
-                    json=tampered_qty,
-                    headers=headers
-                )
-
-                if resp.status_code in [200, 201]:
-                    findings.append({
-                        "type": "QUANTITY_TAMPERING",
-                        "severity": "HIGH",
-                        "endpoint": quantity_endpoint,
-                        "evidence": "Negative quantity accepted via PUT request",
-                        "description": "Quantity update endpoint lacks validation"
-                    })
-                    logger.info("[shopping_cart] HIGH: Quantity tampering successful!")
-            except Exception as e:
-                logger.warning(f"[shopping_cart] Quantity tampering test failed: {e}")
-
-            # TEST 6: Zero-Price Checkout
-            try:
-                # Create basket with zero quantity to check for free checkout
-                zero_qty_payload = {
-                    "ProductId": 1,
-                    "BasketId": "1",
-                    "quantity": 0
-                }
-
-                resp = await client.post(
-                    basket_endpoint,
-                    json=zero_qty_payload,
-                    headers=headers
-                )
-
-                if resp.status_code in [200, 201]:
-                    # Try to checkout with zero total
-                    checkout_url = f"{base_url}/rest/basket/1/checkout"
-                    checkout_resp = await client.post(checkout_url, headers=headers)
-
-                    if checkout_resp.status_code == 200:
+                    if resp.status_code in [200, 201]:
                         findings.append({
-                            "type": "ZERO_PRICE_CHECKOUT",
+                            "type": "QUANTITY_TAMPERING",
                             "severity": "HIGH",
-                            "endpoint": checkout_url,
-                            "evidence": "Checkout succeeded with zero quantity items",
-                            "description": "Application allows checkout without validating cart contents"
+                            "endpoint": target_url,
+                            "evidence": "Negative quantity accepted via PUT request",
+                            "description": "Quantity update endpoint lacks validation"
                         })
-                        logger.info("[shopping_cart] HIGH: Zero-price checkout possible!")
-            except Exception as e:
-                logger.warning(f"[shopping_cart] Zero-price checkout test failed: {e}")
+                        logger.info(f"[shopping_cart] HIGH: Quantity tampering successful at {target_url}")
+                except Exception as e:
+                    logger.warning(f"[shopping_cart] Quantity tampering test failed: {e}")
+
+                # TEST 6: Zero-Price Checkout
+                try:
+                    zero_qty_payload = {
+                        "ProductId": 1,
+                        "BasketId": "1",
+                        "quantity": 0
+                    }
+
+                    resp = await client.post(
+                        target_url,
+                        json=zero_qty_payload,
+                        headers=headers
+                    )
+
+                    if resp.status_code in [200, 201]:
+                        checkout_resp = await client.post(target_url, headers=headers, json={"checkout": True})
+
+                        if checkout_resp.status_code == 200:
+                            findings.append({
+                                "type": "ZERO_PRICE_CHECKOUT",
+                                "severity": "HIGH",
+                                "endpoint": target_url,
+                                "evidence": "Checkout succeeded with zero quantity items",
+                                "description": "Application allows checkout without validating cart contents"
+                            })
+                            logger.info(f"[shopping_cart] HIGH: Zero-price checkout possible at {target_url}")
+                except Exception as e:
+                    logger.warning(f"[shopping_cart] Zero-price checkout test failed: {e}")
 
         return {
             "status": "success",
@@ -962,7 +953,7 @@ async def test_shopping_cart_manipulation(
 
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-BUSL-03: Test Integrity Checks.
     Tests whether the application validates data integrity — e.g., can a user
@@ -971,6 +962,9 @@ async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]]
     try:
         findings = []
         base = url.rstrip('/')
+
+        # Use provided endpoints or fall back to base URL
+        test_targets = endpoints if endpoints else [base]
 
         req_kwargs = {"timeout": 15, "verify": False, "follow_redirects": True}
         if auth_session:
@@ -982,12 +976,8 @@ async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]]
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
 
         async with httpx.AsyncClient(**req_kwargs) as client:
-            # Test 1: Price tampering via API
-            product_endpoints = [
-                f"{base}/api/Products/1", f"{base}/api/products/1",
-                f"{base}/rest/products/1/reviews",
-            ]
-            for ep in product_endpoints:
+            for ep in test_targets:
+                # Test 1: Price tampering via API
                 try:
                     resp = await client.get(ep)
                     if resp.status_code == 200:
@@ -1003,19 +993,14 @@ async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]]
                                 "evidence": f"PUT {ep} with price=0.01 returned {tamper_resp.status_code}"
                             })
                 except Exception:
-                    continue
+                    pass
 
-            # Test 2: Quantity manipulation (negative, zero, extreme)
-            basket_endpoints = [
-                f"{base}/api/BasketItems/", f"{base}/rest/basket/1",
-                f"{base}/api/cart",
-            ]
-            tamper_quantities = [
-                (-1, "negative_quantity"),
-                (0, "zero_quantity"),
-                (999999, "extreme_quantity"),
-            ]
-            for ep in basket_endpoints:
+                # Test 2: Quantity manipulation (negative, zero, extreme)
+                tamper_quantities = [
+                    (-1, "negative_quantity"),
+                    (0, "zero_quantity"),
+                    (999999, "extreme_quantity"),
+                ]
                 for qty, label in tamper_quantities:
                     try:
                         resp = await client.post(ep, json={"ProductId": 1, "BasketId": "1", "quantity": qty})
@@ -1031,16 +1016,11 @@ async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]]
                     except Exception:
                         continue
 
-            # Test 3: Hidden field / parameter tampering
-            tamper_params = [
-                {"role": "admin"}, {"isAdmin": True}, {"discount": 100},
-                {"total": 0}, {"status": "completed"}, {"verified": True},
-            ]
-            user_endpoints = [
-                f"{base}/api/Users/1", f"{base}/api/user/profile",
-                f"{base}/rest/user/change-password",
-            ]
-            for ep in user_endpoints:
+                # Test 3: Hidden field / parameter tampering
+                tamper_params = [
+                    {"role": "admin"}, {"isAdmin": True}, {"discount": 100},
+                    {"total": 0}, {"status": "completed"}, {"verified": True},
+                ]
                 for params in tamper_params:
                     try:
                         resp = await client.put(ep, json=params)
@@ -1070,7 +1050,7 @@ async def test_integrity_checks(url: str, auth_session: Optional[Dict[str, Any]]
 
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_application_misuse_defenses(url: str, endpoints: Optional[List[str]] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-BUSL-07: Test Defenses Against Application Misuse.
     Checks if the application detects and responds to abuse patterns
@@ -1080,6 +1060,9 @@ async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict
         import time
         findings = []
         base = url.rstrip('/')
+
+        # Use provided endpoints or fall back to base URL
+        test_targets = endpoints if endpoints else [base]
 
         req_kwargs = {"timeout": 10, "verify": False, "follow_redirects": True}
         if auth_session:
@@ -1092,12 +1075,7 @@ async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict
 
         async with httpx.AsyncClient(**req_kwargs) as client:
             # Test 1: Rapid request flood (limited burst)
-            test_endpoints = [
-                f"{base}/rest/user/login",
-                f"{base}/api/Users/",
-                f"{base}/rest/products/search?q=test",
-            ]
-            for ep in test_endpoints:
+            for ep in test_targets:
                 try:
                     statuses = []
                     for _ in range(10):
@@ -1116,12 +1094,7 @@ async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict
                     continue
 
             # Test 2: Failed login flood (brute-force detection)
-            login_endpoints = [
-                f"{base}/rest/user/login",
-                f"{base}/api/login",
-                f"{base}/login",
-            ]
-            for ep in login_endpoints:
+            for ep in test_targets:
                 try:
                     blocked = False
                     for i in range(8):
@@ -1144,12 +1117,7 @@ async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict
                     continue
 
             # Test 3: CAPTCHA / bot detection
-            form_endpoints = [
-                f"{base}/api/Feedbacks/",
-                f"{base}/api/Complaints/",
-                f"{base}/contact",
-            ]
-            for ep in form_endpoints:
+            for ep in test_targets:
                 try:
                     submissions = 0
                     for i in range(5):
@@ -1181,7 +1149,7 @@ async def test_application_misuse_defenses(url: str, auth_session: Optional[Dict
         return {"status": "error", "message": str(e)}
 
 
-async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_captcha_and_rate_limit(url: str, endpoints: Optional[List[str]] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-BUSL-05: Test CAPTCHA bypass and rate limiting abuse.
     Sends rapid requests to key endpoints to detect missing rate limiting (HTTP 429)
@@ -1190,6 +1158,9 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
     try:
         findings = []
         base = url.rstrip('/')
+
+        # Use provided endpoints or fall back to base URL
+        test_targets = endpoints if endpoints else [base]
 
         req_kwargs = {"timeout": 10.0, "verify": False, "follow_redirects": True}
         if auth_session:
@@ -1201,40 +1172,25 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
 
         async with httpx.AsyncClient(**req_kwargs) as client:
-            # ── Test 1: Missing rate limiting on key endpoints ──
-            rate_limit_targets = [
-                {"path": "/rest/user/login", "method": "POST",
-                 "body": {"email": "ratelimit@test.com", "password": "wrongpass"},
-                 "label": "Login brute force"},
-                {"path": "/api/Users", "method": "POST",
-                 "body": {"email": "spam@test.com", "password": "Spam1234!", "passwordRepeat": "Spam1234!",
-                          "securityQuestion": {"id": 1, "question": "Name?"}, "securityAnswer": "x"},
-                 "label": "Registration spam"},
-                {"path": "/api/Feedbacks", "method": "POST",
-                 "body": {"comment": "rate limit test", "rating": 1, "captcha": "", "captchaId": 0},
-                 "label": "Feedback spam"},
-                {"path": "/api/Complaints", "method": "POST",
-                 "body": {"message": "rate limit test"},
-                 "label": "Complaint spam"},
-                {"path": "/rest/products/search?q=apple", "method": "GET",
-                 "body": None,
-                 "label": "Search abuse"},
-            ]
-
+            # -- Test 1: Missing rate limiting on provided endpoints --
             REQUEST_COUNT = 15
 
-            for target in rate_limit_targets:
-                ep = f"{base}{target['path']}"
+            for ep in test_targets:
                 try:
                     statuses = []
                     rate_limited = False
                     captcha_seen = False
 
                     for i in range(REQUEST_COUNT):
-                        if target["method"] == "POST" and target["body"]:
-                            resp = await client.post(ep, json=target["body"])
-                        else:
-                            resp = await client.get(ep)
+                        # Try POST first, fall back to GET
+                        resp = await client.post(ep, json={
+                            "email": f"ratelimit{i}@test.com",
+                            "password": "wrongpass",
+                            "comment": f"rate limit test {i}",
+                            "rating": 1,
+                            "captcha": "",
+                            "captchaId": 0,
+                        })
 
                         statuses.append(resp.status_code)
 
@@ -1252,13 +1208,12 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
 
                     if not rate_limited:
                         success_count = sum(1 for s in statuses if s in (200, 201, 401, 402))
-                        severity = "high" if target["label"] == "Login brute force" else "medium"
                         findings.append({
-                            "type": f"no_rate_limiting_{target['label'].lower().replace(' ', '_')}",
+                            "type": "no_rate_limiting",
                             "endpoint": ep,
-                            "severity": severity,
+                            "severity": "high",
                             "description": (
-                                f"No rate limiting on {target['label']}: "
+                                f"No rate limiting detected: "
                                 f"{REQUEST_COUNT} rapid requests sent, "
                                 f"{success_count} processed without throttling"
                             ),
@@ -1272,31 +1227,18 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
                 except Exception:
                     continue
 
-            # ── Test 2: CAPTCHA bypass — submit forms without CAPTCHA field ──
-            captcha_form_targets = [
-                {"path": "/api/Feedbacks", "label": "Feedback form",
-                 "with_captcha": {"comment": "captcha test", "rating": 3, "captcha": "12345", "captchaId": 1},
-                 "without_captcha": {"comment": "captcha bypass test", "rating": 3}},
-                {"path": "/api/Complaints", "label": "Complaint form",
-                 "with_captcha": {"message": "captcha test", "captcha": "12345", "captchaId": 1},
-                 "without_captcha": {"message": "captcha bypass test"}},
-                {"path": "/api/Users", "label": "Registration form",
-                 "with_captcha": {"email": "captchatest@test.com", "password": "Captcha1234!",
-                                  "passwordRepeat": "Captcha1234!",
-                                  "securityQuestion": {"id": 1, "question": "Name?"}, "securityAnswer": "x",
-                                  "captcha": "12345", "captchaId": 1},
-                 "without_captcha": {"email": "nocaptcha@test.com", "password": "NoCaptcha1234!",
-                                     "passwordRepeat": "NoCaptcha1234!",
-                                     "securityQuestion": {"id": 1, "question": "Name?"}, "securityAnswer": "x"}},
-            ]
-
-            for target in captcha_form_targets:
-                ep = f"{base}{target['path']}"
+            # -- Test 2: CAPTCHA bypass -- submit forms without CAPTCHA field --
+            for ep in test_targets:
                 try:
                     # Submit WITH bogus CAPTCHA values
-                    resp_with = await client.post(ep, json=target["with_captcha"])
+                    resp_with = await client.post(ep, json={
+                        "comment": "captcha test", "rating": 3,
+                        "captcha": "12345", "captchaId": 1
+                    })
                     # Submit WITHOUT CAPTCHA field at all
-                    resp_without = await client.post(ep, json=target["without_captcha"])
+                    resp_without = await client.post(ep, json={
+                        "comment": "captcha bypass test", "rating": 3
+                    })
 
                     with_status = resp_with.status_code
                     without_status = resp_without.status_code
@@ -1308,7 +1250,7 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
                             "endpoint": ep,
                             "severity": "medium",
                             "description": (
-                                f"CAPTCHA bypass on {target['label']}: "
+                                f"CAPTCHA bypass: "
                                 f"form accepted without CAPTCHA field (HTTP {without_status})"
                             ),
                             "evidence": {
@@ -1325,7 +1267,7 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
                             "endpoint": ep,
                             "severity": "medium",
                             "description": (
-                                f"CAPTCHA not validated on {target['label']}: "
+                                f"CAPTCHA not validated: "
                                 f"bogus captcha value accepted (HTTP {with_status})"
                             ),
                             "evidence": {
@@ -1336,15 +1278,13 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
                 except Exception:
                     continue
 
-            # ── Test 3: Empty CAPTCHA field accepted ──
-            empty_captcha_targets = [
-                {"path": "/api/Feedbacks",
-                 "body": {"comment": "empty captcha", "rating": 2, "captcha": "", "captchaId": 0}},
-            ]
-            for target in empty_captcha_targets:
-                ep = f"{base}{target['path']}"
+            # -- Test 3: Empty CAPTCHA field accepted --
+            for ep in test_targets:
                 try:
-                    resp = await client.post(ep, json=target["body"])
+                    resp = await client.post(ep, json={
+                        "comment": "empty captcha", "rating": 2,
+                        "captcha": "", "captchaId": 0
+                    })
                     if resp.status_code in (200, 201):
                         findings.append({
                             "type": "empty_captcha_accepted",
@@ -1373,7 +1313,7 @@ async def test_captcha_and_rate_limit(url: str, auth_session: Optional[Dict[str,
         return {"status": "error", "message": str(e)}
 
 
-async def test_coupon_forgery(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Test coupon code abuse, negative pricing, and discount manipulation (WSTG-BUSL-09)."""
     try:
         from urllib.parse import urlparse
@@ -1389,70 +1329,70 @@ async def test_coupon_forgery(url: str, auth_session: Optional[Dict[str, Any]] =
 
         findings = []
 
+        # Use provided endpoints or fall back to base URL
+        test_targets = endpoints if endpoints else [base_url]
+
         async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True, headers=headers) as client:
-            # 1. Test known/expired coupon codes (Juice Shop z85-encoded dates)
-            known_coupons = [
-                "n<MibgC7sn",   # Expired coupon
-                "o*IVqtMzMt",   # Expired coupon
-                "mNYS7Dxo40",   # Common test coupon
-                "WMNSUVHFJB",   # Brute force attempt
-                "TEST123",
-                "DISCOUNT10",
-            ]
-            for basket_id in range(1, 6):
+            for target_ep in test_targets:
+                # 1. Test known/expired coupon codes
+                known_coupons = [
+                    "TESTCOUPON",
+                    "DISCOUNT10",
+                    "FREESHIPING",
+                    "EXPIRED2024",
+                    "TEST123",
+                    "100OFF",
+                ]
                 for coupon in known_coupons:
                     try:
+                        # Try PUT with coupon in URL path
                         resp = await client.put(
-                            f"{base_url}/rest/basket/{basket_id}/coupon/{coupon}",
+                            f"{target_ep}/{coupon}" if not target_ep.endswith('/') else f"{target_ep}{coupon}",
                             json={"couponCode": coupon}
                         )
-                        if resp.status_code == 200 and ("discount" in resp.text.lower() or resp.status_code == 200):
+                        if resp.status_code == 200:
                             try:
                                 body = resp.json()
                                 if body.get("data") or "discount" in str(body).lower():
                                     findings.append({
                                         "type": "Expired/known coupon accepted",
-                                        "endpoint": f"/rest/basket/{basket_id}/coupon/{coupon}",
+                                        "endpoint": target_ep,
                                         "severity": "high",
-                                        "description": f"Coupon '{coupon}' accepted on basket {basket_id}",
+                                        "description": f"Coupon '{coupon}' accepted",
                                         "evidence": str(body)[:200]
                                     })
-                                    break  # One finding per basket is enough
+                                    break  # One finding per endpoint is enough
                             except Exception:
                                 pass
                     except Exception:
                         continue
 
-            # 2. Test negative quantity manipulation
-            for basket_id in range(1, 4):
-                for item_id in range(1, 6):
-                    try:
-                        resp = await client.put(
-                            f"{base_url}/api/BasketItems/{item_id}",
-                            json={"quantity": -1}
-                        )
-                        if resp.status_code == 200:
-                            try:
-                                body = resp.json()
-                                if body.get("data") or body.get("status") == "success":
-                                    findings.append({
-                                        "type": "Negative quantity accepted",
-                                        "endpoint": f"/api/BasketItems/{item_id}",
-                                        "severity": "critical",
-                                        "description": "Negative quantity accepted - potential credit generation",
-                                        "evidence": str(body)[:200]
-                                    })
-                                    break
-                            except Exception:
-                                pass
-                    except Exception:
-                        continue
-
-            # 3. Test zero/negative price via direct product manipulation
-            for product_id in range(1, 6):
+                # 2. Test negative quantity manipulation
                 try:
                     resp = await client.put(
-                        f"{base_url}/api/Products/{product_id}",
+                        target_ep,
+                        json={"quantity": -1}
+                    )
+                    if resp.status_code == 200:
+                        try:
+                            body = resp.json()
+                            if body.get("data") or body.get("status") == "success":
+                                findings.append({
+                                    "type": "Negative quantity accepted",
+                                    "endpoint": target_ep,
+                                    "severity": "critical",
+                                    "description": "Negative quantity accepted - potential credit generation",
+                                    "evidence": str(body)[:200]
+                                })
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # 3. Test zero/negative price via direct manipulation
+                try:
+                    resp = await client.put(
+                        target_ep,
                         json={"price": 0}
                     )
                     if resp.status_code == 200:
@@ -1461,53 +1401,51 @@ async def test_coupon_forgery(url: str, auth_session: Optional[Dict[str, Any]] =
                             if body.get("data"):
                                 findings.append({
                                     "type": "Price manipulation to zero",
-                                    "endpoint": f"/api/Products/{product_id}",
+                                    "endpoint": target_ep,
                                     "severity": "critical",
-                                    "description": "Product price set to 0 via direct API call",
+                                    "description": "Price set to 0 via direct API call",
                                     "evidence": str(body)[:200]
                                 })
-                                break
                         except Exception:
                             pass
                 except Exception:
-                    continue
+                    pass
 
-            # 4. Test coupon reuse (apply same coupon twice)
-            for basket_id in range(1, 4):
+                # 4. Test coupon reuse (apply same coupon twice)
                 try:
-                    coupon = "n<MibgC7sn"
-                    resp1 = await client.put(f"{base_url}/rest/basket/{basket_id}/coupon/{coupon}")
-                    resp2 = await client.put(f"{base_url}/rest/basket/{basket_id}/coupon/{coupon}")
+                    coupon = "TESTCOUPON"
+                    coupon_url = f"{target_ep}/{coupon}" if not target_ep.endswith('/') else f"{target_ep}{coupon}"
+                    resp1 = await client.put(coupon_url)
+                    resp2 = await client.put(coupon_url)
                     if resp1.status_code == 200 and resp2.status_code == 200:
                         findings.append({
                             "type": "Coupon reuse allowed",
-                            "endpoint": f"/rest/basket/{basket_id}/coupon",
+                            "endpoint": target_ep,
                             "severity": "high",
                             "description": "Same coupon code can be applied multiple times",
                             "evidence": f"First: {resp1.status_code}, Second: {resp2.status_code}"
                         })
-                        break
                 except Exception:
-                    continue
+                    pass
 
-            # 5. Test Quantitys endpoint exposure (data leak)
-            try:
-                resp = await client.get(f"{base_url}/api/Quantitys")
-                if resp.status_code == 200:
-                    try:
-                        body = resp.json()
-                        if body.get("data") and len(body["data"]) > 0:
-                            findings.append({
-                                "type": "Quantity data exposed",
-                                "endpoint": "/api/Quantitys",
-                                "severity": "medium",
-                                "description": f"Internal quantity data exposed ({len(body['data'])} records)",
-                                "evidence": str(body["data"][:2])[:200]
-                            })
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                # 5. Test data exposure
+                try:
+                    resp = await client.get(target_ep)
+                    if resp.status_code == 200:
+                        try:
+                            body = resp.json()
+                            if body.get("data") and isinstance(body["data"], list) and len(body["data"]) > 0:
+                                findings.append({
+                                    "type": "Data exposed",
+                                    "endpoint": target_ep,
+                                    "severity": "medium",
+                                    "description": f"Internal data exposed ({len(body['data'])} records)",
+                                    "evidence": str(body["data"][:2])[:200]
+                                })
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
         return {"status": "success", "data": {
             "vulnerable": len(findings) > 0,
