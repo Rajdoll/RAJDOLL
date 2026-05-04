@@ -485,21 +485,12 @@ class SimpleLLMClient:
         agent_name: str,
         raw_outputs: str,
         task_tree: str = "",
-    ) -> str:
-        """Summarize an agent's raw tool outputs into a concise finding summary.
+    ) -> dict:
+        """Summarize agent findings with root cause and impact chain analysis.
 
-        Inspired by HackSynth's Summarizer module — compresses verbose tool
-        output so subsequent agents receive dense, high-signal context.
-
-        Args:
-            agent_name: Name of the agent that produced the outputs
-            raw_outputs: Concatenated raw outputs from the agent's tools (truncated)
-            task_tree: Current task tree string for context
-
-        Returns:
-            Concise summary string (target ~200-400 words)
+        Returns a dict with keys: summary, root_causes, impact_chains.
+        Falls back to {"summary": truncated_raw, "root_causes": [], "impact_chains": []} on error.
         """
-        # Truncate raw outputs to avoid exceeding context window
         max_input = 6000
         if len(raw_outputs) > max_input:
             raw_outputs = raw_outputs[:max_input] + "\n... [truncated]"
@@ -508,14 +499,13 @@ class SimpleLLMClient:
             {
                 "role": "system",
                 "content": (
-                    "You are a penetration testing report summarizer. "
-                    "Given raw tool outputs from a security testing agent, produce a CONCISE summary. "
-                    "Focus on:\n"
-                    "1. Vulnerabilities found (with severity and affected endpoint)\n"
-                    "2. Important observations for subsequent testing agents\n"
-                    "3. Endpoints or parameters that need further investigation\n"
-                    "Do NOT include raw tool output. Keep the summary under 300 words. "
-                    "Use bullet points. Be factual — do not speculate."
+                    "You are a senior penetration tester analyzing security tool outputs. "
+                    "Given raw tool outputs from a security testing agent, produce a structured analysis. "
+                    "For each vulnerability found:\n"
+                    "1. Explain the ROOT CAUSE — why does this vulnerability exist technically?\n"
+                    "2. Explain the IMPACT CHAIN — what can an attacker do step-by-step, and what is the worst case?\n"
+                    "If no vulnerabilities were found, return empty arrays for root_causes and impact_chains. "
+                    "Be specific and technical. Do NOT speculate beyond the evidence."
                 ),
             },
             {
@@ -524,17 +514,74 @@ class SimpleLLMClient:
                     f"Agent: {agent_name}\n\n"
                     f"Current Testing Status:\n{task_tree}\n\n"
                     f"Raw Tool Outputs:\n{raw_outputs}\n\n"
-                    "Produce a concise summary of findings and observations."
+                    "Produce a structured analysis."
                 ),
             },
         ]
+
+        json_schema = {
+            "name": "agent_analysis",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "Concise summary of findings (under 300 words, bullet points)"
+                    },
+                    "root_causes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "finding": {"type": "string"},
+                                "root_cause": {"type": "string"},
+                                "why_it_exists": {"type": "string"}
+                            },
+                            "required": ["finding", "root_cause", "why_it_exists"],
+                            "additionalProperties": False
+                        }
+                    },
+                    "impact_chains": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "finding": {"type": "string"},
+                                "steps": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                },
+                                "worst_case": {"type": "string"}
+                            },
+                            "required": ["finding", "steps", "worst_case"],
+                            "additionalProperties": False
+                        }
+                    }
+                },
+                "required": ["summary", "root_causes", "impact_chains"],
+                "additionalProperties": False
+            }
+        }
+
+        fallback = {"summary": raw_outputs[:1000], "root_causes": [], "impact_chains": []}
+
         try:
-            response = await self.chat_completion(messages, max_tokens=600, temperature=0.3)
-            return self._strip_thinking_tags(response)
+            response = await self.chat_completion(
+                messages,
+                max_tokens=1000,
+                temperature=0.3,
+                response_format={"type": "json_schema", "json_schema": json_schema}
+            )
+            text = self._strip_thinking_tags(response)
+            import json as _json
+            parsed = _json.loads(text)
+            parsed.setdefault("root_causes", [])
+            parsed.setdefault("impact_chains", [])
+            parsed.setdefault("summary", "")
+            return parsed
         except Exception as e:
             print(f"[SimpleLLMClient] summarize_agent_findings failed: {e}")
-            # Fallback: return truncated raw output
-            return raw_outputs[:1000]
+            return fallback
 
     async def analyze_all_findings(
         self,
