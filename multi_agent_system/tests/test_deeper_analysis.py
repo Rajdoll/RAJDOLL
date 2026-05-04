@@ -99,3 +99,110 @@ async def test_summarize_fallback_on_llm_failure(llm_client):
     assert "summary" in result
     assert result["root_causes"] == []
     assert result["impact_chains"] == []
+
+
+# ── Orchestrator tests ────────────────────────────────────────────────────────
+
+def _make_fake_orchestrator(mock_llm, writes):
+    """Construct a minimal Orchestrator instance for unit testing."""
+    import asyncio
+
+    class FakeContextManager:
+        def write(self, key, value):
+            writes[key] = value
+        def read(self, key):
+            return writes.get(key)
+
+    with patch("multi_agent_system.orchestrator.build_task_tree", return_value=""), \
+         patch.object(
+             __import__("multi_agent_system.orchestrator", fromlist=["Orchestrator"]).Orchestrator,
+             "_collect_agent_findings_text", return_value="raw findings text"
+         ), \
+         patch.object(
+             __import__("multi_agent_system.orchestrator", fromlist=["Orchestrator"]).Orchestrator,
+             "_get_llm_summarizer", return_value=mock_llm
+         ), \
+         patch.object(
+             __import__("multi_agent_system.orchestrator", fromlist=["Orchestrator"]).Orchestrator,
+             "_ensure_event_loop", return_value=asyncio.new_event_loop()
+         ):
+        from multi_agent_system.orchestrator import Orchestrator
+        orc = object.__new__(Orchestrator)
+        orc.job_id = 1
+        orc.cumulative_summary = ""
+        orc._timing_summarization_s = 0.0
+        orc.context_manager = FakeContextManager()
+        return orc
+
+
+def test_orchestrator_stores_agent_analyses_in_shared_context():
+    """_summarize_agent_and_accumulate must write agent_analyses to SharedContext."""
+    import asyncio
+
+    mock_llm = MagicMock()
+    mock_llm.summarize_agent_findings = AsyncMock(return_value={
+        "summary": "SQL injection found.",
+        "root_causes": [{"finding": "SQLi", "root_cause": "Raw query", "why_it_exists": "No ORM"}],
+        "impact_chains": [{"finding": "SQLi", "steps": ["Dump DB"], "worst_case": "Full DB access"}]
+    })
+
+    writes = {}
+
+    with patch("multi_agent_system.orchestrator.build_task_tree", return_value=""), \
+         patch("multi_agent_system.orchestrator.Orchestrator._collect_agent_findings_text", return_value="raw"), \
+         patch("multi_agent_system.orchestrator.Orchestrator._get_llm_summarizer", return_value=mock_llm), \
+         patch("multi_agent_system.orchestrator.Orchestrator._ensure_event_loop", return_value=asyncio.new_event_loop()):
+
+        from multi_agent_system.orchestrator import Orchestrator
+
+        class FakeContextManager:
+            def write(self, key, value): writes[key] = value
+            def read(self, key): return writes.get(key)
+
+        orc = object.__new__(Orchestrator)
+        orc.job_id = 1
+        orc.cumulative_summary = ""
+        orc._timing_summarization_s = 0.0
+        orc.context_manager = FakeContextManager()
+        orc._summarize_agent_and_accumulate("InputValidationAgent")
+
+    assert "agent_analyses" in writes, "agent_analyses must be written to SharedContext"
+    assert "InputValidationAgent" in writes["agent_analyses"]
+    analysis = writes["agent_analyses"]["InputValidationAgent"]
+    assert "root_causes" in analysis
+    assert "impact_chains" in analysis
+    assert len(analysis["root_causes"]) == 1
+
+
+def test_orchestrator_cumulative_summary_still_gets_text():
+    """cumulative_summary must still accumulate summary text (backward compat)."""
+    import asyncio
+
+    mock_llm = MagicMock()
+    mock_llm.summarize_agent_findings = AsyncMock(return_value={
+        "summary": "XSS found at /search.",
+        "root_causes": [],
+        "impact_chains": []
+    })
+
+    writes = {}
+
+    with patch("multi_agent_system.orchestrator.build_task_tree", return_value=""), \
+         patch("multi_agent_system.orchestrator.Orchestrator._collect_agent_findings_text", return_value="raw"), \
+         patch("multi_agent_system.orchestrator.Orchestrator._get_llm_summarizer", return_value=mock_llm), \
+         patch("multi_agent_system.orchestrator.Orchestrator._ensure_event_loop", return_value=asyncio.new_event_loop()):
+
+        from multi_agent_system.orchestrator import Orchestrator
+
+        class FakeContextManager:
+            def write(self, key, value): writes[key] = value
+            def read(self, key): return writes.get(key)
+
+        orc = object.__new__(Orchestrator)
+        orc.job_id = 1
+        orc.cumulative_summary = ""
+        orc._timing_summarization_s = 0.0
+        orc.context_manager = FakeContextManager()
+        orc._summarize_agent_and_accumulate("ClientSideAgent")
+
+    assert "XSS found at /search." in writes.get("cumulative_summary", "")

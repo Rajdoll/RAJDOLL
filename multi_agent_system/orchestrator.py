@@ -653,29 +653,37 @@ class Orchestrator:
 		task_tree = build_task_tree(self.job_id)
 		summarizer = self._get_llm_summarizer()
 
-		summary = raw_text[:1500]  # fallback
+		analysis = {"summary": raw_text[:1500], "root_causes": [], "impact_chains": []}  # fallback
 		if summarizer:
 			import time as _time
 			loop = self._ensure_event_loop()
 			try:
 				_t_sum_start = _time.monotonic()
-				summary = loop.run_until_complete(
+				analysis = loop.run_until_complete(
 					asyncio.wait_for(
 						summarizer.summarize_agent_findings(agent_name, raw_text, task_tree),
 						timeout=300,  # 5 min max for summarization (Qwen 3-4B on 4GB VRAM)
 					)
 				)
 				self._timing_summarization_s += _time.monotonic() - _t_sum_start
-				print(f"[Orchestrator] Summarized {agent_name} ({len(summary)} chars)")
+				print(f"[Orchestrator] Summarized {agent_name} ({len(analysis.get('summary', ''))} chars)")
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: LLM summarization failed for {agent_name}: {e}")
-				# fallback already set above
 
-		# Accumulate
+		summary = analysis.get("summary", "") if isinstance(analysis, dict) else str(analysis)
+
+		# Accumulate summary text (backward compatible)
 		self.cumulative_summary += f"\n\n--- {agent_name} ---\n{summary}"
-		# Persist to shared context so agents can read it
 		self.context_manager.write("cumulative_summary", self.cumulative_summary)
 		self.context_manager.write("task_tree", task_tree)
+
+		# Store enriched analysis per agent
+		existing_analyses = self.context_manager.read("agent_analyses") or {}
+		existing_analyses[agent_name] = {
+			"root_causes": analysis.get("root_causes", []) if isinstance(analysis, dict) else [],
+			"impact_chains": analysis.get("impact_chains", []) if isinstance(analysis, dict) else [],
+		}
+		self.context_manager.write("agent_analyses", existing_analyses)
 
 	def _gather_agent_checkpoint_data(self, agent_name: str) -> Dict[str, Any]:
 		"""Collect summary data for an agent checkpoint."""
