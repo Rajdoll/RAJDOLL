@@ -18,6 +18,112 @@ from ..utils.session_manager import SessionManager
 from .modules.directory_scanner import DirectoryScanner
 
 
+# ---------------------------------------------------------------------------
+# Endpoint classification helpers (module-level for easy import)
+# ---------------------------------------------------------------------------
+
+def classify_endpoint(path: str) -> list[str]:
+    """Classify a URL path into business-function categories using keyword heuristics."""
+    tags: list[str] = []
+    p = path.lower()
+
+    if p.endswith(".js"):
+        return ["js_file"]
+    if p.endswith(".css") or p.endswith(".png") or p.endswith(".jpg") or p.endswith(".ico"):
+        return []
+
+    # Login
+    if any(kw in p for kw in ("login", "signin", "sign-in", "auth/login", "authenticate")):
+        tags.append("login")
+    # Registration
+    if any(kw in p for kw in ("register", "signup", "sign-up", "join", "create-account", "create_account")):
+        tags.append("registration")
+    # Password reset
+    if any(kw in p for kw in ("forgot", "reset-password", "reset_password", "recover", "password/reset")):
+        tags.append("password_reset")
+    # Checkout / cart
+    if any(kw in p for kw in ("checkout", "cart", "basket", "payment", "order")):
+        tags.append("checkout")
+    # Feedback / comments
+    if any(kw in p for kw in ("feedback", "comment", "review", "contact", "complaint")):
+        tags.append("feedback")
+    # Upload
+    if any(kw in p for kw in ("upload", "file-upload", "fileupload")):
+        tags.append("upload")
+    # Admin
+    if any(kw in p for kw in ("admin", "dashboard", "management")):
+        tags.append("admin")
+    # Search
+    if "search" in p:
+        tags.append("search")
+    # API / data endpoints
+    if "/api/" in p or "/rest/" in p or p.endswith(".json"):
+        tags.append("api")
+        if not any(t in tags for t in ("login", "registration", "password_reset", "checkout", "feedback", "upload", "admin", "search")):
+            tags.append("data")
+
+    return tags
+
+
+def build_classified_payload(endpoints: list[dict]) -> dict:
+    """Build the full discovered_endpoints payload with both legacy type-based
+    and new business-function classifications."""
+    classified: dict = {
+        "endpoints": endpoints,
+        "count": len(endpoints),
+        "api_endpoints": [],
+        "admin_endpoints": [],
+        "search_endpoints": [],
+        "upload_endpoints": [],
+        "js_files": [],
+        "forms": [],
+        "xhr_endpoints": [],
+        "login_endpoints": [],
+        "registration_endpoints": [],
+        "password_reset_endpoints": [],
+        "data_endpoints": [],
+        "file_endpoints": [],
+        "checkout_endpoints": [],
+        "feedback_endpoints": [],
+    }
+
+    for ep in endpoints:
+        path = ep.get("endpoint", ep.get("url", ""))
+        tags = classify_endpoint(path)
+        ep_type = ep.get("type", "other")
+
+        if ep_type == "api" or "api" in tags:
+            classified["api_endpoints"].append(ep)
+        if ep_type == "admin" or "admin" in tags:
+            classified["admin_endpoints"].append(ep)
+        if ep_type == "search" or "search" in tags:
+            classified["search_endpoints"].append(ep)
+        if ep_type == "upload" or "upload" in tags:
+            classified["upload_endpoints"].append(ep)
+            classified["file_endpoints"].append(ep)
+        if ep_type == "js_file" or "js_file" in tags:
+            classified["js_files"].append(ep)
+        if ep_type == "form":
+            classified["forms"].append(ep)
+        if ep_type == "xhr":
+            classified["xhr_endpoints"].append(ep)
+
+        if "login" in tags:
+            classified["login_endpoints"].append(ep)
+        if "registration" in tags:
+            classified["registration_endpoints"].append(ep)
+        if "password_reset" in tags:
+            classified["password_reset_endpoints"].append(ep)
+        if "data" in tags:
+            classified["data_endpoints"].append(ep)
+        if "checkout" in tags:
+            classified["checkout_endpoints"].append(ep)
+        if "feedback" in tags:
+            classified["feedback_endpoints"].append(ep)
+
+    return classified
+
+
 @AgentRegistry.register("ReconnaissanceAgent")
 class ReconnaissanceAgent(BaseAgent):
     disable_hitl: ClassVar[bool] = True
@@ -384,11 +490,7 @@ Operate autonomously without human guidance.
                     "requires_auth": True, "source": "auth_link"
                 })
         all_eps = existing_eps + new_eps
-        updated = {
-            "endpoints": all_eps, "count": len(all_eps),
-            "api_endpoints": [e for e in all_eps if e.get("type") == "api"],
-            "admin_endpoints": [e for e in all_eps if e.get("type") == "admin"],
-        }
+        updated = build_classified_payload(list(all_eps))
         self.write_context("discovered_endpoints", updated)
         baseline_snapshot["discovered_endpoints"] = updated
         self.log("info", f"[Recon] discovered_endpoints now has {len(all_eps)} total endpoints ({len(new_eps)} from auth links)")
@@ -949,13 +1051,7 @@ Operate autonomously without human guidance.
         unique_endpoints = list(unique_endpoints)
 
         # Update shared context with combined endpoints
-        payload = {
-            "endpoints": unique_endpoints,
-            "count": len(unique_endpoints),
-            "api_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "api"],
-            "admin_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "admin"],
-            "search_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "search"],
-        }
+        payload = build_classified_payload(list(unique_endpoints))
         self.write_context("discovered_endpoints", payload)
         snapshot["discovered_endpoints"] = payload
 
@@ -1042,15 +1138,8 @@ Operate autonomously without human guidance.
         unique_endpoints = list(unique_endpoints)
 
         # Update shared context with combined endpoints
-        payload = {
-            "endpoints": unique_endpoints,
-            "count": len(unique_endpoints),
-            "api_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "api"],
-            "admin_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "admin"],
-            "search_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "search"],
-            "upload_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "upload"],
-            "stats": dirsearch_data.get("stats", {})
-        }
+        payload = build_classified_payload(list(unique_endpoints))
+        payload["stats"] = dirsearch_data.get("stats", {})
         self.write_context("discovered_endpoints", payload)
         snapshot["discovered_endpoints"] = payload
 
@@ -1141,15 +1230,8 @@ Operate autonomously without human guidance.
         unique_endpoints = list(unique_endpoints)
 
         # Update shared context with combined endpoints
-        payload = {
-            "endpoints": unique_endpoints,
-            "count": len(unique_endpoints),
-            "api_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "api"],
-            "admin_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "admin"],
-            "search_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "search"],
-            "upload_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "upload"],
-            "stats": ferox_data.get("stats", {})
-        }
+        payload = build_classified_payload(list(unique_endpoints))
+        payload["stats"] = ferox_data.get("stats", {})
         self.write_context("discovered_endpoints", payload)
         snapshot["discovered_endpoints"] = payload
 
@@ -1260,16 +1342,7 @@ Operate autonomously without human guidance.
         unique_endpoints = list(unique_endpoints)
 
         # Update shared context with combined endpoints
-        payload = {
-            "endpoints": unique_endpoints,
-            "count": len(unique_endpoints),
-            "api_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "api"],
-            "js_files": [ep for ep in unique_endpoints if ep.get("type") == "js_file"],
-            "forms": [ep for ep in unique_endpoints if ep.get("type") == "form"],
-            "xhr_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "xhr"],
-            "admin_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "admin"],
-            "search_endpoints": [ep for ep in unique_endpoints if ep.get("type") == "search"],
-        }
+        payload = build_classified_payload(list(unique_endpoints))
         self.write_context("discovered_endpoints", payload)
         snapshot["discovered_endpoints"] = payload
 
@@ -1346,12 +1419,7 @@ Operate autonomously without human guidance.
 
             if new_eps:
                 all_eps = existing_list + new_eps
-                updated = {
-                    "endpoints": all_eps,
-                    "count": len(all_eps),
-                    "api_endpoints": [e for e in all_eps if e.get("type") == "api"],
-                    "admin_endpoints": [e for e in all_eps if "admin" in e.get("endpoint", "").lower()],
-                }
+                updated = build_classified_payload(list(all_eps))
                 self.write_context("discovered_endpoints", updated)
                 self.log("info", f"[JS] Merged {len(new_eps)} API endpoints into discovered_endpoints (total now {len(all_eps)})")
 
@@ -1420,12 +1488,7 @@ Operate autonomously without human guidance.
                             })
                     if new_eps:
                         all_eps = existing_list + new_eps
-                        self.write_context("discovered_endpoints", {
-                            "endpoints": all_eps,
-                            "count": len(all_eps),
-                            "api_endpoints": [e for e in all_eps if e.get("type") == "api"],
-                            "admin_endpoints": [e for e in all_eps if "admin" in e.get("endpoint", "").lower()],
-                        })
+                        self.write_context("discovered_endpoints", build_classified_payload(list(all_eps)))
                         self.log("info", f"[JS fallback] Merged {len(new_eps)} API endpoints into discovered_endpoints (total {len(all_eps)})")
                     return  # Done — stop trying more JS files
                 except Exception as exc:
@@ -1453,12 +1516,7 @@ Operate autonomously without human guidance.
         new_eps = [ep for ep in endpoints if ep.get("url", "") not in existing_urls]
         all_eps = existing_eps + new_eps
 
-        payload = {
-            "endpoints": all_eps,
-            "count": len(all_eps),
-            "api_endpoints": [ep for ep in all_eps if "/api" in ep.get("endpoint", "") or "/rest" in ep.get("endpoint", "")],
-            "admin_endpoints": [ep for ep in all_eps if "admin" in ep.get("endpoint", "").lower()],
-        }
+        payload = build_classified_payload(list(all_eps))
         self.write_context("discovered_endpoints", payload)
         baseline_snapshot["discovered_endpoints"] = payload
 
