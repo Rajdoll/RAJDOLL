@@ -1304,9 +1304,8 @@ async def test_vulnerable_components(
 async def test_hidden_endpoints(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CONF-04: Test Hidden Endpoints and Sensitive Paths.
-    Directly checks for known sensitive paths (admin panels, config files, FTP dirs,
+    Directly checks for known sensitive paths (admin panels, config files,
     metrics endpoints, API docs) without relying on ffuf wordlists.
-    Particularly effective against OWASP Juice Shop and similar Node.js apps.
     """
     try:
         findings = []
@@ -1325,26 +1324,14 @@ async def test_hidden_endpoints(url: str, auth_session: Optional[Dict[str, Any]]
         sensitive_paths = [
             # Application endpoints
             ("/metrics", "Prometheus metrics endpoint exposed", "medium"),
-            ("/ftp", "FTP directory listing enabled", "high"),
-            ("/ftp/legal.md", "Confidential document accessible", "medium"),
-            ("/ftp/acquisitions.md", "Confidential acquisition document", "high"),
             ("/support/logs", "Support logs directory accessible", "high"),
             ("/support/logs/access.log", "Access log file exposed", "high"),
             ("/.well-known/security.txt", "Security policy file", "info"),
-            ("/encryptionkeys", "Encryption keys directory", "critical"),
-            ("/encryptionkeys/jwt.pub", "JWT public key exposed", "high"),
             ("/api-docs", "API documentation exposed", "medium"),
             ("/swagger.json", "Swagger/OpenAPI spec exposed", "medium"),
-            ("/api/Challenges", "Challenge API endpoint", "info"),
-            ("/promotion", "Promotion page accessible", "info"),
-            ("/snippets", "Code snippets endpoint", "medium"),
-            ("/tokensale-ico-ea", "Hidden token sale page", "medium"),
-            ("/web3-sandbox", "Web3 sandbox accessible", "medium"),
             # Admin/config
             ("/robots.txt", "Robots.txt accessible", "info"),
             ("/package.json", "Node.js package.json exposed", "high"),
-            ("/rest/admin/application-version", "Application version disclosure", "low"),
-            ("/rest/admin/application-configuration", "App config disclosure", "high"),
         ]
 
         async with httpx.AsyncClient(**req_kwargs) as client:
@@ -1364,21 +1351,6 @@ async def test_hidden_endpoints(url: str, auth_session: Optional[Dict[str, Any]]
                             "description": description,
                             "evidence": content[:300],
                         }
-
-                        # Special handling for /ftp: parse directory listing
-                        if path == "/ftp":
-                            try:
-                                dir_listing = json.loads(resp.text)
-                                if isinstance(dir_listing, list):
-                                    file_names = [
-                                        item.get("name", str(item)) if isinstance(item, dict) else str(item)
-                                        for item in dir_listing
-                                    ]
-                                    finding["files_found"] = file_names
-                                    finding["description"] = f"FTP directory listing enabled — {len(file_names)} file(s): {', '.join(file_names[:10])}"
-                            except (json.JSONDecodeError, TypeError):
-                                # Not JSON, might be HTML directory listing
-                                finding["description"] = "FTP directory listing enabled (non-JSON response)"
 
                         findings.append(finding)
                 except Exception:
@@ -1430,7 +1402,7 @@ async def test_npm_vulnerabilities(url: str, auth_session: Optional[Dict[str, An
 
         async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True, headers=headers) as client:
             # 1. Try to access package.json
-            package_json_paths = ["/package.json", "/ftp/package.json.bak", "/.package.json"]
+            package_json_paths = ["/package.json", "/.package.json", "/package.json.bak"]
             for path in package_json_paths:
                 try:
                     resp = await client.get(f"{base_url}{path}")
