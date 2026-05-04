@@ -2,7 +2,7 @@
 Authenticated Session Manager for Multi-Agent Security Testing
 
 Handles:
-- Auto-login to web applications (Juice Shop, DVWA, etc.)
+- Auto-login to web applications
 - Session cookie persistence across agents
 - Multi-user credential testing
 - Token refresh and session validation
@@ -20,35 +20,16 @@ class SessionManager:
     
     # Common default credentials to test (order matters - try most likely first)
     DEFAULT_CREDENTIALS = [
-        # Juice Shop defaults (common in CTF/training apps)
-        {"username": "admin@juice-sh.op", "password": "admin123"},
-        {"username": "jim@juice-sh.op", "password": "ncc-1701"},
-        {"username": "bender@juice-sh.op", "password": "OhG0dPlease1nsertLiquor!"},
-        {"username": "test@test.com", "password": "test"},
-        {"username": "demo@demo.com", "password": "demo"},
-        # DVWA specific
-        {"username": "admin", "password": "password"},
-        {"username": "gordonb", "password": "abc123"},
-        {"username": "1337", "password": "charley"},
-        {"username": "pablo", "password": "letmein"},
-        {"username": "smithy", "password": "password"},
-        # Generic defaults
         {"username": "admin", "password": "admin"},
         {"username": "admin", "password": "admin123"},
+        {"username": "admin", "password": "password"},
         {"username": "test", "password": "test"},
+        {"username": "test", "password": "test123"},
         {"username": "user", "password": "user"},
         {"username": "demo", "password": "demo"},
+        {"username": "guest", "password": "guest"},
     ]
-    
-    # Juice Shop specific endpoints
-    JUICE_SHOP_PATTERNS = {
-        "login_endpoint": "/rest/user/login",
-        "register_endpoint": "/api/Users/",
-        "feedback_endpoint": "/api/Feedbacks/",
-        "product_review": "/rest/products/{id}/reviews",
-        "admin_endpoints": ["/administration", "/rest/admin/application-configuration"],
-    }
-    
+
     def __init__(self, target_url: str):
         self.target_url = target_url.rstrip('/')
         self.sessions: Dict[str, Dict[str, Any]] = {}  # username -> session data
@@ -57,62 +38,13 @@ class SessionManager:
         self.logged_in = False
         
     async def detect_application_type(self) -> str:
-        """Detect if target is Juice Shop, DVWA, or generic"""
-        try:
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True, verify=False) as client:
-                resp = await client.get(self.target_url)
-                html = resp.text.lower()
-                
-                # Check Juice Shop signatures
-                if "juice shop" in html or "juice-shop" in html or "/rest/user/login" in html:
-                    return "juice-shop"
-                
-                # Check DVWA signatures
-                if "dvwa" in html or "damn vulnerable web application" in html:
-                    return "dvwa"
-                
-                # Check common frameworks
-                if "wordpress" in html:
-                    return "wordpress"
-                if "drupal" in html:
-                    return "drupal"
-                
-                return "generic"
-        except Exception:
-            return "generic"
+        """Detect application type from response. Returns generic type."""
+        return "generic"
     
     async def discover_login_forms(self) -> List[Dict[str, Any]]:
         """Discover login forms and API endpoints"""
         login_forms = []
-        
-        # PRIORITY: Check for known applications first
-        app_type = await self.detect_application_type()
-        
-        # Juice Shop: Use JSON API directly (SPA doesn't have HTML form)
-        if app_type == "juice-shop":
-            login_forms.append({
-                "url": urljoin(self.target_url, "/rest/user/login"),
-                "type": "json_api",
-                "fields": {"email": "", "password": ""},
-                "method": "POST"
-            })
-            self.log_message = f"Detected Juice Shop - using API login"
-            return login_forms
-        
-        # DVWA: Known login form
-        if app_type == "dvwa":
-            login_forms.append({
-                "url": urljoin(self.target_url, "/login.php"),
-                "type": "html_form",
-                "action": urljoin(self.target_url, "/login.php"),
-                "fields": {
-                    "username_field": "username",
-                    "password_field": "password"
-                },
-                "method": "POST"
-            })
-            return login_forms
-        
+
         try:
             async with httpx.AsyncClient(timeout=15, follow_redirects=True, verify=False) as client:
                 # Try common login paths for generic apps
@@ -148,7 +80,7 @@ class SessionManager:
                                     "method": "POST"
                                 })
                             
-                            # JSON API detection (Juice Shop style)
+                            # JSON API detection
                             elif 'application/json' in resp.headers.get('content-type', ''):
                                 login_forms.append({
                                     "url": url,
@@ -217,7 +149,7 @@ class SessionManager:
             ) as client:
                 
                 if login_form['type'] == 'json_api':
-                    # JSON API login (Juice Shop)
+                    # JSON API login
                     headers = {'Content-Type': 'application/json'}
                     data = {
                         'email': credentials.get('username', credentials.get('email')),
@@ -235,7 +167,7 @@ class SessionManager:
                         try:
                             json_resp = resp.json()
                             
-                            # Extract JWT token (Juice Shop)
+                            # Extract JWT token
                             token = json_resp.get('authentication', {}).get('token')
                             if token:
                                 return {
@@ -259,7 +191,7 @@ class SessionManager:
                         }
                 
                 elif login_form['type'] == 'html_form':
-                    # HTML form login (DVWA, generic)
+                    # HTML form login
                     fields = login_form.get('fields', {})
                     
                     form_data = {
@@ -355,7 +287,7 @@ class SessionManager:
                     })
                     
                     # Don't test all credentials if we got admin
-                    if username in ['admin', 'admin@juice-sh.op']:
+                    if username == 'admin':
                         break
                 else:
                     results['failed_attempts'] += 1
