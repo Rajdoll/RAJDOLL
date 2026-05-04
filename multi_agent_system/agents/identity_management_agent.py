@@ -56,6 +56,16 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
             self.log("error", "Target missing; aborting IdentityManagementAgent")
             return
 
+        # Read discovered endpoints from SharedContext
+        endpoints_data = self.shared_context.get("discovered_endpoints", {})
+        register_eps = endpoints_data.get("registration_endpoints", [])
+        login_eps = endpoints_data.get("login_endpoints", [])
+        data_eps = endpoints_data.get("data_endpoints", []) + endpoints_data.get("api_endpoints", [])
+
+        def _pick_urls(eps, fallback=target):
+            urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
+            return urls if urls else [fallback]
+
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
 
@@ -97,21 +107,22 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
 
         # Test registration process
         if self.should_run_tool("test_user_registration"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="identity-management-testing",
-                        tool="test_user_registration",
-                        args={"register_url": target + "/api/Users"}, auth_session=auth_data), timeout=150
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    findings = data.get("findings", [])
-                    vuln_count = data.get("vulnerabilities_found", 0)
-                    if findings and vuln_count > 0:
-                        self.add_finding("WSTG-IDNT", f"User registration bypasses: {vuln_count} vulnerability(ies)", severity="medium", evidence={"findings": findings[:2]})
-            except Exception as e:
-                self.log("warning", f"test_user_registration failed: {e}")
+            for reg_url in _pick_urls(register_eps)[:2]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="identity-management-testing",
+                            tool="test_user_registration",
+                            args={"register_url": reg_url}, auth_session=auth_data), timeout=150
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        findings = data.get("findings", [])
+                        vuln_count = data.get("vulnerabilities_found", 0)
+                        if findings and vuln_count > 0:
+                            self.add_finding("WSTG-IDNT", f"User registration bypasses: {vuln_count} vulnerability(ies)", severity="medium", evidence={"findings": findings[:2]})
+                except Exception as e:
+                    self.log("warning", f"test_user_registration failed: {e}")
 
         # Test account provisioning
         if self.should_run_tool("test_account_provisioning"):
@@ -133,32 +144,33 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
 
         # Test account enumeration
         if self.should_run_tool("test_account_enumeration"):
-            try:
-                # Generate test plan for account enumeration
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="identity-management-testing",
-                        tool="test_account_enumeration",
-                        args={
-                            "url": target + "/login",
-                            "form_selector": "form",
-                            "username_field_selector": "input[name='username'], input[name='email']",
-                            "submit_button_selector": "button[type='submit']",
-                            "error_message_selector": ".error, .alert",
-                            "usernames_to_test": ["admin", "test", "user"]
-                        },
-                        auth_session=auth_data
-                    ),
-                    timeout=90
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    test_plan = data.get("test_plan", {})
-                    if test_plan:
-                        self.shared_context["account_enumeration_plan"] = test_plan
-                        self.log("info", f"Account enumeration test plan created with {len(test_plan.get('steps', []))} steps")
-            except Exception as e:
-                self.log("warning", f"test_account_enumeration failed: {e}")
+            for login_url in _pick_urls(login_eps)[:2]:
+                try:
+                    # Generate test plan for account enumeration
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="identity-management-testing",
+                            tool="test_account_enumeration",
+                            args={
+                                "url": login_url,
+                                "form_selector": "form",
+                                "username_field_selector": "input[name='username'], input[name='email']",
+                                "submit_button_selector": "button[type='submit']",
+                                "error_message_selector": ".error, .alert",
+                                "usernames_to_test": ["admin", "test", "user"]
+                            },
+                            auth_session=auth_data
+                        ),
+                        timeout=90
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        test_plan = data.get("test_plan", {})
+                        if test_plan:
+                            self.shared_context["account_enumeration_plan"] = test_plan
+                            self.log("info", f"Account enumeration test plan created with {len(test_plan.get('steps', []))} steps")
+                except Exception as e:
+                    self.log("warning", f"test_account_enumeration failed: {e}")
 
         # OPSI B: Username policy testing
         if self.should_run_tool("test_username_policy"):

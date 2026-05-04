@@ -157,6 +157,17 @@ Write to shared_context:
 		# Log tool execution plan based on LLM selection
 		self.log_tool_execution_plan()
 
+		# --- Read discovered endpoints from SharedContext (set by ReconnaissanceAgent) ---
+		endpoints_data = self.shared_context.get("discovered_endpoints", {})
+		login_eps = endpoints_data.get("login_endpoints", [])
+		reset_eps = endpoints_data.get("password_reset_endpoints", [])
+		register_eps = endpoints_data.get("registration_endpoints", [])
+
+		def _pick_urls(eps, fallback=target):
+			"""Extract URL strings from endpoint entries; fall back to target if empty."""
+			urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
+			return urls if urls else [fallback]
+
 		# Quick passive checks on the login form HTML (CSRF, method, autocomplete)
 		try:
 			import httpx, re
@@ -224,35 +235,34 @@ Write to shared_context:
 		# OPSI B: Account Lockout Mechanism
 		if self.should_run_tool("test_lockout_mechanism"):
 			try:
-				login_url = target if '/login' in target else f"{target}/login"
-				res = await self.run_tool_with_timeout(
-					client.call_tool(
-						server="authentication-testing",
-						tool="test_lockout_mechanism",
-						args={"login_url": login_url, "username": "testuser", "wrong_password": "wrongpass123", "attempts": 6}, auth_session=auth_data
-					),
-					timeout=45
-				)
-				if isinstance(res, dict) and res.get("status") == "success":
-					data = res.get("data", {})
-					if not data.get("lockout_detected") and not data.get("rate_limiting_suspected"):
-						# Sanitize lockout evidence - ensure serializable
-						attempts = data.get("total_attempts")
-						safe_attempts = int(attempts) if isinstance(attempts, (int, float)) else str(attempts) if attempts is not None else "unknown"
-						self.add_finding("WSTG-ATHN", "No account lockout or rate limiting detected", severity="high",
-									   evidence={"attempts_allowed": safe_attempts})
-					elif data.get("rate_limiting_suspected"):
-						self.add_finding("WSTG-ATHN", "Rate limiting detected (good security)", severity="info",
-									   evidence={"mechanism": "rate_limiting"})
+				for login_url in _pick_urls(login_eps):
+					res = await self.run_tool_with_timeout(
+						client.call_tool(
+							server="authentication-testing",
+							tool="test_lockout_mechanism",
+							args={"login_url": login_url, "username": "testuser", "wrong_password": "wrongpass123", "attempts": 6}, auth_session=auth_data
+						),
+						timeout=45
+					)
+					if isinstance(res, dict) and res.get("status") == "success":
+						data = res.get("data", {})
+						if not data.get("lockout_detected") and not data.get("rate_limiting_suspected"):
+							# Sanitize lockout evidence - ensure serializable
+							attempts = data.get("total_attempts")
+							safe_attempts = int(attempts) if isinstance(attempts, (int, float)) else str(attempts) if attempts is not None else "unknown"
+							self.add_finding("WSTG-ATHN", "No account lockout or rate limiting detected", severity="high",
+										   evidence={"attempts_allowed": safe_attempts})
+						elif data.get("rate_limiting_suspected"):
+							self.add_finding("WSTG-ATHN", "Rate limiting detected (good security)", severity="info",
+										   evidence={"mechanism": "rate_limiting"})
 			except Exception as e:
 				self.log("warning", f"test_lockout_mechanism failed: {e}")
 
 		# OPSI B: Security Questions Weakness
 		if self.should_run_tool("test_security_questions"):
 			try:
-				# Check common security question endpoints
-				for path in ["/forgot-password", "/reset-password", "/security-question"]:
-					sec_q_url = f"{target.rstrip('/')}{path}"
+				# Use discovered reset + login endpoints instead of hardcoded paths
+				for sec_q_url in _pick_urls(reset_eps + login_eps):
 					res = await self.run_tool_with_timeout(
 						client.call_tool(
 							server="authentication-testing",
@@ -275,32 +285,32 @@ Write to shared_context:
 				self.log("warning", f"test_security_questions failed: {e}")
 		if self.should_run_tool("test_password_reset"):
 			try:
-				reset_url = f"{target.rstrip('/')}/reset-password"
-				res = await self.run_tool_with_timeout(
-					client.call_tool(
-						server="authentication-testing",
-						tool="test_password_reset",
-						args={"reset_url": reset_url, "email": "test@example.com"}, auth_session=auth_data
-					),
-					timeout=40
-				)
-				if isinstance(res, dict) and res.get("status") == "success":
-					data = res.get("data", {})
-					if data.get("vulnerabilities_found", 0) > 0:
-						for finding in data.get("findings", []):
-							severity_map = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
-							# Sanitize finding to remove unhashable objects
-							safe_evidence = {"description": finding.get("description", ""), "severity": finding.get("severity", "medium")}
-							self.add_finding("WSTG-ATHN", f"Password reset: {finding.get('description')}", 
-										   severity=severity_map.get(finding.get("severity"), "medium"),
-										   evidence=safe_evidence)
+				for reset_url in _pick_urls(reset_eps):
+					res = await self.run_tool_with_timeout(
+						client.call_tool(
+							server="authentication-testing",
+							tool="test_password_reset",
+							args={"reset_url": reset_url, "email": "test@example.com"}, auth_session=auth_data
+						),
+						timeout=40
+					)
+					if isinstance(res, dict) and res.get("status") == "success":
+						data = res.get("data", {})
+						if data.get("vulnerabilities_found", 0) > 0:
+							for finding in data.get("findings", []):
+								severity_map = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
+								# Sanitize finding to remove unhashable objects
+								safe_evidence = {"description": finding.get("description", ""), "severity": finding.get("severity", "medium")}
+								self.add_finding("WSTG-ATHN", f"Password reset: {finding.get('description')}",
+											   severity=severity_map.get(finding.get("severity"), "medium"),
+											   evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_password_reset failed: {e}")
 
 		# WSTG-ATHN-07: Test password policy strength
 		if self.should_run_tool("test_password_policy"):
 			try:
-				register_targets = self._select_tool_targets("test_password_policy", target)
+				register_targets = _pick_urls(register_eps)
 				for reg_url in register_targets:
 					self.log("info", f"🔍 Testing password policy at: {reg_url}")
 					result = await self.execute_tool(
