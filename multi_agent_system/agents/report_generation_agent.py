@@ -50,6 +50,9 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 		# Get job metadata
 		job_metadata = await self._get_job_metadata(job_id)
 		
+		# Root cause and impact chain analysis per agent
+		agent_analyses = shared_context.get("agent_analyses", {})
+
 		# Build report structure
 		report = {
 			"metadata": {
@@ -61,7 +64,8 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 			"introduction": self._build_introduction(target, job_metadata),
 			"executive_summary": await self._build_executive_summary(findings, shared_context),
 			"findings": self._build_findings_section(findings),
-			"appendices": self._build_appendices(shared_context, job_metadata)
+			"appendices": self._build_appendices(shared_context, job_metadata),
+			"agent_analyses": agent_analyses,
 		}
 		
 		# Store report in shared context
