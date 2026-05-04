@@ -51,7 +51,7 @@ class SessionManager:
                 login_paths = [
                     "/", "/login", "/login.php", "/signin", "/auth",
                     "/user/login", "/admin/login", "/wp-login.php",
-                    "/rest/user/login", "/api/login", "/api/auth/login"
+                    "/api/v1/login", "/api/login", "/api/auth/login"
                 ]
                 
                 for path in login_paths:

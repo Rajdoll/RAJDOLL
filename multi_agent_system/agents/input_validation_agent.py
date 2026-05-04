@@ -285,7 +285,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         common_subpaths = ["search", "list", "reviews", "items", "details", "filter", "query"]
 
         for url in list(discovered_urls):  # Iterate over copy to avoid modification during iteration
-            # If we found /rest/products or /api/products, also test /rest/products/search, etc.
+            # If we found a products/items endpoint, also test search/list subpaths
             if any(base in url for base in ["/products", "/items", "/catalog", "/api/", "/rest/"]):
                 for subpath in common_subpaths:
                     combined_url = f"{url.rstrip('/')}/{subpath}"
@@ -1900,11 +1900,10 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         generic_patterns = {
             'sqli': [
                 # Authentication endpoints (SQLi bypass risk)
-                {'pattern': '/rest/user/login', 'data': {'email': 'test@test.com', 'password': 'test'}, 'priority': 1},
                 {'pattern': '/api/user/login', 'data': {'email': 'test@test.com', 'password': 'test'}, 'priority': 1},
                 {'pattern': '/api/auth/login', 'data': {'username': 'test', 'password': 'test'}, 'priority': 1},
+                {'pattern': '/api/v1/login', 'data': {'username': 'test', 'password': 'test'}, 'priority': 1},
                 # Search endpoints (high SQLi risk)
-                {'pattern': '/rest/products/search', 'data': {'q': 'test'}, 'priority': 2},
                 {'pattern': '/api/products/search', 'data': {'q': 'test'}, 'priority': 2},
                 {'pattern': '/rest/search', 'data': {'query': 'test'}, 'priority': 2},
                 {'pattern': '/api/search', 'data': {'query': 'test'}, 'priority': 2},
@@ -1921,7 +1920,6 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
                 {'pattern': '/api/reviews', 'data': {'review': 'test', 'rating': 5}, 'priority': 2},
                 {'pattern': '/rest/reviews', 'data': {'review': 'test'}, 'priority': 2},
                 # Search (reflected XSS risk)
-                {'pattern': '/rest/products/search', 'data': {'q': 'test'}, 'priority': 2},
                 {'pattern': '/api/products/search', 'data': {'q': 'test'}, 'priority': 2},
                 # Profile endpoints
                 {'pattern': '/api/profile', 'data': {'username': 'test', 'bio': 'test'}, 'priority': 3},
