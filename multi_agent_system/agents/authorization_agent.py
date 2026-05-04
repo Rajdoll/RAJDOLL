@@ -166,14 +166,24 @@ Write to shared_context:
             self.log("error", "Target missing; aborting AuthorizationAgent")
             return
 
+        # --- Read discovered endpoints from SharedContext (no hardcoded paths) ---
+        endpoints_data = self.shared_context.get("discovered_endpoints", {})
+        admin_eps = endpoints_data.get("admin_endpoints", [])
+        data_eps = endpoints_data.get("data_endpoints", []) + endpoints_data.get("api_endpoints", [])
+
+        def _pick_urls(eps, fallback=target):
+            """Extract URL strings from endpoint entries (dict or str)."""
+            urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
+            return urls if urls else [fallback]
+
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
 
         # Test vertical privilege escalation
         if self.should_run_tool("test_vertical_privilege_escalation"):
             try:
-                # Requires admin URLs and low-priv session
-                admin_urls = self.shared_context.get("admin_urls", [f"{target}/admin", f"{target}/administration"])
+                # Use admin endpoints discovered by recon (falls back to target root)
+                admin_urls = _pick_urls(admin_eps, fallback=f"{target}/admin")
                 low_priv_session = auth_data or {}
                 res = await self.run_tool_with_timeout(
                     client.call_tool(
@@ -193,20 +203,24 @@ Write to shared_context:
         # Test IDOR vulnerability
         if self.should_run_tool("test_idor_vulnerability"):
             try:
-                # Example: test user profile endpoints
-                base_url = f"{target}/api/users/{{ID}}/profile"
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="authorization-testing",
-                        tool="test_idor_vulnerability",
-                        args={"base_url_with_placeholder": base_url, "session": auth_data or {}, "start_id": 1, "count": 5},
-                        auth_session=auth_data
+                # Test IDOR across discovered data/API endpoints (no hardcoded paths)
+                idor_urls = _pick_urls(data_eps, fallback=f"{target}/api/users/{{ID}}")
+                for base_url in idor_urls:
+                    # Ensure the URL contains an {ID} placeholder for the tool
+                    if "{ID}" not in base_url:
+                        base_url = base_url.rstrip("/") + "/{ID}"
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="authorization-testing",
+                            tool="test_idor_vulnerability",
+                            args={"base_url_with_placeholder": base_url, "session": auth_data or {}, "start_id": 1, "count": 5},
+                            auth_session=auth_data
+                        )
                     )
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    exposed = res.get("data", {}).get("exposed_ids", [])
-                    if exposed:
-                        self.add_finding("WSTG-ATHZ-02", "IDOR vulnerability detected", severity="high", evidence={"exposed_ids": exposed})
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        exposed = res.get("data", {}).get("exposed_ids", [])
+                        if exposed:
+                            self.add_finding("WSTG-ATHZ-02", f"IDOR vulnerability detected on {base_url}", severity="high", evidence={"exposed_ids": exposed})
             except Exception as e:
                 self.log("warning", f"test_idor_vulnerability failed: {e}")
 
