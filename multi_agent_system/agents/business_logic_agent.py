@@ -190,6 +190,18 @@ Write to shared_context:
             self.log("error", "Target missing; aborting BusinessLogicAgent")
             return
 
+        # Read discovered endpoints from SharedContext for dynamic URL selection
+        endpoints_data = self.shared_context.get("discovered_endpoints", {})
+        checkout_eps = endpoints_data.get("checkout_endpoints", [])
+        data_eps = endpoints_data.get("data_endpoints", []) + endpoints_data.get("api_endpoints", [])
+        feedback_eps = endpoints_data.get("feedback_endpoints", [])
+        login_eps = endpoints_data.get("login_endpoints", [])
+        upload_eps = endpoints_data.get("upload_endpoints", [])
+
+        def _pick_urls(eps, fallback=target):
+            urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
+            return urls if urls else [fallback]
+
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
 
@@ -233,39 +245,41 @@ Write to shared_context:
 
         # Test race conditions
         if self.should_run_tool("test_race_conditions"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="business-logic-testing",
-                        tool="test_race_conditions",
-                        args={"target_url": target + "/api/Quantitys"}, auth_session=auth_data), timeout=120
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    findings = data.get("findings", [])
-                    vuln_count = data.get("vulnerabilities_found", 0)
-                    if findings and vuln_count > 0:
-                        self.add_finding("WSTG-BUSL-07", f"Race condition vulnerabilities: {vuln_count} TOCTOU issue(s)", severity="high", evidence={"findings": findings[:2]})
-            except Exception as e:
-                self.log("warning", f"test_race_conditions failed: {e}")
+            for race_url in _pick_urls(data_eps)[:3]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="business-logic-testing",
+                            tool="test_race_conditions",
+                            args={"target_url": race_url}, auth_session=auth_data), timeout=120
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        findings = data.get("findings", [])
+                        vuln_count = data.get("vulnerabilities_found", 0)
+                        if findings and vuln_count > 0:
+                            self.add_finding("WSTG-BUSL-07", f"Race condition vulnerabilities: {vuln_count} TOCTOU issue(s)", severity="high", evidence={"findings": findings[:2]})
+                except Exception as e:
+                    self.log("warning", f"test_race_conditions failed: {e}")
 
         # Test function limits (rate limiting, burst protection)
         if self.should_run_tool("test_function_limits"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="business-logic-testing",
-                        tool="test_function_limits",
-                        args={"target_url": target + "/rest/user/login"}, auth_session=auth_data), timeout=150
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    findings = data.get("findings", [])
-                    vuln_count = data.get("vulnerabilities_found", 0)
-                    if findings and vuln_count > 0:
-                        self.add_finding("WSTG-BUSL-05", f"Function limit bypasses: {vuln_count} rate limit bypass(es)", severity="medium", evidence={"findings": findings[:3]})
-            except Exception as e:
-                self.log("warning", f"test_function_limits failed: {e}")
+            for limit_url in _pick_urls(login_eps)[:2]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="business-logic-testing",
+                            tool="test_function_limits",
+                            args={"target_url": limit_url}, auth_session=auth_data), timeout=150
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        findings = data.get("findings", [])
+                        vuln_count = data.get("vulnerabilities_found", 0)
+                        if findings and vuln_count > 0:
+                            self.add_finding("WSTG-BUSL-05", f"Function limit bypasses: {vuln_count} rate limit bypass(es)", severity="medium", evidence={"findings": findings[:3]})
+                except Exception as e:
+                    self.log("warning", f"test_function_limits failed: {e}")
 
         # PHASE 2.5: Test shopping cart manipulation
         if self.should_run_tool("test_shopping_cart_manipulation"):
@@ -331,109 +345,114 @@ Write to shared_context:
         if self.should_run_tool("test_parameter_tampering"):
             try:
                 # Test removing key parameters from API requests
-                for param in ["price", "quantity", "discount", "total"]:
-                    res = await self.run_tool_with_timeout(
-                        client.call_tool(
-                            server="business-logic-testing",
-                            tool="test_parameter_tampering",
-                            args={"url": target + "/api/Products/1", "param_to_remove": param}, auth_session=auth_data), timeout=60
-                    )
-                    if isinstance(res, dict) and res.get("status") == "success":
-                        data = res.get("data", {})
-                        if data.get("vulnerable"):
-                            self.add_finding("WSTG-BUSL-02", f"Parameter tampering: removing '{param}' bypasses validation", severity="high", evidence=data)
-                            break
+                for tamper_url in _pick_urls(data_eps)[:3]:
+                    for param in ["price", "quantity", "discount", "total"]:
+                        res = await self.run_tool_with_timeout(
+                            client.call_tool(
+                                server="business-logic-testing",
+                                tool="test_parameter_tampering",
+                                args={"url": tamper_url, "param_to_remove": param}, auth_session=auth_data), timeout=60
+                        )
+                        if isinstance(res, dict) and res.get("status") == "success":
+                            data = res.get("data", {})
+                            if data.get("vulnerable"):
+                                self.add_finding("WSTG-BUSL-02", f"Parameter tampering: removing '{param}' bypasses validation", severity="high", evidence=data)
+                                break
             except Exception as e:
                 self.log("warning", f"test_parameter_tampering failed: {e}")
 
         # WSTG-BUSL-02: Mass assignment
         if self.should_run_tool("test_mass_assignment"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="business-logic-testing",
-                        tool="test_mass_assignment",
-                        args={
-                            "url": target + "/api/Users/1",
-                            "method": "PUT",
-                            "valid_data": {"email": "test@test.com"},
-                            "evil_params": {"role": "admin", "isAdmin": True}
-                        }, auth_session=auth_data), timeout=60
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    if data.get("vulnerable"):
-                        self.add_finding("WSTG-BUSL-02", "Mass assignment: privileged fields accepted", severity="critical", evidence=data)
-            except Exception as e:
-                self.log("warning", f"test_mass_assignment failed: {e}")
+            for mass_url in _pick_urls(data_eps)[:3]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="business-logic-testing",
+                            tool="test_mass_assignment",
+                            args={
+                                "url": mass_url,
+                                "method": "PUT",
+                                "valid_data": {"email": "test@test.com"},
+                                "evil_params": {"role": "admin", "isAdmin": True}
+                            }, auth_session=auth_data), timeout=60
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        if data.get("vulnerable"):
+                            self.add_finding("WSTG-BUSL-02", "Mass assignment: privileged fields accepted", severity="critical", evidence=data)
+                except Exception as e:
+                    self.log("warning", f"test_mass_assignment failed: {e}")
 
         # WSTG-BUSL-05: Forge requests (payment manipulation)
         if self.should_run_tool("test_forge_requests"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="business-logic-testing",
-                        tool="test_forge_requests",
-                        args={
-                            "payment_url": target + "/rest/basket/1/checkout",
-                            "legitimate_order": {"orderPrice": 0.01, "deliveryPrice": 0}
-                        }, auth_session=auth_data), timeout=120
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    if data.get("vulnerable"):
-                        self.add_finding("WSTG-BUSL-05", "Forged payment request accepted", severity="critical", evidence=data)
-            except Exception as e:
-                self.log("warning", f"test_forge_requests failed: {e}")
+            for forge_url in _pick_urls(checkout_eps)[:2]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="business-logic-testing",
+                            tool="test_forge_requests",
+                            args={
+                                "payment_url": forge_url,
+                                "legitimate_order": {"orderPrice": 0.01, "deliveryPrice": 0}
+                            }, auth_session=auth_data), timeout=120
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        if data.get("vulnerable"):
+                            self.add_finding("WSTG-BUSL-05", "Forged payment request accepted", severity="critical", evidence=data)
+                except Exception as e:
+                    self.log("warning", f"test_forge_requests failed: {e}")
 
         # WSTG-BUSL-04: Race condition via timing
         if self.should_run_tool("test_process_timing_race_condition"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="business-logic-testing",
-                        tool="test_process_timing_race_condition",
-                        args={"url": target + "/api/BasketItems/", "method": "POST", "runs": 10}, auth_session=auth_data), timeout=120
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    if data.get("vulnerable"):
-                        self.add_finding("WSTG-BUSL-04", "Race condition in process timing", severity="high", evidence=data)
-            except Exception as e:
-                self.log("warning", f"test_process_timing_race_condition failed: {e}")
+            for timing_url in _pick_urls(checkout_eps + data_eps)[:3]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="business-logic-testing",
+                            tool="test_process_timing_race_condition",
+                            args={"url": timing_url, "method": "POST", "runs": 10}, auth_session=auth_data), timeout=120
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        if data.get("vulnerable"):
+                            self.add_finding("WSTG-BUSL-04", "Race condition in process timing", severity="high", evidence=data)
+                except Exception as e:
+                    self.log("warning", f"test_process_timing_race_condition failed: {e}")
 
         # WSTG-BUSL-06: Usage limits burst
         if self.should_run_tool("test_usage_limits_burst"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="business-logic-testing",
-                        tool="test_usage_limits_burst",
-                        args={"url": target + "/api/Feedbacks/", "method": "POST", "burst_count": 20}, auth_session=auth_data), timeout=120
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    if data.get("vulnerable"):
-                        self.add_finding("WSTG-BUSL-06", "No usage limits: burst requests accepted", severity="medium", evidence=data)
-            except Exception as e:
-                self.log("warning", f"test_usage_limits_burst failed: {e}")
+            for burst_url in _pick_urls(feedback_eps)[:2]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="business-logic-testing",
+                            tool="test_usage_limits_burst",
+                            args={"url": burst_url, "method": "POST", "burst_count": 20}, auth_session=auth_data), timeout=120
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        if data.get("vulnerable"):
+                            self.add_finding("WSTG-BUSL-06", "No usage limits: burst requests accepted", severity="medium", evidence=data)
+                except Exception as e:
+                    self.log("warning", f"test_usage_limits_burst failed: {e}")
 
         # WSTG-BUSL-08: Unexpected file upload in business logic
         if self.should_run_tool("test_unexpected_file_upload"):
-            try:
-                upload_url = target + "/file-upload"
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="business-logic-testing",
-                        tool="test_unexpected_file_upload",
-                        args={"upload_url": upload_url}, auth_session=auth_data), timeout=120
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    if data.get("vulnerable"):
-                        self.add_finding("WSTG-BUSL-08", "Unexpected file types accepted in upload", severity="high", evidence=data)
-            except Exception as e:
-                self.log("warning", f"test_unexpected_file_upload failed: {e}")
+            for upload_url in _pick_urls(upload_eps)[:2]:
+                try:
+                    res = await self.run_tool_with_timeout(
+                        client.call_tool(
+                            server="business-logic-testing",
+                            tool="test_unexpected_file_upload",
+                            args={"upload_url": upload_url}, auth_session=auth_data), timeout=120
+                    )
+                    if isinstance(res, dict) and res.get("status") == "success":
+                        data = res.get("data", {})
+                        if data.get("vulnerable"):
+                            self.add_finding("WSTG-BUSL-08", "Unexpected file types accepted in upload", severity="high", evidence=data)
+                except Exception as e:
+                    self.log("warning", f"test_unexpected_file_upload failed: {e}")
 
         # WSTG-BUSL-05: CAPTCHA bypass and rate limiting abuse
         if self.should_run_tool("test_captcha_and_rate_limit"):
