@@ -208,6 +208,10 @@ async function handleScanSubmit(e) {
         const data = await response.json();
         currentJobId = data.job_id;
 
+        if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+
         addLog(`[SUCCESS] Scan created! Job ID: ${currentJobId}`, 'success');
         addLog('[SYSTEM] Starting multi-agent vulnerability assessment...', 'info');
 
@@ -525,6 +529,25 @@ function _createWebSocket() {
     }
 }
 
+function _notifyHITL(title, body, elementId) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const n = new Notification(title, {
+        body: body,
+        icon: "/favicon.ico",
+        tag: elementId
+    });
+    n.onclick = () => {
+        window.focus();
+        const el = document.getElementById(elementId);
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.style.transition = "box-shadow 0.3s";
+            el.style.boxShadow = "0 0 0 3px #f59e0b";
+            setTimeout(() => { el.style.boxShadow = ""; }, 3000);
+        }
+    };
+}
+
 // ========== LIVE EXECUTION MONITOR ==========
 function updateExecutionMonitor(data) {
     if (data.agent) document.getElementById('monAgent').textContent = formatAgentName(data.agent);
@@ -591,6 +614,12 @@ function showPreAgentCheckpoint(d) {
         addLog(`[HITL] Auto-allowed: ${d.next_agent} (Allow all this session)`, 'info');
         return;
     }
+
+    _notifyHITL(
+        "⚠️ RAJDOLL — Review Diperlukan",
+        `${d.next_agent || 'Agent berikutnya'} menunggu approval sebelum dilanjutkan.`,
+        "pre-agent-panel"
+    );
 
     document.getElementById('pre-agent-name').textContent = d.next_agent || '';
     document.getElementById('pre-agent-summary').textContent = d.cumulative_summary || 'No prior findings.';
@@ -724,6 +753,12 @@ function showAgentCheckpoint(data) {
         addLog(`[HITL] Auto-allowed post-agent checkpoint (Allow all this session)`, 'info');
         return;
     }
+
+    _notifyHITL(
+        "⚠️ RAJDOLL — Checkpoint Review",
+        `${data.completed_agent || 'Agent'} selesai — review findings sebelum lanjut.`,
+        "checkpointPanel"
+    );
 
     const el = (id) => document.getElementById(id);
     el('cpAgentName').textContent = data.completed_agent || '-';
