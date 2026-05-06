@@ -72,6 +72,11 @@ class Settings:
     agent_timeout: int = _get_env_int("AGENT_TIMEOUT", 2700)            # 45 min per agent
     tool_timeout: int = _get_env_int("TOOL_TIMEOUT", 420)               # 7 min per tool
 
+    # Recon phase controls
+    recon_fuzz_rps: int = _get_env_int("RECON_FUZZ_RPS", 10)
+    recon_mode: str = field(default_factory=lambda: os.getenv("RECON_MODE", "aggressive"))  # "aggressive" | "polite"
+    recon_phase_timeout: int = _get_env_int("RECON_PHASE_TIMEOUT", 1800)
+
     # Circuit breaker
     circuit_breaker_failures: int = _get_env_int("CIRCUIT_BREAKER_FAILURES", 5)
 
