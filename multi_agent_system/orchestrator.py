@@ -795,7 +795,6 @@ class Orchestrator:
 		self._accumulated_directive = merge_directives(self._accumulated_directive, new_directive)
 		print(
 			f"[Orchestrator] Directive after {completed_agent}: "
-			f"skip={self._accumulated_directive.skip_agents}, "
 			f"focus={list(self._accumulated_directive.focus_instructions.keys())}, "
 			f"inject={list(self._accumulated_directive.inject_tools.keys())}"
 		)
@@ -1031,23 +1030,6 @@ class Orchestrator:
 			if self._get_failures() >= settings.circuit_breaker_failures:
 				print(f"[Orchestrator] Circuit breaker triggered: {self._get_failures()} failures")
 				break
-
-			# Check if LLM orchestrator directive says to skip this agent
-			if (
-				isinstance(step, str)
-				and agent_name in self._accumulated_directive.skip_agents
-			):
-				print(f"[Orchestrator] LLM directive: skipping {agent_name} — {self._accumulated_directive.reasoning}")
-				with get_db() as db:
-					ja = db.query(JobAgent).filter(
-						JobAgent.job_id == self.job_id, JobAgent.agent_name == agent_name
-					).one_or_none()
-					if ja:
-						ja.status = AgentStatus.skipped if hasattr(AgentStatus, "skipped") else AgentStatus.failed
-						ja.error = f"Skipped by LLM directive: {self._accumulated_directive.reasoning[:200]}"
-						ja.finished_at = datetime.utcnow()
-						db.commit()
-				continue
 
 			# Check if user requested to skip this agent
 			if agent_name in skip_agents_set:
