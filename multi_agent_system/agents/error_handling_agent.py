@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("ErrorHandlingAgent")
@@ -198,6 +199,12 @@ Write to shared_context:
         target = self._get_target()
         if not target:
             self.log("error", "Target missing; aborting ErrorHandlingAgent")
+            return
+
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        param_eps = read_tag(inventory, "error_prone_param")
+        if not param_eps:
+            self.log("info", "no endpoints classified as error_prone_param, skipping")
             return
 
         # Log tool execution plan based on LLM selection
