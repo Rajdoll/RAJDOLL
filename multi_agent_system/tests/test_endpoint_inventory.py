@@ -73,3 +73,13 @@ def test_resolve_placeholders_substitutes_real_ids():
     captured = {"/api/Users/": ["1", "42"]}  # captured during R2 crawl
     out = resolve_placeholders(eps, captured)
     assert out[0]["path"] == "/api/Users/1"  # picks first captured value
+
+
+def test_build_inventory_skips_endpoints_without_id():
+    endpoints = [
+        {"path": "/no-id", "method": "GET", "tags": ["api_generic"]},  # no id
+        {"id": "ep_001", "path": "/x", "method": "GET", "tags": ["api_generic"]},
+    ]
+    inv = build_inventory(endpoints)
+    assert inv["stats"]["total_endpoints"] == 2  # counted but not indexed
+    assert inv["by_tag"]["api_generic"] == ["ep_001"]  # only the one with id

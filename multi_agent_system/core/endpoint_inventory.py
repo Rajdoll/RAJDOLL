@@ -51,9 +51,12 @@ def build_inventory(
     """Build the full endpoint_inventory payload with by_tag index."""
     by_tag: dict[str, list[str]] = {tag: [] for tag in TAXONOMY}
     for ep in endpoints:
+        ep_id = ep.get("id")
+        if not ep_id:
+            continue
         for tag in ep.get("tags", []):
             if tag in by_tag:
-                by_tag[tag].append(ep["id"])
+                by_tag[tag].append(ep_id)
 
     full_stats = {"total_endpoints": len(endpoints), **(stats or {})}
     return {
