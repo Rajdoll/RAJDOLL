@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("FileUploadAgent")
@@ -59,40 +60,13 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
         
         # Log tool execution plan
         self.log_tool_execution_plan()
-        
-        # Step 1: Discover upload endpoints
-        upload_endpoints = []
-        if self.should_run_tool("discover_upload_endpoints"):
-            try:
-                self.log("info", "🔍 Discovering file upload endpoints...")
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="file-upload-testing",
-                        tool="discover_upload_endpoints",
-                        args={"base_url": target},
-                        auth_session=auth_data
-                    ),
-                    timeout=30
-                )
-                
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    upload_endpoints = data.get("endpoints", [])
-                    if upload_endpoints:
-                        self.log("info", f"✓ Discovered {len(upload_endpoints)} upload endpoints")
-                        self.write_context("upload_endpoints", {"endpoints": [ep["url"] for ep in upload_endpoints]})
-            except Exception as e:
-                self.log("warning", f"Upload endpoint discovery failed: {e}")
-        
-        # If no endpoints discovered, use SharedContext or fallback to target
+
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        upload_eps = read_tag(inventory, "file_upload")
+        upload_endpoints = [{"url": ep["path"]} for ep in upload_eps if ep.get("path")]
         if not upload_endpoints:
-            endpoints_data = self.shared_context.get("discovered_endpoints", {})
-            upload_eps = endpoints_data.get("upload_endpoints", []) + endpoints_data.get("file_endpoints", [])
-            common_upload_urls = [ep["url"] if isinstance(ep, dict) else ep for ep in upload_eps]
-            if not common_upload_urls:
-                common_upload_urls = [target]
-            upload_endpoints = [{"url": url} for url in common_upload_urls]
-            self.log("info", f"Using {len(upload_endpoints)} upload endpoint(s) from SharedContext/fallback")
+            self.log("info", "no endpoints classified as file_upload, skipping")
+            return
         
         # Step 2: Test each discovered endpoint
         for endpoint in upload_endpoints[:2]:  # Test up to 2 endpoints (5 caused cascading timeout issues)
@@ -302,7 +276,6 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
     def _get_available_tools(self) -> list[str]:
         """Return file upload testing tools for LLM planning"""
         return [
-            'discover_upload_endpoints',
             'test_unrestricted_upload',
             'test_path_traversal_upload',
             'test_xxe_via_svg',
