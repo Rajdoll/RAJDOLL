@@ -73,10 +73,9 @@ async def test_classifier_respects_max_batches(tmp_path):
     for ep in endpoints[:30]:
         ep["auth_required"] = True
     out = await classifier.classify("h", endpoints)
-    classified_ids = {ep["id"] for ep in out if ep.get("tags")}
-    # The 30 auth-required got tagged; the 10 unauth got tags=[] (not classified)
-    assert all(ep["id"] in classified_ids for ep in endpoints[:30])
-    assert all(ep["tags"] == [] for ep in endpoints[30:])
+    out_by_id = {ep["id"]: ep for ep in out}
+    assert all(out_by_id[ep["id"]]["tags"] != [] for ep in endpoints[:30])
+    assert all(out_by_id[ep["id"]]["tags"] == [] for ep in endpoints[30:])
 
 
 @pytest.mark.asyncio

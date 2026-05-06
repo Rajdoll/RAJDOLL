@@ -36,7 +36,7 @@ RULES:
 - Multiple tags allowed. Empty tags[] only if endpoint clearly out of scope (static asset, healthcheck, robots.txt).
 - Use response_signature.sample_keys, content_type, and HTTP method for context, not just path.
 - An endpoint POST /login that returns {"token": "..."} gets ["user_login","auth_token_endpoint"].
-- An endpoint GET /api/orders/{id} returning per-user data gets ["idor_candidate","state_changing_money"... wait no, GET is read; tag idor_candidate only].
+- An endpoint GET /api/orders/{id} returning per-user data gets ["idor_candidate"] only (GET is a read; no state_changing_money for reads).
 - Confidence below 0.5 means "do not tag"; emit empty tags[] if all are below.
 
 EXAMPLES:

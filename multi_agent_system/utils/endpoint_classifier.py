@@ -18,6 +18,7 @@ from typing import Any
 from multi_agent_system.core.endpoint_inventory import TAXONOMY
 
 log = logging.getLogger(__name__)
+_TAXONOMY_SET = frozenset(TAXONOMY)
 
 CACHE_TTL_SECONDS = 7 * 24 * 3600
 CONFIDENCE_THRESHOLD = 0.5
@@ -108,14 +109,13 @@ class LLMEndpointClassifier:
             except Exception as exc:  # batch isolation
                 log.warning("classifier: batch failed (%s), retrying with size %d",
                             exc, max(1, self.batch_size // 2))
-                try:
-                    half = max(1, len(eps) // 2)
-                    a = await self._classify_batch(prompt_template, eps[:half])
-                    b = await self._classify_batch(prompt_template, eps[half:])
-                    tagged = {**a, **b}
-                except Exception as exc2:
-                    log.error("classifier: batch retry failed (%s); skipping", exc2)
-                    tagged = {}
+                half = max(1, len(eps) // 2)
+                tagged = {}
+                for chunk in [eps[:half], eps[half:]]:
+                    try:
+                        tagged.update(await self._classify_batch(prompt_template, chunk))
+                    except Exception as exc2:
+                        log.error("classifier: sub-batch failed (%s); skipping chunk", exc2)
 
             now = time.time()
             for key, ep in zip(keys, eps):
@@ -132,9 +132,6 @@ class LLMEndpointClassifier:
             new_ep = dict(ep)
             new_ep["tags"] = tags_data["tags"]
             new_ep["tag_confidence"] = tags_data["confidence"]
-            # Also write back to original so callers checking original dicts see tags
-            ep["tags"] = new_ep["tags"]
-            ep["tag_confidence"] = new_ep["tag_confidence"]
             out.append(new_ep)
         return out
 
@@ -173,7 +170,7 @@ class LLMEndpointClassifier:
                 messages,
                 max_tokens=2000,
                 temperature=0.1,
-                response_format={"type": "json_schema", "json_schema": schema},
+                response_schema=schema["schema"],
             ),
             timeout=self.timeout,
         )
@@ -189,7 +186,7 @@ class LLMEndpointClassifier:
             kept_tags: list[str] = []
             kept_conf: dict[str, float] = {}
             for t in tags_in:
-                if t not in TAXONOMY:
+                if t not in _TAXONOMY_SET:
                     continue
                 c = float(conf.get(t, 0.0))
                 if c < CONFIDENCE_THRESHOLD:
