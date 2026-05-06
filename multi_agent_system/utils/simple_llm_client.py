@@ -861,7 +861,6 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
         import re
         from .orchestrator_directive import OrchestratorDirective
 
-        NEVER_SKIP_NAMES = "ReconnaissanceAgent, ReportGenerationAgent"
         prompt = (
             f"You are the orchestrator for an OWASP WSTG penetration test.\n\n"
             f"Completed agent: {completed_agent}\n"
@@ -869,15 +868,13 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
             f"Cumulative findings so far:\n{cumulative_summary[-2000:]}\n\n"
             f"Remaining agents (in order): {', '.join(remaining_agents)}\n\n"
             "Generate an OrchestratorDirective to guide the remaining agents.\n"
+            "All remaining agents WILL run; you cannot skip any of them.\n"
             "Rules:\n"
-            f"- NEVER skip: {NEVER_SKIP_NAMES}\n"
-            "- Only skip agents that are clearly irrelevant given the findings\n"
-            "- focus_instructions: specific guidance per agent name (empty if no change needed)\n"
-            "- inject_tools: additional tool calls per agent (empty if none needed)\n"
+            "- focus_instructions: specific guidance per agent name (empty string if no change needed)\n"
+            "- inject_tools: additional tool calls per agent (empty list if none needed)\n"
             "- reasoning: 1-2 sentences explaining your choices\n\n"
             "Return ONLY valid JSON (no markdown):\n"
             "{\n"
-            '  "skip_agents": [],\n'
             '  "focus_instructions": {"AgentName": "focus text"},\n'
             '  "inject_tools": {"AgentName": [{"tool": "tool_name", "arguments": {}}]},\n'
             '  "reasoning": "explanation"\n'
