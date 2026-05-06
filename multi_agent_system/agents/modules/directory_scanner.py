@@ -113,13 +113,13 @@ class DirectoryScanner:
     ) -> Dict[str, any]:
         """
         Scan for hidden directories and files
-        
+
         Args:
-            target_url: Base URL to scan (e.g., http://juice-shop:3000)
+            target_url: Base URL to scan (e.g., http://target:8080)
             wordlist: Custom wordlist, defaults to QUICK_WORDLIST
             depth: Recursion depth for found directories
             check_extensions: Test sensitive extensions on found files
-            
+
         Returns:
             Dictionary with discovered paths, status codes, and directory listings
         """
