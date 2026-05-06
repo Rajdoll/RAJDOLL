@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("WeakCryptographyAgent")
@@ -200,6 +201,13 @@ Write to shared_context:
         target = self._get_target()
         if not target:
             self.log("error", "Target missing; aborting WeakCryptographyAgent")
+            return
+
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        token_eps = read_tag(inventory, "auth_token_endpoint")
+        login_eps = read_tag(inventory, "user_login")
+        if not token_eps and not login_eps:
+            self.log("info", "no endpoints classified as auth_token_endpoint/user_login, skipping")
             return
 
         # Log tool execution plan based on LLM selection
