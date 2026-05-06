@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("BusinessLogicAgent")
@@ -190,13 +191,19 @@ Write to shared_context:
             self.log("error", "Target missing; aborting BusinessLogicAgent")
             return
 
-        # Read discovered endpoints from SharedContext for dynamic URL selection
-        endpoints_data = self.shared_context.get("discovered_endpoints", {})
-        checkout_eps = endpoints_data.get("checkout_endpoints", [])
-        data_eps = endpoints_data.get("data_endpoints", []) + endpoints_data.get("api_endpoints", [])
-        feedback_eps = endpoints_data.get("feedback_endpoints", [])
-        login_eps = endpoints_data.get("login_endpoints", [])
-        upload_eps = endpoints_data.get("upload_endpoints", [])
+        # Read endpoint_inventory written by ReconAgent
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        money_eps = read_tag(inventory, "state_changing_money")
+        resource_eps = read_tag(inventory, "state_changing_resource")
+        if not money_eps and not resource_eps:
+            self.log("info", "no endpoints classified as state_changing_*, skipping")
+            return {"findings": []}
+        # Map legacy names to new inventory tags
+        checkout_eps = money_eps
+        data_eps = money_eps + resource_eps
+        feedback_eps = resource_eps
+        login_eps = read_tag(inventory, "user_login")
+        upload_eps = read_tag(inventory, "file_upload")
 
         def _pick_urls(eps, fallback=target):
             urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
