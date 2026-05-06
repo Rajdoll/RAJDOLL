@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("AuthorizationAgent")
@@ -166,10 +167,14 @@ Write to shared_context:
             self.log("error", "Target missing; aborting AuthorizationAgent")
             return
 
-        # --- Read discovered endpoints from SharedContext (no hardcoded paths) ---
-        endpoints_data = self.shared_context.get("discovered_endpoints", {})
-        admin_eps = endpoints_data.get("admin_endpoints", [])
-        data_eps = endpoints_data.get("data_endpoints", []) + endpoints_data.get("api_endpoints", [])
+        # Read endpoint_inventory written by ReconAgent
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        idor_eps = read_tag(inventory, "idor_candidate")
+        admin_eps = read_tag(inventory, "admin_panel")
+        data_eps = idor_eps  # IDOR candidates are the resource endpoints used for enumeration
+        if not idor_eps and not admin_eps:
+            self.log("info", "no endpoints classified as idor_candidate or admin_panel, skipping")
+            return {"findings": []}
 
         def _pick_urls(eps, fallback=target):
             """Extract URL strings from endpoint entries (dict or str)."""
