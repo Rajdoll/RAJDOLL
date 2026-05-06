@@ -294,17 +294,18 @@ Available tools: {', '.join(self._available_tools)}
     def _create_initial_observation(self) -> Observation:
         """Create initial observation from shared context"""
         # Extract relevant context
-        endpoints = self.shared_context.get("discovered_endpoints", [])
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        ep_count = inventory.get("stats", {}).get("total_endpoints", 0) if inventory else 0
         tech_stack = self.shared_context.get("tech_stack", {})
         credentials = self.shared_context.get("credentials", {})
-        
+
         interpretation = f"""Initial state:
 - Target: {self.target}
-- Discovered endpoints: {len(endpoints) if isinstance(endpoints, list) else 0}
+- Discovered endpoints: {ep_count}
 - Tech stack: {json.dumps(tech_stack) if tech_stack else 'Unknown'}
 - Credentials available: {'Yes' if credentials else 'No'}
 """
-        
+
         return Observation(
             action=Action(
                 tool_name="initial_context",
@@ -314,7 +315,7 @@ Available tools: {', '.join(self._available_tools)}
                 result=self.shared_context,
             ),
             interpretation=interpretation,
-            next_actions_suggested=["Start with reconnaissance" if not endpoints else "Test discovered endpoints"],
+            next_actions_suggested=["Start with reconnaissance" if not ep_count else "Test discovered endpoints"],
         )
     
     async def _think(self, observation: Optional[Observation], step: int) -> Thought:
@@ -615,10 +616,11 @@ class ReActAgentMixin:
             return False
         
         # Use ReAct for complex scenarios
-        endpoints = self._shared_context_snapshot.get("discovered_endpoints", [])
-        
+        inventory = self._shared_context_snapshot.get("endpoint_inventory", {})
+        ep_count = inventory.get("stats", {}).get("total_endpoints", 0) if inventory else 0
+
         # Many endpoints = complex target = use ReAct for adaptive testing
-        if len(endpoints) > 20:
+        if ep_count > 20:
             return True
         
         # Unknown tech stack = use ReAct for exploration

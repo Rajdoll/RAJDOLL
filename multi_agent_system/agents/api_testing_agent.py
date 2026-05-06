@@ -10,6 +10,7 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from .base_agent import BaseAgent, AgentRegistry
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("APITestingAgent")
@@ -78,7 +79,13 @@ class APITestingAgent(BaseAgent):
             return
         
         self.log("info", f"Starting API security testing for {target}")
-        
+
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        api_eps = read_tag(inventory, "api_generic")
+        if not api_eps:
+            self.log("info", "no endpoints classified as api_generic, skipping")
+            return
+
         # Extract authenticated session if available (from AuthenticationAgent)
         auth_data = self._extract_auth_from_context()
         
