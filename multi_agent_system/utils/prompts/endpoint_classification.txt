@@ -1,0 +1,50 @@
+You are a security classifier for a black-box web pentest. Tag each HTTP
+endpoint with one or more categories from the taxonomy below. Output JSON
+that matches the schema exactly. Do not invent tags outside the taxonomy.
+
+TAXONOMY:
+- idor_candidate: path has resource ID segment ({id}, :id, /\d+/, /[a-f0-9-]{8,}/), response varies per ID
+- admin_panel: privileged-area indicator in path or response (admin, dashboard, manage, console)
+- state_changing_money: POST/PUT/PATCH/DELETE on financial resource (basket, cart, order, payment, coupon, refund, balance, invoice, checkout)
+- state_changing_resource: write op on non-financial resource (review, comment, profile, post, message)
+- user_registration: POST endpoint creating a new user account (register, signup, join, create-account, /users POST)
+- user_login: endpoint that authenticates a user and returns a session/token (login, signin, authenticate, token)
+- user_profile: read/write of user-owned profile data (/me, /profile, /users/{id})
+- password_recovery: forgot/reset password flow (forgot-password, reset, recover)
+- file_upload: multipart/form-data or upload endpoint
+- error_prone_param: any endpoint with user-controlled query/body parameter (search, filter, q=, id=)
+- client_render_sink: returns HTML/JS that renders user input (search results, comment view)
+- auth_token_endpoint: issues or validates JWT/session token (login, refresh, /token, /jwt)
+- api_generic: REST/GraphQL endpoint without a specific tag above
+- hidden_path: discovered_by starts with R3_ (fuzzed, not linked from app)
+
+INPUT (JSON array):
+{endpoints_json}
+
+OUTPUT (strict JSON, must validate):
+{
+  "classifications": [
+    {
+      "id": "<endpoint id>",
+      "tags": ["<tag1>", "<tag2>"],
+      "confidence": {"<tag1>": 0.0-1.0, "<tag2>": 0.0-1.0}
+    }
+  ]
+}
+
+RULES:
+- Multiple tags allowed. Empty tags[] only if endpoint clearly out of scope (static asset, healthcheck, robots.txt).
+- Use response_signature.sample_keys, content_type, and HTTP method for context, not just path.
+- An endpoint POST /login that returns {"token": "..."} gets ["user_login","auth_token_endpoint"].
+- An endpoint GET /api/orders/{id} returning per-user data gets ["idor_candidate","state_changing_money"... wait no, GET is read; tag idor_candidate only].
+- Confidence below 0.5 means "do not tag"; emit empty tags[] if all are below.
+
+EXAMPLES:
+input: [{"id":"ep_a","path":"/api/users/{id}","method":"GET","auth_required":true,"discovered_by":"R2_auth_crawl","response_signature":{"status":200,"content_type":"application/json","sample_keys":["id","email","role"]}}]
+output: {"classifications":[{"id":"ep_a","tags":["idor_candidate","user_profile"],"confidence":{"idor_candidate":0.92,"user_profile":0.95}}]}
+
+input: [{"id":"ep_b","path":"/checkout","method":"POST","auth_required":true,"discovered_by":"R2_auth_crawl","response_signature":{"status":200,"content_type":"application/json","sample_keys":["orderId","total"]}}]
+output: {"classifications":[{"id":"ep_b","tags":["state_changing_money"],"confidence":{"state_changing_money":0.97}}]}
+
+input: [{"id":"ep_c","path":"/.git/config","method":"GET","auth_required":false,"discovered_by":"R3_ffuf","response_signature":{"status":200,"content_type":"text/plain","sample_keys":[]}}]
+output: {"classifications":[{"id":"ep_c","tags":["hidden_path"],"confidence":{"hidden_path":0.98}}]}
