@@ -124,6 +124,41 @@ def build_classified_payload(endpoints: list[dict]) -> dict:
     return classified
 
 
+async def build_endpoint_inventory(
+    hostname: str,
+    endpoints: list[dict],
+    classifier,
+    captured_ids: dict | None = None,
+    phase_stats: dict | None = None,
+) -> dict:
+    """Compose the final endpoint_inventory payload.
+
+    1. Assign stable ids ep_001..ep_NNN.
+    2. Resolve {id}-style placeholders using captured_ids.
+    3. LLM-classify (cache-aware).
+    4. Build the by_tag index.
+    """
+    from ..core.endpoint_inventory import build_inventory, resolve_placeholders
+
+    captured_ids = captured_ids or {}
+
+    # 1. Assign ids
+    numbered = []
+    for idx, ep in enumerate(endpoints, start=1):
+        new = dict(ep)
+        new.setdefault("id", f"ep_{idx:03d}")
+        numbered.append(new)
+
+    # 2. Resolve placeholders
+    resolved = resolve_placeholders(numbered, captured_ids)
+
+    # 3. Classify
+    tagged = await classifier.classify(hostname, resolved)
+
+    # 4. Build inventory
+    return build_inventory(tagged, stats={"by_phase": phase_stats or {}})
+
+
 @AgentRegistry.register("ReconnaissanceAgent")
 class ReconnaissanceAgent(BaseAgent):
     disable_hitl: ClassVar[bool] = True
@@ -1521,6 +1556,79 @@ Operate autonomously without human guidance.
         baseline_snapshot["discovered_endpoints"] = payload
 
         self.log("info", f"Discovered {len(new_eps)} new candidate endpoints ({len(all_eps)} total including prior)")
+
+        # Build endpoint_inventory (new path — legacy discovered_endpoints stays until Task 18)
+        import os as _os
+        from pathlib import Path as _Path
+        from urllib.parse import urlparse as _urlparse
+        from ..utils.endpoint_classifier import LLMEndpointClassifier
+        from ..agents.modules.openapi_probe import probe_openapi, probe_graphql_introspection
+        from ..agents.modules.ffuf_runner import FfufRunner
+        from ..agents.modules.param_miner import mine_params
+        from ..utils.simple_llm_client import SimpleLLMClient
+        from ..core.config import settings as _settings
+
+        _target_url = target if target.startswith(("http://", "https://")) else f"https://{target}"
+        _hostname = _urlparse(_target_url).hostname or "unknown"
+
+        # R1 extra probes (OpenAPI/Swagger/GraphQL)
+        _extra_r1: list[dict] = []
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=10) as _client:
+                _extra_r1.extend(await probe_openapi(_target_url, _client))
+                _extra_r1.extend(await probe_graphql_introspection(_target_url, _client))
+        except Exception as _exc:
+            self.log("warning", f"[Recon] R1 extra probes failed: {_exc}")
+
+        # R3+R4 (aggressive mode only)
+        _extra_r3: list[dict] = []
+        _extra_r4: list[dict] = []
+        if _settings.recon_mode == "aggressive":
+            _wordlist = _Path(_os.getenv("RECON_WORDLIST", "/usr/share/seclists/Discovery/Web-Content/quickhits.txt"))
+            if _wordlist.exists():
+                try:
+                    _runner = FfufRunner(rate_per_sec=_settings.recon_fuzz_rps)
+                    _extra_r3.extend(await _runner.run(_target_url, _wordlist))
+                    _extra_r3.extend(await _runner.run_per_segment(_target_url, _wordlist, seed_endpoints=all_eps + _extra_r1))
+                except Exception as _exc:
+                    self.log("warning", f"[Recon] R3 ffuf failed: {_exc}")
+            _param_wl = _Path(_os.getenv("RECON_PARAM_WORDLIST", "/usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt"))
+            if _param_wl.exists():
+                try:
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient(timeout=10) as _client:
+                        await mine_params(_client, all_eps + _extra_r1 + _extra_r3, wordlist=_param_wl, top_n=20, rate_per_sec=5)
+                    _extra_r4 = [ep for ep in all_eps + _extra_r1 + _extra_r3 if ep.get("discovered_params")]
+                except Exception as _exc:
+                    self.log("warning", f"[Recon] R4 param mining failed: {_exc}")
+
+        _merged = all_eps + _extra_r1 + _extra_r3
+        _phase_stats = {
+            "R1": len(_extra_r1),
+            "R2": len(all_eps),
+            "R3": len(_extra_r3),
+            "R4": len(_extra_r4),
+        }
+
+        # R5: LLM classify + write endpoint_inventory
+        try:
+            _classifier = LLMEndpointClassifier(
+                llm_client=SimpleLLMClient(),
+                cache_path=_Path("cache/endpoint_classification.json"),
+            )
+            _inventory = await build_endpoint_inventory(
+                hostname=_hostname,
+                endpoints=_merged,
+                classifier=_classifier,
+                captured_ids=self.shared_context.get("captured_ids", {}),
+                phase_stats=_phase_stats,
+            )
+            self.write_context("endpoint_inventory", _inventory)
+            _tagged_count = sum(len(v) for v in _inventory["by_tag"].values())
+            self.log("info", f"[Recon] endpoint_inventory: {_phase_stats} -> {_tagged_count} tagged endpoints")
+        except Exception as _exc:
+            self.log("error", f"[Recon] endpoint_inventory build failed: {_exc}")
 
     async def _discover_endpoints(self, target: str) -> List[Dict[str, Any]]:
         target_url = target if target.startswith(("http://", "https://")) else f"https://{target.lstrip('/')}"
