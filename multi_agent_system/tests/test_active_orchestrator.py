@@ -2,21 +2,17 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 from multi_agent_system.utils.orchestrator_directive import (
-    OrchestratorDirective, merge_directives, NEVER_SKIP
+    OrchestratorDirective, merge_directives,
 )
 from multi_agent_system.utils.simple_llm_client import SimpleLLMClient
 
-def test_merge_directives_union_skips():
-    a = OrchestratorDirective(skip_agents=["SessionManagementAgent"])
-    b = OrchestratorDirective(skip_agents=["AuthorizationAgent"])
-    result = merge_directives(a, b)
-    assert set(result.skip_agents) == {"SessionManagementAgent", "AuthorizationAgent"}
 
 def test_merge_directives_focus_overwrites():
     a = OrchestratorDirective(focus_instructions={"InputValidationAgent": "focus on SQL"})
     b = OrchestratorDirective(focus_instructions={"InputValidationAgent": "focus on XSS"})
     result = merge_directives(a, b)
     assert result.focus_instructions["InputValidationAgent"] == "focus on XSS"
+
 
 def test_merge_directives_inject_tools_appends():
     a = OrchestratorDirective(inject_tools={"InputValidationAgent": [{"tool": "run_sqlmap"}]})
@@ -25,18 +21,35 @@ def test_merge_directives_inject_tools_appends():
     tools = [t["tool"] for t in result.inject_tools["InputValidationAgent"]]
     assert tools == ["run_sqlmap", "test_xss_dalfox"]
 
-def test_never_skip_blocklist():
-    d = OrchestratorDirective(skip_agents=["ReconnaissanceAgent", "AuthenticationAgent"])
-    result = merge_directives(OrchestratorDirective(), d)
-    assert "ReconnaissanceAgent" not in result.skip_agents
-    assert "AuthenticationAgent" in result.skip_agents
+
+def test_merge_directives_reasoning_replaced():
+    a = OrchestratorDirective(reasoning="initial")
+    b = OrchestratorDirective(reasoning="latest")
+    assert merge_directives(a, b).reasoning == "latest"
+
+
+def test_directive_has_no_skip_agents_field():
+    d = OrchestratorDirective()
+    assert not hasattr(d, "skip_agents")
+
+
+def test_from_dict_ignores_legacy_skip_agents_key():
+    legacy = {
+        "skip_agents": ["WeakCryptographyAgent"],
+        "focus_instructions": {"AuthorizationAgent": "test IDOR"},
+        "inject_tools": {},
+        "reasoning": "legacy entry",
+    }
+    d = OrchestratorDirective.from_dict(legacy)
+    assert d.focus_instructions == {"AuthorizationAgent": "test IDOR"}
+    assert d.reasoning == "legacy entry"
+
 
 def test_roundtrip_serialization():
     d = OrchestratorDirective(
-        skip_agents=["ErrorHandlingAgent"],
         focus_instructions={"AuthorizationAgent": "test IDOR on /api/users/"},
         inject_tools={"SessionManagementAgent": [{"tool": "test_session_fixation", "arguments": {}}]},
-        reasoning="JWT vulnerabilities found — skip low-value agents",
+        reasoning="JWT vulnerabilities found",
     )
     assert OrchestratorDirective.from_dict(d.to_dict()) == d
 
@@ -48,10 +61,9 @@ def test_generate_orchestrator_directive_parses_valid_response():
     client._strip_thinking_tags = lambda x: x
 
     llm_response = '''{
-        "skip_agents": ["WeakCryptographyAgent"],
         "focus_instructions": {"AuthorizationAgent": "focus IDOR on /api/users/"},
-        "inject_tools": {},
-        "reasoning": "Auth bypass found; skip crypto, deepen authz"
+        "inject_tools": {"AuthorizationAgent": [{"tool": "test_idor", "arguments": {}}]},
+        "reasoning": "Auth bypass found; deepen authz"
     }'''
 
     async def _run():
@@ -60,15 +72,15 @@ def test_generate_orchestrator_directive_parses_valid_response():
                 completed_agent="AuthenticationAgent",
                 remaining_agents=["SessionManagementAgent", "InputValidationAgent", "AuthorizationAgent"],
                 agent_summary="Found JWT none-algorithm bypass",
-                cumulative_summary="Auth: JWT bypass. Session: cookie httponly missing.",
+                cumulative_summary="Auth: JWT bypass.",
             )
         return result
 
     directive = asyncio.run(_run())
     assert directive is not None
-    assert "WeakCryptographyAgent" in directive.skip_agents
     assert "AuthorizationAgent" in directive.focus_instructions
     assert "IDOR" in directive.focus_instructions["AuthorizationAgent"]
+    assert directive.inject_tools["AuthorizationAgent"][0]["tool"] == "test_idor"
 
 
 def test_generate_orchestrator_directive_returns_none_on_bad_json():
@@ -134,16 +146,6 @@ def test_review_round1_returns_empty_when_nothing_interesting():
             )
 
     assert asyncio.run(_run()) == []
-
-
-def test_skip_guardrail_recon_and_report_never_skipped():
-    directive = OrchestratorDirective(
-        skip_agents=["ReconnaissanceAgent", "ReportGenerationAgent", "WeakCryptographyAgent"]
-    )
-    result = merge_directives(OrchestratorDirective(), directive)
-    assert "ReconnaissanceAgent" not in result.skip_agents
-    assert "ReportGenerationAgent" not in result.skip_agents
-    assert "WeakCryptographyAgent" in result.skip_agents
 
 
 def test_focus_injected_into_director_instructions_text():
