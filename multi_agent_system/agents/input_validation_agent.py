@@ -236,45 +236,6 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             discovered_urls = [target]
         priority_endpoints = list(discovered_urls)
 
-        discovered_endpoints = {}  # legacy key no longer used
-        if False and discovered_endpoints and discovered_endpoints.get("endpoints"):
-            endpoints_list = discovered_endpoints["endpoints"]
-            self.log("info", f"✅ FOUND {len(endpoints_list)} endpoints from web crawler")
-
-            # Show sample for debugging
-            sample_endpoints = [ep.get("endpoint", ep.get("url", "N/A")) for ep in endpoints_list[:5]]
-            self.log("info", f"   Sample: {sample_endpoints}")
-            
-            # Prioritize endpoints likely to have input validation issues.
-            # Keywords are generic indicators — NOT application-specific patterns.
-            HIGH_PRIORITY_KEYWORDS = [
-                "search", "login", "upload", "comment", "review", "feedback",
-                # vulnerability lab paths (e.g. DVWA /vulnerabilities/*, WebGoat, bWAPP)
-                "vulnerabilit", "sqli", "sql", "xss", "exec", "inject",
-                "lfi", "rfi", "inclusion", "traversal", "csrf", "upload",
-            ]
-            for ep in endpoints_list:
-                url = ep.get("url", "")
-                endpoint_path = ep.get("endpoint", ep.get("url", ""))
-                ep_lower = endpoint_path.lower()
-
-                if any(kw in ep_lower for kw in HIGH_PRIORITY_KEYWORDS):
-                    priority_endpoints.append(url)
-                elif ep.get("status", 500) < 400 and url not in priority_endpoints:
-                    discovered_urls.append(url)
-
-            # auth_discovered_links always get priority — they are pages only
-            # reachable after login and are the highest-value targets on any app.
-            auth_links_data = self.shared_context.get("auth_discovered_links", {})
-            auth_urls = auth_links_data.get("urls", []) if isinstance(auth_links_data, dict) else []
-            for au in auth_urls:
-                if au not in priority_endpoints and au not in discovered_urls:
-                    priority_endpoints.append(au)
-
-            # Test priority endpoints first
-            discovered_urls = priority_endpoints + discovered_urls
-
-            self.log("info", f"✓ Testing {len(priority_endpoints)} high-priority + {len(discovered_urls)-len(priority_endpoints)} standard endpoints")
 
         from urllib.parse import urljoin
         additional_test_urls = []
@@ -990,11 +951,15 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         _parsed = _urlparse(url)
         _base = f"{_parsed.scheme}://{_parsed.netloc}"
         _upload_patterns = ["upload", "file", "attach", "media", "import"]
-        _disc = self.shared_context.get("discovered_endpoints", [])
-        _upload_ep = next(
-            (e for e in _disc if any(p in e.lower() for p in _upload_patterns)),
-            None
-        )
+        _inventory = self.shared_context.get("endpoint_inventory", {})
+        _upload_candidates = _inventory.get("by_tag", {}).get("file_upload", [])
+        _upload_ep = _upload_candidates[0].get("url") if _upload_candidates else None
+        if not _upload_ep:
+            _all_eps = _inventory.get("endpoints", [])
+            _upload_ep = next(
+                (ep.get("url", "") for ep in _all_eps if any(p in ep.get("path", ep.get("url", "")).lower() for p in _upload_patterns)),
+                None
+            )
 
         result = await self.execute_tool(
             server="input-validation-testing",

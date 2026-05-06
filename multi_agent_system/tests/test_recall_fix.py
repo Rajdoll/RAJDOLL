@@ -33,19 +33,20 @@ def test_athz_prefix_match():
     assert matches("WSTG-ATHZ", "WSTG-ATHZ-02") is True
 
 
-def _make_base_agent_with_context(endpoints):
+def _make_base_agent_with_inventory(urls):
     from multi_agent_system.agents.base_agent import BaseAgent
     from unittest.mock import MagicMock
     agent = object.__new__(BaseAgent)
     agent.job_id = 999
     agent.agent_name = "TestAgent"
-    agent._shared_context_snapshot = {"discovered_endpoints": endpoints}
+    eps = [{"url": u, "path": u} for u in urls]
+    agent._shared_context_snapshot = {"endpoint_inventory": {"endpoints": eps}}
     agent.log = MagicMock()
     return agent
 
 
 def test_select_tool_targets_returns_matching_endpoints():
-    agent = _make_base_agent_with_context([
+    agent = _make_base_agent_with_inventory([
         "http://target/profile/image",
         "http://target/api/users",
         "http://target/upload/avatar",
@@ -58,19 +59,19 @@ def test_select_tool_targets_returns_matching_endpoints():
 
 
 def test_select_tool_targets_fallback_when_no_match():
-    agent = _make_base_agent_with_context(["http://target/api/users"])
+    agent = _make_base_agent_with_inventory(["http://target/api/users"])
     result = agent._select_tool_targets("test_unrestricted_upload", "http://target/")
     assert result == ["http://target/"]
 
 
 def test_select_tool_targets_fallback_when_no_endpoints():
-    agent = _make_base_agent_with_context([])
+    agent = _make_base_agent_with_inventory([])
     result = agent._select_tool_targets("test_ssrf_comprehensive", "http://target/")
     assert result == ["http://target/"]
 
 
 def test_select_tool_targets_caps_at_three():
-    agent = _make_base_agent_with_context([
+    agent = _make_base_agent_with_inventory([
         "http://target/upload/a",
         "http://target/upload/b",
         "http://target/upload/c",

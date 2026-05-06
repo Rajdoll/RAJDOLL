@@ -18,112 +18,6 @@ from ..utils.session_manager import SessionManager
 from .modules.directory_scanner import DirectoryScanner
 
 
-# ---------------------------------------------------------------------------
-# Endpoint classification helpers (module-level for easy import)
-# ---------------------------------------------------------------------------
-
-def classify_endpoint(path: str) -> list[str]:
-    """Classify a URL path into business-function categories using keyword heuristics."""
-    tags: list[str] = []
-    p = path.lower()
-
-    if p.endswith(".js"):
-        return ["js_file"]
-    if p.endswith(".css") or p.endswith(".png") or p.endswith(".jpg") or p.endswith(".ico"):
-        return []
-
-    # Login
-    if any(kw in p for kw in ("login", "signin", "sign-in", "auth/login", "authenticate")):
-        tags.append("login")
-    # Registration
-    if any(kw in p for kw in ("register", "signup", "sign-up", "join", "create-account", "create_account")):
-        tags.append("registration")
-    # Password reset
-    if any(kw in p for kw in ("forgot", "reset-password", "reset_password", "recover", "password/reset")):
-        tags.append("password_reset")
-    # Checkout / cart
-    if any(kw in p for kw in ("checkout", "cart", "basket", "payment", "order")):
-        tags.append("checkout")
-    # Feedback / comments
-    if any(kw in p for kw in ("feedback", "comment", "review", "contact", "complaint")):
-        tags.append("feedback")
-    # Upload
-    if any(kw in p for kw in ("upload", "file-upload", "fileupload")):
-        tags.append("upload")
-    # Admin
-    if any(kw in p for kw in ("admin", "dashboard", "management")):
-        tags.append("admin")
-    # Search
-    if "search" in p:
-        tags.append("search")
-    # API / data endpoints
-    if "/api/" in p or "/rest/" in p or p.endswith(".json"):
-        tags.append("api")
-        if not any(t in tags for t in ("login", "registration", "password_reset", "checkout", "feedback", "upload", "admin", "search")):
-            tags.append("data")
-
-    return tags
-
-
-def build_classified_payload(endpoints: list[dict]) -> dict:
-    """Build the full discovered_endpoints payload with both legacy type-based
-    and new business-function classifications."""
-    classified: dict = {
-        "endpoints": endpoints,
-        "count": len(endpoints),
-        "api_endpoints": [],
-        "admin_endpoints": [],
-        "search_endpoints": [],
-        "upload_endpoints": [],
-        "js_files": [],
-        "forms": [],
-        "xhr_endpoints": [],
-        "login_endpoints": [],
-        "registration_endpoints": [],
-        "password_reset_endpoints": [],
-        "data_endpoints": [],
-        "file_endpoints": [],
-        "checkout_endpoints": [],
-        "feedback_endpoints": [],
-    }
-
-    for ep in endpoints:
-        path = ep.get("endpoint", ep.get("url", ""))
-        tags = classify_endpoint(path)
-        ep_type = ep.get("type", "other")
-
-        if ep_type == "api" or "api" in tags:
-            classified["api_endpoints"].append(ep)
-        if ep_type == "admin" or "admin" in tags:
-            classified["admin_endpoints"].append(ep)
-        if ep_type == "search" or "search" in tags:
-            classified["search_endpoints"].append(ep)
-        if ep_type == "upload" or "upload" in tags:
-            classified["upload_endpoints"].append(ep)
-            classified["file_endpoints"].append(ep)
-        if ep_type == "js_file" or "js_file" in tags:
-            classified["js_files"].append(ep)
-        if ep_type == "form":
-            classified["forms"].append(ep)
-        if ep_type == "xhr":
-            classified["xhr_endpoints"].append(ep)
-
-        if "login" in tags:
-            classified["login_endpoints"].append(ep)
-        if "registration" in tags:
-            classified["registration_endpoints"].append(ep)
-        if "password_reset" in tags:
-            classified["password_reset_endpoints"].append(ep)
-        if "data" in tags:
-            classified["data_endpoints"].append(ep)
-        if "checkout" in tags:
-            classified["checkout_endpoints"].append(ep)
-        if "feedback" in tags:
-            classified["feedback_endpoints"].append(ep)
-
-    return classified
-
-
 async def build_endpoint_inventory(
     hostname: str,
     endpoints: list[dict],
@@ -435,8 +329,8 @@ Operate autonomously without human guidance.
             if not target:
                 return {"status": "error", "error": "Missing target for endpoint discovery"}
             await self._perform_endpoint_discovery(target, baseline_snapshot)
-            payload = self.shared_context.get("discovered_endpoints")
-            return {"status": "success", "data": payload or {"endpoints": [], "count": 0}}
+            inventory = self.shared_context.get("endpoint_inventory") or self.shared_context.get("discovered_endpoints")
+            return {"status": "success", "data": inventory or {"endpoints": [], "count": 0}}
         else:
             self.log("warning", f"Unknown local tool: {tool_name}")
             return {
@@ -525,9 +419,7 @@ Operate autonomously without human guidance.
                     "requires_auth": True, "source": "auth_link"
                 })
         all_eps = existing_eps + new_eps
-        updated = build_classified_payload(list(all_eps))
-        self.write_context("discovered_endpoints", updated)
-        baseline_snapshot["discovered_endpoints"] = updated
+        self.write_context("discovered_endpoints", {"endpoints": all_eps, "count": len(all_eps)})
         self.log("info", f"[Recon] discovered_endpoints now has {len(all_eps)} total endpoints ({len(new_eps)} from auth links)")
 
     async def _collect_baseline_data(self, client: MCPClient, target: str, domain: str, baseline_snapshot: Dict[str, Any]) -> None:
@@ -1076,29 +968,28 @@ Operate autonomously without human guidance.
                 "source": "ffuf"
             })
 
-        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        # Merge with existing raw endpoint list — read LIVE DB, not stale snapshot
         existing_raw = self.context_manager.read("discovered_endpoints") or {}
         existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate
         all_endpoints = existing_list + discovered_endpoints
-        unique_endpoints = {ep["endpoint"]: ep for ep in all_endpoints}.values()
-        unique_endpoints = list(unique_endpoints)
+        unique_endpoints = list({ep["endpoint"]: ep for ep in all_endpoints}.values())
 
-        # Update shared context with combined endpoints
-        payload = build_classified_payload(list(unique_endpoints))
-        self.write_context("discovered_endpoints", payload)
-        snapshot["discovered_endpoints"] = payload
+        self.write_context("discovered_endpoints", {"endpoints": unique_endpoints, "count": len(unique_endpoints)})
+
+        api_count = sum(1 for ep in unique_endpoints if ep.get("type") == "api")
+        search_count = sum(1 for ep in unique_endpoints if ep.get("type") == "search")
 
         # Add finding
         self.add_finding(
             "WSTG-INFO",
-            f"ffuf discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload['search_endpoints'])} search)",
+            f"ffuf discovered {total_found} endpoints ({api_count} API, {search_count} search)",
             severity="info",
             evidence={
                 "total_found": total_found,
-                "api_count": len(payload["api_endpoints"]),
-                "search_count": len(payload["search_endpoints"]),
+                "api_count": api_count,
+                "search_count": search_count,
                 "sample": ffuf_data.get("sample", [])[:10]
             }
         )
@@ -1163,39 +1054,39 @@ Operate autonomously without human guidance.
                 "redirect": ep.get("redirect")
             })
 
-        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        # Merge with existing raw endpoint list — read LIVE DB, not stale snapshot
         existing_raw = self.context_manager.read("discovered_endpoints") or {}
         existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate by endpoint path
         all_endpoints = existing_list + discovered_endpoints
-        unique_endpoints = {ep["endpoint"]: ep for ep in all_endpoints}.values()
-        unique_endpoints = list(unique_endpoints)
+        unique_endpoints = list({ep["endpoint"]: ep for ep in all_endpoints}.values())
 
-        # Update shared context with combined endpoints
-        payload = build_classified_payload(list(unique_endpoints))
-        payload["stats"] = dirsearch_data.get("stats", {})
-        self.write_context("discovered_endpoints", payload)
-        snapshot["discovered_endpoints"] = payload
+        self.write_context("discovered_endpoints", {"endpoints": unique_endpoints, "count": len(unique_endpoints)})
+
+        api_count = sum(1 for ep in unique_endpoints if ep.get("type") == "api")
+        search_count = sum(1 for ep in unique_endpoints if ep.get("type") == "search")
+        admin_count = sum(1 for ep in unique_endpoints if ep.get("type") == "admin")
+        upload_count = sum(1 for ep in unique_endpoints if ep.get("type") == "upload")
 
         # Add finding with detailed stats
         stats = dirsearch_data.get("stats", {})
         self.add_finding(
             "WSTG-INFO",
-            f"dirsearch recursively discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload['search_endpoints'])} search, {len(payload['admin_endpoints'])} admin)",
+            f"dirsearch recursively discovered {total_found} endpoints ({api_count} API, {search_count} search, {admin_count} admin)",
             severity="info",
             evidence={
                 "total_found": total_found,
-                "api_count": len(payload["api_endpoints"]),
-                "search_count": len(payload["search_endpoints"]),
-                "admin_count": len(payload["admin_endpoints"]),
-                "upload_count": len(payload.get("upload_endpoints", [])),
+                "api_count": api_count,
+                "search_count": search_count,
+                "admin_count": admin_count,
+                "upload_count": upload_count,
                 "sample": dirsearch_data.get("sample", [])[:15],
                 "stats": stats
             }
         )
 
-        self.log("info", f"✓ dirsearch recursively found {total_found} endpoints (API: {len(payload['api_endpoints'])}, search: {len(payload['search_endpoints'])}, admin: {len(payload['admin_endpoints'])})")
+        self.log("info", f"✓ dirsearch recursively found {total_found} endpoints (API: {api_count}, search: {search_count}, admin: {admin_count})")
 
     def _handle_feroxbuster_scan(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         """Process feroxbuster scan results (8-10x faster than dirsearch)"""
@@ -1255,40 +1146,40 @@ Operate autonomously without human guidance.
                 "redirect": ep.get("redirect")
             })
 
-        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        # Merge with existing raw endpoint list — read LIVE DB, not stale snapshot
         existing_raw = self.context_manager.read("discovered_endpoints") or {}
         existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate by endpoint path
         all_endpoints = existing_list + discovered_endpoints
-        unique_endpoints = {ep["endpoint"]: ep for ep in all_endpoints}.values()
-        unique_endpoints = list(unique_endpoints)
+        unique_endpoints = list({ep["endpoint"]: ep for ep in all_endpoints}.values())
 
-        # Update shared context with combined endpoints
-        payload = build_classified_payload(list(unique_endpoints))
-        payload["stats"] = ferox_data.get("stats", {})
-        self.write_context("discovered_endpoints", payload)
-        snapshot["discovered_endpoints"] = payload
+        self.write_context("discovered_endpoints", {"endpoints": unique_endpoints, "count": len(unique_endpoints)})
+
+        api_count = sum(1 for ep in unique_endpoints if ep.get("type") == "api")
+        search_count = sum(1 for ep in unique_endpoints if ep.get("type") == "search")
+        admin_count = sum(1 for ep in unique_endpoints if ep.get("type") == "admin")
+        upload_count = sum(1 for ep in unique_endpoints if ep.get("type") == "upload")
 
         # Add finding with detailed stats
         stats = ferox_data.get("stats", {})
         self.add_finding(
             "WSTG-INFO",
-            f"feroxbuster (FAST) discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload['search_endpoints'])} search, {len(payload['admin_endpoints'])} admin)",
+            f"feroxbuster (FAST) discovered {total_found} endpoints ({api_count} API, {search_count} search, {admin_count} admin)",
             severity="info",
             evidence={
                 "total_found": total_found,
-                "api_count": len(payload["api_endpoints"]),
-                "search_count": len(payload["search_endpoints"]),
-                "admin_count": len(payload["admin_endpoints"]),
-                "upload_count": len(payload.get("upload_endpoints", [])),
+                "api_count": api_count,
+                "search_count": search_count,
+                "admin_count": admin_count,
+                "upload_count": upload_count,
                 "sample": ferox_data.get("sample", [])[:15],
                 "stats": stats,
                 "performance": "8-10x faster than dirsearch"
             }
         )
 
-        self.log("info", f"✓ feroxbuster found {total_found} endpoints in ~60s (API: {len(payload['api_endpoints'])}, search: {len(payload['search_endpoints'])}, admin: {len(payload['admin_endpoints'])})")
+        self.log("info", f"✓ feroxbuster found {total_found} endpoints in ~60s (API: {api_count}, search: {search_count}, admin: {admin_count})")
 
     def _handle_katana_crawl(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         """Process Katana JavaScript parsing results and extract endpoints"""
@@ -1367,24 +1258,21 @@ Operate autonomously without human guidance.
                 "source": "katana",
             })
 
-        # Merge with existing discovered_endpoints — read LIVE DB, not stale snapshot
+        # Merge with existing raw endpoint list — read LIVE DB, not stale snapshot
         existing_raw = self.context_manager.read("discovered_endpoints") or {}
         existing_list = existing_raw.get("endpoints", []) if isinstance(existing_raw, dict) else []
 
         # Combine and deduplicate by URL
         all_endpoints = existing_list + discovered_endpoints
-        unique_endpoints = {ep["url"]: ep for ep in all_endpoints}.values()
-        unique_endpoints = list(unique_endpoints)
+        unique_endpoints = list({ep["url"]: ep for ep in all_endpoints}.values())
 
-        # Update shared context with combined endpoints
-        payload = build_classified_payload(list(unique_endpoints))
-        self.write_context("discovered_endpoints", payload)
-        snapshot["discovered_endpoints"] = payload
+        self.write_context("discovered_endpoints", {"endpoints": unique_endpoints, "count": len(unique_endpoints)})
 
-        # Add finding with detailed stats
-        self.log("info", f"Katana JS parsing discovered {total_found} endpoints ({len(payload['api_endpoints'])} API, {len(payload.get('js_files', []))} JS files, {len(payload.get('xhr_endpoints', []))} XHR)")
+        api_count = sum(1 for ep in unique_endpoints if ep.get("type") == "api")
+        js_count = sum(1 for ep in unique_endpoints if ep.get("type") == "js_file")
+        xhr_count = sum(1 for ep in unique_endpoints if ep.get("type") == "xhr")
 
-        self.log("info", f"✓ Katana crawl found {total_found} endpoints via JS parsing (API: {len(payload['api_endpoints'])}, JS: {len(payload.get('js_files', []))}, XHR: {len(payload.get('xhr_endpoints', []))})")
+        self.log("info", f"✓ Katana crawl found {total_found} endpoints via JS parsing (API: {api_count}, JS: {js_count}, XHR: {xhr_count})")
 
     def _handle_js_routes_analysis(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
         """Process JavaScript route analysis results — hidden routes, secrets, API endpoints."""
@@ -1454,8 +1342,7 @@ Operate autonomously without human guidance.
 
             if new_eps:
                 all_eps = existing_list + new_eps
-                updated = build_classified_payload(list(all_eps))
-                self.write_context("discovered_endpoints", updated)
+                self.write_context("discovered_endpoints", {"endpoints": all_eps, "count": len(all_eps)})
                 self.log("info", f"[JS] Merged {len(new_eps)} API endpoints into discovered_endpoints (total now {len(all_eps)})")
 
     async def _fallback_js_api_extraction(self, target: str, baseline_snapshot: Dict[str, Any]) -> None:
@@ -1523,7 +1410,7 @@ Operate autonomously without human guidance.
                             })
                     if new_eps:
                         all_eps = existing_list + new_eps
-                        self.write_context("discovered_endpoints", build_classified_payload(list(all_eps)))
+                        self.write_context("discovered_endpoints", {"endpoints": all_eps, "count": len(all_eps)})
                         self.log("info", f"[JS fallback] Merged {len(new_eps)} API endpoints into discovered_endpoints (total {len(all_eps)})")
                     return  # Done — stop trying more JS files
                 except Exception as exc:
@@ -1551,13 +1438,11 @@ Operate autonomously without human guidance.
         new_eps = [ep for ep in endpoints if ep.get("url", "") not in existing_urls]
         all_eps = existing_eps + new_eps
 
-        payload = build_classified_payload(list(all_eps))
-        self.write_context("discovered_endpoints", payload)
-        baseline_snapshot["discovered_endpoints"] = payload
+        self.write_context("discovered_endpoints", {"endpoints": all_eps, "count": len(all_eps)})
 
         self.log("info", f"Discovered {len(new_eps)} new candidate endpoints ({len(all_eps)} total including prior)")
 
-        # Build endpoint_inventory (new path — legacy discovered_endpoints stays until Task 18)
+        # Build endpoint_inventory
         import os as _os
         from pathlib import Path as _Path
         from urllib.parse import urlparse as _urlparse

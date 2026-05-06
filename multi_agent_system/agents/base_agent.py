@@ -456,16 +456,12 @@ class BaseAgent:
 		patterns = TOOL_ENDPOINT_PATTERNS.get(tool_name)
 		if not patterns:
 			return [fallback_url]
-		endpoints = self._shared_context_snapshot.get("discovered_endpoints", [])
-		if not endpoints:
+		inventory = self._shared_context_snapshot.get("endpoint_inventory", {})
+		all_eps = inventory.get("endpoints", [])
+		if not all_eps:
 			return [fallback_url]
-		urls = []
-		for ep in endpoints:
-			if isinstance(ep, str):
-				urls.append(ep)
-			elif isinstance(ep, dict) and ep.get("url"):
-				urls.append(ep["url"])
-		matched = [u for u in urls if any(p in u.lower() for p in patterns)]
+		urls = [ep.get("url", ep.get("path", "")) for ep in all_eps if isinstance(ep, dict)]
+		matched = [u for u in urls if u and any(p in u.lower() for p in patterns)]
 		return matched[:3] if matched else [fallback_url]
 
 	async def _execute_round2(self) -> None:
