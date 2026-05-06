@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .base_agent import BaseAgent, AgentRegistry
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("ClientSideAgent")
@@ -64,16 +65,17 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             self.log("error", "Target missing; aborting ClientSideAgent")
             return
 
-        # Read discovered endpoints from SharedContext
-        endpoints_data = self.shared_context.get("discovered_endpoints", {})
-        search_eps = endpoints_data.get("search_endpoints", [])
-        all_eps = endpoints_data.get("endpoints", [])
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        sinks = read_tag(inventory, "client_render_sink")
+        param_eps = read_tag(inventory, "error_prone_param")
+        if not sinks and not param_eps:
+            self.log("info", "no endpoints classified as client_render_sink/error_prone_param, skipping")
+            return
 
-        def _pick_urls(eps, fallback=target):
-            urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
-            return urls if urls else [fallback]
-
-        test_urls = _pick_urls(all_eps, fallback=target)[:10]
+        all_eps = sinks + param_eps
+        test_urls = [ep["path"] for ep in all_eps if ep.get("path")][:10]
+        if not test_urls:
+            test_urls = [target]
 
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()

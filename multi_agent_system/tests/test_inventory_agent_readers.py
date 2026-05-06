@@ -41,3 +41,68 @@ def test_configdeploy_reads_admin_and_hidden():
     ])
     assert read_tag(inv, "admin_panel")[0]["id"] == "ep_1"
     assert read_tag(inv, "hidden_path")[0]["id"] == "ep_2"
+
+
+def test_clientside_reads_sink_and_params():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/search", "method": "GET", "tags": ["client_render_sink", "error_prone_param"]},
+    ])
+    assert read_tag(inv, "client_render_sink")[0]["id"] == "ep_1"
+    assert read_tag(inv, "error_prone_param")[0]["id"] == "ep_1"
+
+
+def test_weakcrypto_reads_token_and_login():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/login", "method": "POST", "tags": ["user_login", "auth_token_endpoint"]},
+    ])
+    assert read_tag(inv, "auth_token_endpoint")[0]["id"] == "ep_1"
+    assert read_tag(inv, "user_login")[0]["id"] == "ep_1"
+
+
+def test_errorhandling_reads_error_prone():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/search", "method": "GET", "tags": ["error_prone_param"]},
+    ])
+    assert read_tag(inv, "error_prone_param")[0]["id"] == "ep_1"
+
+
+def test_fileupload_reads_file_upload():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/upload", "method": "POST", "tags": ["file_upload"]},
+    ])
+    assert read_tag(inv, "file_upload")[0]["id"] == "ep_1"
+
+
+def test_api_and_react_read_api_generic():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/api/x", "method": "GET", "tags": ["api_generic"]},
+    ])
+    assert read_tag(inv, "api_generic")[0]["id"] == "ep_1"
+
+
+def test_authentication_reads_three_tags():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/login", "method": "POST", "tags": ["user_login"]},
+        {"id": "ep_2", "path": "/forgot", "method": "POST", "tags": ["password_recovery"]},
+        {"id": "ep_3", "path": "/oauth/token", "method": "POST", "tags": ["auth_token_endpoint"]},
+    ])
+    assert read_tag(inv, "user_login")[0]["id"] == "ep_1"
+    assert read_tag(inv, "password_recovery")[0]["id"] == "ep_2"
+    assert read_tag(inv, "auth_token_endpoint")[0]["id"] == "ep_3"
+
+
+def test_session_reads_token_and_login():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/login", "method": "POST", "tags": ["user_login", "auth_token_endpoint"]},
+    ])
+    assert read_tag(inv, "auth_token_endpoint")[0]["id"] == "ep_1"
+    assert read_tag(inv, "user_login")[0]["id"] == "ep_1"
+
+
+def test_inputvalidation_reads_error_prone_and_api():
+    inv = build_inventory([
+        {"id": "ep_1", "path": "/search", "method": "GET", "tags": ["error_prone_param"]},
+        {"id": "ep_2", "path": "/api/items", "method": "GET", "tags": ["api_generic"]},
+    ])
+    assert read_tag(inv, "error_prone_param")[0]["id"] == "ep_1"
+    assert read_tag(inv, "api_generic")[0]["id"] == "ep_2"
