@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("ConfigDeploymentAgent")
@@ -125,6 +126,13 @@ Write to shared_context:
         if not target:
             self.log("error", "Target missing; aborting ConfigDeploymentAgent")
             return
+
+        # Read endpoint_inventory written by ReconAgent
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        admin_eps = read_tag(inventory, "admin_panel")
+        hidden_eps = read_tag(inventory, "hidden_path")
+        if not admin_eps and not hidden_eps:
+            self.log("info", "no endpoints classified as admin_panel or hidden_path in inventory")
 
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
