@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .base_agent import BaseAgent, AgentRegistry
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("IdentityManagementAgent")
@@ -56,11 +57,17 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
             self.log("error", "Target missing; aborting IdentityManagementAgent")
             return
 
-        # Read discovered endpoints from SharedContext
-        endpoints_data = self.shared_context.get("discovered_endpoints", {})
-        register_eps = endpoints_data.get("registration_endpoints", [])
-        login_eps = endpoints_data.get("login_endpoints", [])
-        data_eps = endpoints_data.get("data_endpoints", []) + endpoints_data.get("api_endpoints", [])
+        # Read endpoint_inventory written by ReconAgent
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        register_eps = read_tag(inventory, "user_registration")
+        profile_eps = read_tag(inventory, "user_profile")
+        recovery_eps = read_tag(inventory, "password_recovery")
+        if not (register_eps or profile_eps or recovery_eps):
+            self.log("info", "no endpoints classified as user_registration/user_profile/password_recovery, skipping")
+            return {"findings": []}
+        # Map legacy login_eps to user_login tag; data_eps fallback to register + profile
+        login_eps = read_tag(inventory, "user_login")
+        data_eps = register_eps + profile_eps
 
         def _pick_urls(eps, fallback=target):
             urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
