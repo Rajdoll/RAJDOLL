@@ -5,6 +5,7 @@ from typing import ClassVar, Dict, Any, List, Optional
 from ..utils.mcp_client import MCPClient
 from ..utils.session_manager import SessionManager
 from ..utils.react_loop import ReActLoop, react_test
+from ..core.endpoint_inventory import read_tag
 import re
 import httpx
 import os
@@ -221,12 +222,22 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         context_keys = list(self.shared_context.keys())
         self.log("info", f"✓ Shared context available: {context_keys}")
 
-        # 🧠 INTELLIGENT ENDPOINT DISCOVERY: Read from ReconnaissanceAgent
-        discovered_endpoints = self.shared_context.get("discovered_endpoints", {})
-        discovered_urls: list[str] = [target]
-        priority_endpoints = []
+        # 🧠 INTELLIGENT ENDPOINT DISCOVERY: Read from endpoint_inventory
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        param_eps = read_tag(inventory, "error_prone_param")
+        api_eps = read_tag(inventory, "api_generic")
+        targets = param_eps + api_eps
+        if not targets:
+            self.log("info", "no endpoints classified as error_prone_param or api_generic, skipping")
+            return
 
-        if discovered_endpoints and discovered_endpoints.get("endpoints"):
+        discovered_urls: list[str] = [ep["path"] for ep in targets if ep.get("path")]
+        if not discovered_urls:
+            discovered_urls = [target]
+        priority_endpoints = list(discovered_urls)
+
+        discovered_endpoints = {}  # legacy key no longer used
+        if False and discovered_endpoints and discovered_endpoints.get("endpoints"):
             endpoints_list = discovered_endpoints["endpoints"]
             self.log("info", f"✅ FOUND {len(endpoints_list)} endpoints from web crawler")
 

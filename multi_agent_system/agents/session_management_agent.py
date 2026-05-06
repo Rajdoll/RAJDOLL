@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("SessionManagementAgent")
@@ -167,6 +168,13 @@ Write to shared_context:
         target = self._get_target()
         if not target:
             self.log("error", "Target missing; aborting SessionManagementAgent")
+            return
+
+        inventory = self.shared_context.get("endpoint_inventory", {})
+        token_eps = read_tag(inventory, "auth_token_endpoint")
+        login_eps = read_tag(inventory, "user_login")
+        if not (token_eps or login_eps):
+            self.log("info", "no session-relevant tags found, skipping")
             return
 
         # Log tool execution plan based on LLM selection

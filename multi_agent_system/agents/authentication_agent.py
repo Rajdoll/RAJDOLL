@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
+from ..core.endpoint_inventory import read_tag
 
 
 @AgentRegistry.register("AuthenticationAgent")
@@ -157,15 +158,21 @@ Write to shared_context:
 		# Log tool execution plan based on LLM selection
 		self.log_tool_execution_plan()
 
-		# --- Read discovered endpoints from SharedContext (set by ReconnaissanceAgent) ---
-		endpoints_data = self.shared_context.get("discovered_endpoints", {})
-		login_eps = endpoints_data.get("login_endpoints", [])
-		reset_eps = endpoints_data.get("password_reset_endpoints", [])
-		register_eps = endpoints_data.get("registration_endpoints", [])
+		# --- Read endpoints from endpoint_inventory ---
+		inventory = self.shared_context.get("endpoint_inventory", {})
+		login_eps = read_tag(inventory, "user_login")
+		recovery_eps = read_tag(inventory, "password_recovery")
+		token_eps = read_tag(inventory, "auth_token_endpoint")
+		if not (login_eps or recovery_eps or token_eps):
+			self.log("info", "no auth-relevant tags found, skipping")
+			return
+
+		reset_eps = recovery_eps
+		register_eps = read_tag(inventory, "user_registration")
 
 		def _pick_urls(eps, fallback=target):
 			"""Extract URL strings from endpoint entries; fall back to target if empty."""
-			urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
+			urls = [ep["path"] if isinstance(ep, dict) else ep for ep in eps]
 			return urls if urls else [fallback]
 
 		# Quick passive checks on the login form HTML (CSRF, method, autocomplete)
