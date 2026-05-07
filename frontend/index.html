@@ -11,6 +11,7 @@
 </head>
 <body>
     <div class="container">
+        <div id="hitl-overlay" class="hitl-overlay"></div>
         <!-- Header -->
         <header class="header">
             <div class="logo">
@@ -21,6 +22,9 @@
             <p class="subtitle-small">Based on OWASP WSTG 4.2</p>
             <div class="system-status">
                 <span class="status-dot"></span> SYSTEM ONLINE
+            </div>
+            <div id="hitl-allow-all-banner" class="hitl-allow-all-banner" onclick="hitlClearAllowAll()" title="Click to disable Allow all">
+                🟢 Allow all is ACTIVE — click to disable
             </div>
         </header>
 
@@ -120,6 +124,10 @@
                             <span class="btn-icon">▶</span>
                             Resume Scan
                         </button>
+                        <button class="btn btn-warning" id="requeueBtn" style="display:none;" onclick="handleRequeueScan()">
+                            <span class="btn-icon">↺</span>
+                            Requeue
+                        </button>
                         <button class="btn btn-danger" id="cancelBtn" style="display:none;">
                             <span class="btn-icon">⊗</span>
                             Cancel Scan
@@ -210,6 +218,7 @@
                     <span class="panel-icon">⏸</span>
                     <h2>About to run: <span id="pre-agent-name"></span></h2>
                     <span class="checkpoint-badge">AWAITING YOUR INPUT</span>
+                    <span id="pre-agent-countdown" class="hitl-countdown"></span>
                 </div>
                 <div class="panel-body">
                     <div class="panel-section">
@@ -261,6 +270,7 @@
                     <span class="panel-icon">⏸</span>
                     <h2>Agent complete: <span id="cpAgentName">-</span></h2>
                     <span class="checkpoint-badge" id="checkpointBadge">AWAITING YOUR INPUT</span>
+                    <span id="cp-countdown" class="hitl-countdown"></span>
                 </div>
                 <div class="panel-body">
                     <!-- Step indicator -->
