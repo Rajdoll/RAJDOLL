@@ -16,6 +16,18 @@ RUN apt-get update \
 	&& chmod +x /usr/local/bin/dalfox /usr/local/bin/ffuf \
 	&& rm -rf /var/lib/apt/lists/* /tmp/dalfox.tar.gz /tmp/ffuf.tar.gz
 
+RUN mkdir -p /usr/share/seclists/Discovery/Web-Content/api \
+	&& for f in \
+		"Discovery/Web-Content/api/api-endpoints.txt" \
+		"Discovery/Web-Content/quickhits.txt" \
+		"Discovery/Web-Content/raft-medium-directories.txt" \
+		"Discovery/Web-Content/common.txt"; do \
+		curl -fsSL \
+			"https://raw.githubusercontent.com/danielmiessler/SecLists/master/${f}" \
+			-o "/usr/share/seclists/${f}" \
+		|| echo "WARN: failed to download ${f}"; \
+	done
+
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
