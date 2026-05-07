@@ -1000,6 +1000,7 @@ async function markFinding(findingId, isTP) {
 
 // ========== CLEANUP ==========
 window.addEventListener('beforeunload', () => {
+    _flashTabTitle(false);
     stopStatusPolling();
     if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
     wsReconnectAttempts = WS_MAX_RECONNECT_ATTEMPTS;
@@ -1035,10 +1036,11 @@ function _hitlCueAudio() {
         osc.frequency.value = 880;
         gain.gain.value = 0.18;
         osc.connect(gain).connect(ctx.destination);
+        osc.onended = () => { osc.disconnect(); gain.disconnect(); };
         osc.start();
         osc.stop(ctx.currentTime + 0.18);
     } catch (e) {
-        // Audio failed — other channels still active
+        // Audio failed - other channels still active
     }
 }
 
