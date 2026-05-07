@@ -248,10 +248,6 @@ class Orchestrator:
 			if tools_map and name in tools_map and hasattr(agent, 'set_tool_plan'):
 				agent.set_tool_plan(tools_map[name])
 			elif not tools_map or name not in tools_map:
-				# No orchestrator tool plan for this agent — skip per-agent LLM planning
-				# to avoid 9 agents × 3 retries × 300s timeout bottleneck on LM Studio.
-				# Agents will use ADAPTIVE_MODE priority filtering instead.
-				agent.disable_llm_planning = True
 				print(f"[Orchestrator] {name}: No LLM tool plan — using ADAPTIVE_MODE priority filtering")
 			with get_db() as db:
 				ja = db.query(JobAgent).filter(JobAgent.job_id == self.job_id, JobAgent.agent_name == name).one()

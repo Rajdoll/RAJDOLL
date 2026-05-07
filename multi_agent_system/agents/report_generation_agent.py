@@ -31,8 +31,6 @@ class ReportGenerationAgent(BaseAgent):
 Your role is to synthesize technical findings into clear, actionable reports for both technical and executive audiences.
 Focus on: business impact, clear remediation steps, risk prioritization, and professional presentation."""
 	
-	disable_llm_planning = True  # This agent doesn't need LLM planning
-	
 	async def execute(self, target: str = None, shared_context: Dict[str, Any] = None, job_id: int = None) -> Dict[str, Any]:
 		"""Generate comprehensive OWASP WSTG 4.2 compliant report"""
 		import sys

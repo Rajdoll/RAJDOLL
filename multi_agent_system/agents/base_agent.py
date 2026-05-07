@@ -513,9 +513,6 @@ class BaseAgent:
 
 	def log_tool_execution_plan(self):
 		"""Log which tools will be executed based on LLM plan and ADAPTIVE_MODE"""
-		if getattr(self, "disable_llm_planning", False):
-			self.log("info", "🔁 Tiered autonomy active - LLM tool planning disabled for this agent")
-			return
 		mode = os.getenv('ADAPTIVE_MODE', 'balanced').lower()
 		
 		# Get tool list and priorities
@@ -1014,7 +1011,7 @@ class BaseAgent:
 			return False
 
 		# Check environment variable or instance attribute
-		if os.getenv('DISABLE_LLM_PLANNING', 'false').lower() == 'true' or getattr(self, "disable_llm_planning", False):
+		if os.getenv('DISABLE_LLM_PLANNING', 'false').lower() == 'true':
 			print(f"✅ {self.agent_name}: Tool {tool_name} APPROVED - LLM planning disabled", file=sys.stderr, flush=True)
 			return True
 
