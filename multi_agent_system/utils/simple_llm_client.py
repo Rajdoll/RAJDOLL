@@ -896,6 +896,71 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
             print(f"[SimpleLLMClient] generate_orchestrator_directive failed: {e}")
             return None
 
+    async def generate_strategic_plan(
+        self,
+        recon_summary: str,
+        endpoint_inventory: dict,
+        tech_stack: dict,
+        remaining_agents: list,
+        wordlist_catalog: dict,
+    ):
+        """After Recon, ask LLM to generate a comprehensive attack plan for all agents.
+
+        Returns an OrchestratorDirective with an extra 'wordlists' attribute,
+        or None on any failure.
+        """
+        import re
+        from .orchestrator_directive import OrchestratorDirective
+
+        by_tag = endpoint_inventory.get("by_tag", {})
+        tag_summary = ", ".join(
+            f"{tag}({len(ids)})" for tag, ids in by_tag.items() if ids
+        ) or "none tagged"
+        tech_str = ", ".join(
+            f"{k}:{v}" for k, v in (tech_stack or {}).items()
+        ) or "unknown"
+        catalog_str = json.dumps(wordlist_catalog.get("tech_specific", {}), indent=2)
+
+        prompt = (
+            f"You are the RAJDOLL penetration testing orchestrator. "
+            f"ReconnaissanceAgent has completed.\n\n"
+            f"Tech stack: {tech_str}\n"
+            f"Tagged endpoints: {tag_summary}\n"
+            f"Recon findings summary:\n{recon_summary[:2000]}\n\n"
+            f"Remaining agents (all will run): {', '.join(remaining_agents)}\n\n"
+            "Generate a strategic attack plan. All agents WILL run - do NOT skip any.\n"
+            "Rules:\n"
+            "- focus_instructions: specific attack scenario per agent (non-empty for important agents)\n"
+            "- inject_tools: extra tool calls per agent with arguments (empty list if none needed)\n"
+            "- wordlists: 0-2 additional tech-specific wordlist paths from catalog below (for ffuf)\n"
+            "- reasoning: 2-3 sentences on strategy\n\n"
+            f"Tech-specific wordlist catalog (select by detected tech):\n{catalog_str}\n\n"
+            "Return ONLY valid JSON (no markdown):\n"
+            "{\n"
+            '  "focus_instructions": {"AgentName": "specific scenario"},\n'
+            '  "inject_tools": {"AgentName": [{"tool": "tool_name", "arguments": {}}]},\n'
+            '  "wordlists": [],\n'
+            '  "reasoning": "explanation"\n'
+            "}"
+        )
+        messages = [
+            {"role": "system", "content": "You are a security testing strategist. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            raw = await self.chat_completion(messages, max_tokens=1200, temperature=0.3)
+            raw = self._strip_thinking_tags(raw)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return None
+            data = json.loads(match.group())
+            directive = OrchestratorDirective.from_dict(data)
+            directive.wordlists = data.get("wordlists") or []
+            return directive
+        except Exception as e:
+            print(f"[SimpleLLMClient] generate_strategic_plan failed: {e}")
+            return None
+
     async def review_round1_for_escalation(
         self,
         agent_name: str,

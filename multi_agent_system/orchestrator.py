@@ -104,6 +104,7 @@ class Orchestrator:
 		self._pending_director_directives: Dict[str, list] = {}
 		from .utils.orchestrator_directive import OrchestratorDirective
 		self._accumulated_directive: "OrchestratorDirective" = OrchestratorDirective()
+		self._strategic_extra_wordlists: list = []
 
 		# Timing tracking for scan_timing SharedContext
 		self._timing_autologin_s: float = 0.0
@@ -780,6 +781,57 @@ class Orchestrator:
 				job.directive_history = history
 				db.commit()
 
+	def _generate_post_recon_strategic_plan(self, remaining_agents: List[str]) -> None:
+		"""After Recon completes, call LLM for a comprehensive attack plan across all agents.
+
+		Generates focus_instructions + inject_tools for ALL remaining agents simultaneously.
+		More comprehensive than per-agent _generate_and_merge_directive.
+		"""
+		from .utils.orchestrator_directive import merge_directives
+		from .core.wordlist_catalog import available_catalog
+		summarizer = self._get_llm_summarizer()
+		if not summarizer or not remaining_agents:
+			return
+
+		self._refresh_shared_context_cache()
+		endpoint_inventory = self.shared_context.get("endpoint_inventory") or {}
+		tech_stack = self.shared_context.get("tech_stack") or {}
+		wordlist_catalog = available_catalog()
+
+		loop = self._ensure_event_loop()
+		try:
+			strategic_directive = loop.run_until_complete(
+				asyncio.wait_for(
+					summarizer.generate_strategic_plan(
+						recon_summary=self.cumulative_summary or "",
+						endpoint_inventory=endpoint_inventory,
+						tech_stack=tech_stack,
+						remaining_agents=remaining_agents,
+						wordlist_catalog=wordlist_catalog,
+					),
+					timeout=120,
+				)
+			)
+		except Exception as e:
+			print(f"[Orchestrator] Strategic plan generation failed: {e}")
+			return
+
+		if strategic_directive is None:
+			print("[Orchestrator] No strategic plan returned after Recon")
+			return
+
+		self._accumulated_directive = merge_directives(self._accumulated_directive, strategic_directive)
+		extra_wordlists = getattr(strategic_directive, "wordlists", [])
+		if extra_wordlists:
+			self._strategic_extra_wordlists = list(extra_wordlists)
+			print(f"[Orchestrator] Strategic plan: added wordlists {extra_wordlists}")
+
+		print(
+			f"[Orchestrator] Post-recon strategic plan: "
+			f"focus={list(self._accumulated_directive.focus_instructions.keys())}, "
+			f"inject={list(self._accumulated_directive.inject_tools.keys())}"
+		)
+
 	def _build_scope_context_block(self) -> str:
 		"""Build scope constraints block for LLM planning context (Layer 1)."""
 		from .core.config import SCOPE_VIOLATION_TOOLS
@@ -1003,7 +1055,12 @@ class Orchestrator:
 					s for s in plan[idx + 1:]
 					if isinstance(s, str) and s not in skip_agents_set
 				]
-				self._generate_and_merge_directive(step, remaining_for_directive)
+				if step == "ReconnaissanceAgent":
+					# Post-recon: comprehensive strategic plan for all remaining agents
+					self._generate_post_recon_strategic_plan(remaining_for_directive)
+				else:
+					# Per-agent: tactical directive for next agent
+					self._generate_and_merge_directive(step, remaining_for_directive)
 
 			# ── Agent-Level HITL Checkpoint ──────────────────────────────
 			# After each agent completes + summarization, pause for user review

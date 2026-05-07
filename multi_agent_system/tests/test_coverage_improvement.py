@@ -31,3 +31,57 @@ def test_r4_script_src_regex_matches_chunk_files():
     assert "/polyfills.js" in matches
     assert "/main.abc123.js" in matches
     assert "https://cdn.example.com/external.js" in matches
+
+
+import asyncio
+import json
+from unittest.mock import AsyncMock, patch
+
+
+def test_wordlist_catalog_structure():
+    from multi_agent_system.core.wordlist_catalog import WORDLIST_CATALOG
+    assert "always" in WORDLIST_CATALOG
+    assert "tech_specific" in WORDLIST_CATALOG
+    assert "deep" in WORDLIST_CATALOG
+    assert isinstance(WORDLIST_CATALOG["always"], list)
+    assert isinstance(WORDLIST_CATALOG["tech_specific"], dict)
+    assert len(WORDLIST_CATALOG["always"]) >= 1
+
+
+def test_generate_strategic_plan_parses_valid_response():
+    from multi_agent_system.utils.simple_llm_client import SimpleLLMClient
+
+    client = SimpleLLMClient.__new__(SimpleLLMClient)
+    client.provider = "openai"
+    client.model = "gpt-4o-mini"
+    client._strip_thinking_tags = lambda x: x
+
+    llm_response = json.dumps({
+        "focus_instructions": {
+            "AuthenticationAgent": "Test JWT forgery on /rest/user/login",
+            "InputValidationAgent": "Test SQLi on /rest/products/search?q=",
+        },
+        "inject_tools": {
+            "AuthorizationAgent": [{"tool": "test_idor", "arguments": {"endpoint": "/api/Users/1"}}],
+        },
+        "wordlists": ["/usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt"],
+        "reasoning": "Login endpoint found; SQLi and auth bypass are high priority."
+    })
+
+    async def _run():
+        with patch.object(client, "chat_completion", new=AsyncMock(return_value=llm_response)):
+            return await client.generate_strategic_plan(
+                recon_summary="Found /rest/user/login and /api/Users endpoints.",
+                endpoint_inventory={"by_tag": {"user_login": ["ep_001"], "api_generic": ["ep_002"]}},
+                tech_stack={"frontend": "React", "backend": "Node.js"},
+                remaining_agents=["AuthenticationAgent", "InputValidationAgent", "AuthorizationAgent"],
+                wordlist_catalog={"always": [], "tech_specific": {}, "deep": []},
+            )
+
+    result = asyncio.run(_run())
+    assert result is not None
+    assert "AuthenticationAgent" in result.focus_instructions
+    assert "AuthorizationAgent" in result.inject_tools
+    assert len(result.inject_tools["AuthorizationAgent"]) == 1
+    assert hasattr(result, "wordlists")
+    assert isinstance(result.wordlists, list)
