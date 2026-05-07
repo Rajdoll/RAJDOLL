@@ -480,6 +480,9 @@ function handleScanComplete(status) {
     startBtn.innerHTML = '<span class="btn-icon">⚡</span> Start Scan';
     sessionStorage.removeItem('hitl_allow_all');
     hitlAllowAllStatusUpdate();
+    _showHitlOverlay(false);
+    _flashTabTitle(false);
+    _cancelCountdown();
     if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
     wsReconnectAttempts = WS_MAX_RECONNECT_ATTEMPTS;
     if (websocket) websocket.close();
