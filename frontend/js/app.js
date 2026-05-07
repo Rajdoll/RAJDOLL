@@ -673,6 +673,13 @@ function showPreAgentCheckpoint(d) {
     document.getElementById('pre-agent-panel').style.display = 'block';
     document.getElementById('pre-agent-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
 
+    _showHitlOverlay(true);
+    _hitlCueAudio();
+    _flashTabTitle(true);
+    _startCountdown(600, 'pre-agent-countdown', () => {
+        addLog('[HITL] Pre-agent checkpoint countdown elapsed - backend will auto-proceed', 'warning');
+    });
+
     addLog(`[HITL] About to run: ${d.next_agent} — waiting for your input (Enter = Allow, Esc = Tell differently)`, 'warning');
 }
 
@@ -740,6 +747,9 @@ async function _respondPreAgent(action, directiveText) {
         });
         if (resp.ok) {
             if (directiveText) addLog(`[HITL] Directive sent — agent will adjust its plan`, 'success');
+            _showHitlOverlay(false);
+            _flashTabTitle(false);
+            _cancelCountdown();
             document.getElementById('pre-agent-panel').style.display = 'none';
             _preAgentCheckpointId = null;
         } else {
@@ -826,6 +836,14 @@ function showAgentCheckpoint(data) {
 
     panel.style.display = 'block';
     panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    _showHitlOverlay(true);
+    _hitlCueAudio();
+    _flashTabTitle(true);
+    _startCountdown(600, 'cp-countdown', () => {
+        addLog('[HITL] Post-agent checkpoint countdown elapsed - backend will auto-proceed', 'warning');
+    });
+
     addLog(`[HITL] ${data.completed_agent} complete (${data.findings_count} findings) — Enter = Allow, Esc = Tell differently`, 'warning');
 }
 
@@ -864,6 +882,9 @@ async function _respondCheckpoint(action, notes) {
         });
         if (resp.ok) {
             if (notes) addLog(`[HITL] Notes sent for next agent`, 'success');
+            _showHitlOverlay(false);
+            _flashTabTitle(false);
+            _cancelCountdown();
             document.getElementById('checkpointPanel').style.display = 'none';
             currentCheckpointId = null;
         } else {
