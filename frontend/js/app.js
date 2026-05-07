@@ -18,6 +18,7 @@ const startBtn = document.getElementById('startBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const resumeBtn = document.getElementById('resumeBtn');
+const requeueBtn = document.getElementById('requeueBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadPdfBtn = document.getElementById('downloadPdfBtn');
 const clearLogsBtn = document.getElementById('clearLogsBtn');
@@ -184,6 +185,7 @@ async function handleScanSubmit(e) {
 
     // Reset "allow all" flag for new scan
     sessionStorage.removeItem('hitl_allow_all');
+    hitlAllowAllStatusUpdate();
 
     try {
         startBtn.disabled = true;
@@ -211,6 +213,8 @@ async function handleScanSubmit(e) {
         if ("Notification" in window && Notification.permission === "default") {
             Notification.requestPermission();
         }
+        document.addEventListener('click', () => _hitlEnsureAudioContext(), { once: true });
+        hitlAllowAllStatusUpdate();
 
         addLog(`[SUCCESS] Scan created! Job ID: ${currentJobId}`, 'success');
         addLog('[SYSTEM] Starting multi-agent vulnerability assessment...', 'info');
@@ -282,6 +286,22 @@ async function handleResumeScan() {
     } catch (error) {
         addLog(`[ERROR] Failed to resume scan: ${error.message}`, 'error');
         resumeBtn.disabled = false;
+    }
+}
+
+async function handleRequeueScan() {
+    if (!currentJobId) return;
+    try {
+        requeueBtn.disabled = true;
+        addLog(`[SYSTEM] Requeuing stuck job ${currentJobId}...`, 'warning');
+        const response = await fetch(`${API_BASE}/scans/${currentJobId}/requeue`, { method: 'POST' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const data = await response.json();
+        addLog(`[SUCCESS] ${data.message || 'Job requeued'}`, 'success');
+        requeueBtn.style.display = 'none';
+    } catch (error) {
+        addLog(`[ERROR] Failed to requeue: ${error.message}`, 'error');
+        requeueBtn.disabled = false;
     }
 }
 
@@ -369,8 +389,15 @@ function updateStatusDisplay(data) {
     progressBar.style.width = `${progressPercent}%`;
 
     const status = data.status || 'queued';
+    // Show Requeue button only when stuck: queued + all agents pending + created > 30s ago
+    const allPending = (data.agents || []).every(a => a.status === 'pending');
+    const createdAt = data.created_at ? new Date(data.created_at).getTime() : Date.now();
+    const stuckQueued = status === 'queued' && allPending && (Date.now() - createdAt) > 30000;
+    requeueBtn.style.display = stuckQueued ? 'inline-flex' : 'none';
+    requeueBtn.disabled = false;
+
     if (['queued', 'running', 'waiting_checkpoint'].includes(status)) {
-        pauseBtn.style.display = 'inline-flex';
+        pauseBtn.style.display = status === 'queued' ? 'none' : 'inline-flex';
         resumeBtn.style.display = 'none';
         cancelBtn.style.display = 'inline-flex';
         downloadBtn.style.display = 'none';
@@ -452,6 +479,7 @@ function handleScanComplete(status) {
     startBtn.disabled = false;
     startBtn.innerHTML = '<span class="btn-icon">⚡</span> Start Scan';
     sessionStorage.removeItem('hitl_allow_all');
+    hitlAllowAllStatusUpdate();
     if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
     wsReconnectAttempts = WS_MAX_RECONNECT_ATTEMPTS;
     if (websocket) websocket.close();
@@ -654,6 +682,7 @@ function hitlAllow() {
 
 function hitlAllowAll() {
     sessionStorage.setItem('hitl_allow_all', '1');
+    hitlAllowAllStatusUpdate();
     addLog('[HITL] Allow all this session activated — all remaining checkpoints will be auto-approved', 'info');
     _respondPreAgent('proceed', null);
 }
@@ -804,6 +833,7 @@ function cpAllow() { _respondCheckpoint('proceed', null); }
 
 function cpAllowAll() {
     sessionStorage.setItem('hitl_allow_all', '1');
+    hitlAllowAllStatusUpdate();
     addLog('[HITL] Allow all this session activated — all remaining checkpoints will be auto-approved', 'info');
     _respondCheckpoint('proceed', null);
 }
@@ -975,3 +1005,107 @@ window.addEventListener('beforeunload', () => {
     wsReconnectAttempts = WS_MAX_RECONNECT_ATTEMPTS;
     if (websocket) websocket.close();
 });
+
+// ========== HITL ATTENTION HELPERS ==========
+
+let _hitlAudioCtx = null;
+let _hitlOriginalTitle = document.title;
+let _hitlTitleFlashHandle = null;
+let _hitlActiveCountdownHandle = null;
+
+function _hitlEnsureAudioContext() {
+    if (_hitlAudioCtx) return _hitlAudioCtx;
+    try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        _hitlAudioCtx = new Ctx();
+        return _hitlAudioCtx;
+    } catch (e) {
+        return null;
+    }
+}
+
+function _hitlCueAudio() {
+    const ctx = _hitlEnsureAudioContext();
+    if (!ctx) return;
+    try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.value = 0.18;
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.18);
+    } catch (e) {
+        // Audio failed — other channels still active
+    }
+}
+
+function _flashTabTitle(active) {
+    if (!active) {
+        if (_hitlTitleFlashHandle) {
+            clearInterval(_hitlTitleFlashHandle);
+            _hitlTitleFlashHandle = null;
+        }
+        document.title = _hitlOriginalTitle;
+        return;
+    }
+    if (_hitlTitleFlashHandle) return;  // already flashing
+    let toggle = false;
+    _hitlTitleFlashHandle = setInterval(() => {
+        document.title = toggle ? _hitlOriginalTitle : '⚠️ APPROVAL NEEDED — RAJDOLL';
+        toggle = !toggle;
+    }, 1000);
+}
+
+function _showHitlOverlay(visible) {
+    const overlay = document.getElementById('hitl-overlay');
+    if (!overlay) return;
+    overlay.classList.toggle('active', !!visible);
+}
+
+function _startCountdown(seconds, displayElementId, onTimeout) {
+    _cancelCountdown();
+    const el = document.getElementById(displayElementId);
+    if (!el) return;
+    let remaining = seconds;
+    const render = () => {
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        el.textContent = `auto-proceed in ${m}:${s.toString().padStart(2, '0')}`;
+    };
+    render();
+    _hitlActiveCountdownHandle = {
+        intervalId: setInterval(() => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                _cancelCountdown();
+                if (typeof onTimeout === 'function') onTimeout();
+                return;
+            }
+            render();
+        }, 1000),
+        elementId: displayElementId,
+    };
+}
+
+function _cancelCountdown() {
+    if (!_hitlActiveCountdownHandle) return;
+    clearInterval(_hitlActiveCountdownHandle.intervalId);
+    const el = document.getElementById(_hitlActiveCountdownHandle.elementId);
+    if (el) el.textContent = '';
+    _hitlActiveCountdownHandle = null;
+}
+
+function hitlAllowAllStatusUpdate() {
+    const banner = document.getElementById('hitl-allow-all-banner');
+    if (!banner) return;
+    banner.classList.toggle('active', !!sessionStorage.getItem('hitl_allow_all'));
+}
+
+function hitlClearAllowAll() {
+    sessionStorage.removeItem('hitl_allow_all');
+    hitlAllowAllStatusUpdate();
+    addLog('[HITL] Allow all this session — DISABLED. Next checkpoint will block again.', 'info');
+}
