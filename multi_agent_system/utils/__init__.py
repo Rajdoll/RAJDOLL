@@ -2,7 +2,7 @@
 RAJDOLL Multi-Agent Security System - Utils Module
 
 This module provides utility functions and classes for the multi-agent system:
-- LLM clients (SimpleLLMClient, LLMPlanner)
+- LLM client (SimpleLLMClient)
 - MCP client for tool execution
 - Session management
 - ReAct loop for iterative testing

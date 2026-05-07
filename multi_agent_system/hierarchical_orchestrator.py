@@ -30,7 +30,6 @@ from .core.config import settings
 from .core.db import get_db
 from .models.models import Job, JobAgent, JobStatus, AgentStatus
 from .agents.base_agent import AgentRegistry, AGENT_EXECUTION_TIMEOUT
-from .utils.llm_planner import LLMPlanner
 from .utils.shared_context_manager import SharedContextManager
 from .utils.knowledge_graph import KnowledgeGraph, EntityType
 from .utils.confidence_scorer import ConfidenceScorer
@@ -180,15 +179,7 @@ class HierarchicalOrchestrator:
         self.kg = KnowledgeGraph(job_id)
         self.scorer = ConfidenceScorer()
         self.chain_detector = AttackChainDetector(job_id, knowledge_graph=self.kg)
-        
-        # LLM planner for strategic decisions
-        self.llm_planner: Optional[LLMPlanner] = None
-        if settings.llm_api_key:
-            try:
-                self.llm_planner = LLMPlanner()
-            except Exception as e:
-                print(f"Warning: Failed to initialize LLM planner: {e}")
-        
+
         # Execution state
         self._completed_clusters: Set[ClusterType] = set()
         self._failed_agents: Set[str] = set()
@@ -445,22 +436,8 @@ class HierarchicalOrchestrator:
     
     def _optimize_cluster_order(self) -> List[AgentCluster]:
         """
-        Use LLM to optimize cluster execution order based on recon results.
-        
-        Falls back to default priority order if LLM unavailable.
+        Optimize cluster execution order based on dependencies and priorities.
         """
-        if not self.llm_planner:
-            return sorted(self.clusters, key=lambda c: c.priority)
-        
-        # Get recon results for strategic planning
-        recon_data = {
-            "tech_stack": self.shared_context.get("tech_stack", {}),
-            "entry_points": self.shared_context.get("entry_points", []),
-            "endpoints": len(self.shared_context.get("discovered_endpoints", [])),
-        }
-        
-        # For now, use default order
-        # TODO: Implement LLM-based cluster prioritization
         return sorted(self.clusters, key=lambda c: c.priority)
     
     def _detect_attack_chains(self) -> None:
