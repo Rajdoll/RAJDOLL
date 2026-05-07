@@ -756,9 +756,15 @@ async function _respondPreAgent(action, directiveText) {
             const err = await resp.json();
             document.getElementById('pre-agent-directive-errors').textContent =
                 'Error: ' + (err.detail || JSON.stringify(err));
+            _showHitlOverlay(false);
+            _flashTabTitle(false);
+            _cancelCountdown();
         }
     } catch (e) {
         addLog(`[HITL] Pre-agent respond error: ${e.message}`, 'error');
+        _showHitlOverlay(false);
+        _flashTabTitle(false);
+        _cancelCountdown();
     }
 }
 
@@ -890,9 +896,15 @@ async function _respondCheckpoint(action, notes) {
         } else {
             const err = await resp.json();
             addLog(`[HITL] Error: ${err.detail || 'Unknown error'}`, 'error');
+            _showHitlOverlay(false);
+            _flashTabTitle(false);
+            _cancelCountdown();
         }
     } catch (err) {
         addLog(`[HITL] Network error: ${err.message}`, 'error');
+        _showHitlOverlay(false);
+        _flashTabTitle(false);
+        _cancelCountdown();
     }
 }
 
