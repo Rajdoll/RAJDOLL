@@ -264,6 +264,12 @@ body {
     box-shadow: 0 0 14px rgba(77,184,255,0.2);
 }
 
+.btn-secondary { color: var(--accent-warning); border: 1px solid var(--accent-warning); }
+.btn-secondary:hover {
+    background: rgba(255,170,0,0.10);
+    box-shadow: 0 0 14px rgba(255,170,0,0.25);
+}
+
 .btn-small {
     padding: 5px 12px;
     font-size: 0.72rem;
@@ -733,4 +739,41 @@ body {
     .status-grid    { grid-template-columns: 1fr; }
     .action-buttons { flex-direction: column; }
     .btn            { width: 100%; justify-content: center; }
+}
+
+/* HITL — multi-channel attention */
+.hitl-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 9000;
+    display: none;
+    pointer-events: auto;
+}
+.hitl-overlay.active { display: block; }
+
+.checkpoint-panel { position: relative; z-index: 9100; }
+
+.hitl-allow-all-banner {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 6px 12px;
+    background: rgba(77, 255, 145, 0.10);
+    border: 1px solid var(--accent-green);
+    color: var(--accent-green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.78rem;
+    cursor: pointer;
+    user-select: none;
+}
+.hitl-allow-all-banner.active { display: inline-flex; }
+.hitl-allow-all-banner:hover { background: rgba(77, 255, 145, 0.18); }
+
+.hitl-countdown {
+    margin-left: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--accent-warning);
 }
