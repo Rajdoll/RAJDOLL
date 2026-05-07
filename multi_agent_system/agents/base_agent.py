@@ -64,9 +64,8 @@ class BaseAgent:
 	system_prompt: ClassVar[str] = (
 		"You are an OWASP WSTG expert. Plan focused, high-signal tests using MCP tools."
 	)
-	disable_llm_planning: ClassVar[bool] = False
 	disable_hitl: ClassVar[bool] = False
-	
+
 	def __post_init__(self):
 		"""Initialize agent with optional tool plan from LLM"""
 		self.tool_plan: Dict[str, Any] | None = None
@@ -297,14 +296,7 @@ class BaseAgent:
 				flush=True,
 			)
 
-			# Check if LLM planning disabled via env var or class attribute
-			disable_planning = os.getenv('DISABLE_LLM_PLANNING', 'false').lower() == 'true' or getattr(self, "disable_llm_planning", False)
-
-			# Tier 2.1: Skip per-agent LLM if orchestrator already ran LLM planning
-			# (the orchestrator plan just didn't have tools for THIS agent — use all tools)
-			if not disable_planning and getattr(self, "_orchestrator_had_plan", False):
-				disable_planning = True
-				print(f"⏭️ {self.agent_name}: Skipping per-agent LLM — orchestrator already planned (no tools for this agent)", file=sys.stderr, flush=True)
+			disable_planning = os.getenv('DISABLE_LLM_PLANNING', 'false').lower() == 'true'
 
 			# Tier 2.2: Skip LLM planning for agents with <= 5 tools (no value in selection)
 			if not disable_planning and len(available_tools) <= 5:

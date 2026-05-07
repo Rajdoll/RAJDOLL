@@ -10,7 +10,6 @@ from .core.config import settings
 from .core.db import get_db
 from .models.models import Job, JobAgent, JobStatus, AgentStatus, Finding
 from .agents.base_agent import AgentRegistry, AGENT_EXECUTION_TIMEOUT  # FIX #2: Import timeout
-from .utils.llm_planner import LLMPlanner
 from .utils.hitl_manager import HITLManager
 from .utils.shared_context_manager import SharedContextManager
 from .utils.session_service import create_authenticated_session
@@ -92,8 +91,6 @@ class Orchestrator:
 	def __init__(self, job_id: int, resume_from_step_idx: int | None = None):
 		self.job_id = job_id
 		self.resume_from_step_idx = resume_from_step_idx
-		self.llm_planner: Optional[LLMPlanner] = None
-		self.llm_test_plan: Optional[Dict[str, Any]] = None
 		self.shared_context: Dict[str, Any] = {}  # Cache of aggregated shared context
 		self.context_manager = SharedContextManager(job_id, log_hook=self._log_context_event)
 		self.plan_metadata: Dict[str, Any] = self._load_plan_metadata()
@@ -110,10 +107,8 @@ class Orchestrator:
 
 		# Timing tracking for scan_timing SharedContext
 		self._timing_autologin_s: float = 0.0
-		self._timing_llm_planning_s: float = 0.0
 		self._timing_summarization_s: float = 0.0
 		self._timing_autologin_detail: str = ""
-		self._timing_llm_planning_detail: str = ""
 		
 		# CRITICAL FIX: Write target URL to shared context at initialization
 		# This ensures all agents have access to the actual target URL
@@ -123,14 +118,6 @@ class Orchestrator:
 			self.context_manager.write("target_url", target_url)  # Alias for backward compat
 			print(f"[Orchestrator] Target URL written to shared_context: {target_url}")
 		
-		# Initialize LLM planner if API key is configured (OpenAI/Anthropic unified)
-		if settings.llm_api_key:
-			try:
-				self.llm_planner = LLMPlanner()
-			except Exception as e:
-				print(f"Warning: Failed to initialize LLM planner: {e}")
-				print("Falling back to default static plan")
-				self.llm_planner = None
 
 	def _format_exception_message(self, exc: BaseException) -> str:
 		"""Return a non-empty, human-usable error string for persistence."""
@@ -195,14 +182,6 @@ class Orchestrator:
 			return
 
 		agent = agent_cls(job_id=self.job_id)
-
-		# If LLM provided a tool plan for THIS agent, inject it
-		# and mark that orchestrator already planned (skip per-agent LLM)
-		if tool_plan and hasattr(agent, 'set_tool_plan'):
-			agent.set_tool_plan(tool_plan)
-			agent._orchestrator_had_plan = True
-		else:
-			agent._orchestrator_had_plan = False
 
 		# Inject tools from LLM orchestrator directive
 		inject_specs = self._accumulated_directive.inject_tools.get(agent_name, [])
@@ -502,13 +481,6 @@ class Orchestrator:
 			if isinstance(s, str) and s != agent_name
 		]
 		planned_tools = []
-		tool_plan = self._get_tool_plan_for_agent(agent_name)
-		if tool_plan:
-			for t in tool_plan.get("tools", []):
-				if isinstance(t, str):
-					planned_tools.append(t)
-				elif isinstance(t, dict) and t.get("tool"):
-					planned_tools.append(t["tool"])
 
 		loop = self._ensure_event_loop()
 		try:
@@ -861,49 +833,6 @@ class Orchestrator:
 
 		return ctx
 
-	def _get_tool_plan_for_agent(self, agent_name: str) -> Optional[Dict[str, Any]]:
-		"""Extract tool plan for specific agent from LLM test plan.
-
-		Understands these shapes:
-		- owasp_categories: [{ agent, category, mcp_tools: [{tool, reason, arguments}], priority, reasoning }]
-		- execution_sequence: [{ category, recommended_tools: [..], ... }]
-		"""
-		if not self.llm_test_plan:
-			return None
-
-		owasp_category = AGENT_TO_OWASP_MAP.get(agent_name)
-		# 1) Prefer explicit owasp_categories
-		cats = self.llm_test_plan.get("owasp_categories")
-		if isinstance(cats, list):
-			for item in cats:
-				if item.get("agent") == agent_name or (owasp_category and item.get("category") == owasp_category):
-					tools = []
-					for t in item.get("mcp_tools", []) or []:
-						if isinstance(t, dict) and t.get("tool"):
-							# CRITICAL FIX: Preserve full tool objects with arguments from LLM
-							# This enables execute_tool() to merge comprehensive test cases
-							tools.append(t)  # Full object: {tool, reason, arguments}
-					return {
-						"category": item.get("category", owasp_category or ""),
-						"tools": tools,  # List of tool objects with arguments
-						"reasoning": item.get("reasoning", ""),
-						"priority": item.get("priority", "medium"),
-					}
-
-		# 2) Legacy execution_sequence with recommended_tools
-		seq = self.llm_test_plan.get("execution_sequence")
-		if isinstance(seq, list) and owasp_category:
-			for step in seq:
-				if step.get("category") == owasp_category:
-					return {
-						"category": owasp_category,
-						"tools": step.get("recommended_tools", []),
-						"reasoning": step.get("reasoning", ""),
-						"priority": step.get("priority", "medium"),
-					}
-
-		return None
-
 	def _run_phases_4_5(self) -> None:
 		"""Run Phase 4 (final cross-agent analysis) and Phase 5 (report + status finalization).
 
@@ -935,11 +864,6 @@ class Orchestrator:
 						"detail": self._timing_autologin_detail or "Attempted",
 					},
 					{
-						"name": "LLM Planning",
-						"duration_s": round(self._timing_llm_planning_s),
-						"detail": self._timing_llm_planning_detail or "Strategy generation",
-					},
-					{
 						"name": "Summarization",
 						"duration_s": round(self._timing_summarization_s),
 						"detail": f"{len(agents_db)} agents summarized",
@@ -953,7 +877,6 @@ class Orchestrator:
 			}
 			self.context_manager.write("scan_timing", scan_timing)
 			print(f"[Orchestrator] scan_timing written: autologin={self._timing_autologin_s:.0f}s "
-			      f"planning={self._timing_llm_planning_s:.0f}s "
 			      f"summarization={self._timing_summarization_s:.0f}s "
 			      f"agents={agent_sum_s:.0f}s")
 		except Exception as e:
@@ -969,7 +892,7 @@ class Orchestrator:
 				report_pending = bool(report_ja and report_ja.status in (AgentStatus.pending, AgentStatus.running))
 			if report_pending:
 				print("[Orchestrator] ReportGenerationAgent still pending; running it now...")
-				self._run_step_sync("ReportGenerationAgent", self._get_tool_plan_for_agent("ReportGenerationAgent"))
+				self._run_step_sync("ReportGenerationAgent", None)
 
 		print("[Orchestrator] Testing completed")
 
@@ -1047,22 +970,7 @@ class Orchestrator:
 
 			print(f"[Orchestrator] Step {idx + 1}/{len(plan)}: {step}")
 
-			# Get tool plan for this step
 			tool_plan = None
-			if isinstance(step, str):
-				tool_plan = self._get_tool_plan_for_agent(step)
-				if tool_plan:
-					print(f"[Orchestrator] LLM selected tools: {tool_plan['tools']}")
-			elif isinstance(step, dict) and "parallel" in step:
-				# Build per-agent tool plans for parallel batch
-				tool_plan = {}
-				for pname in step["parallel"]:
-					agent_plan = self._get_tool_plan_for_agent(pname)
-					if agent_plan:
-						tool_plan[pname] = agent_plan
-						print(f"[Orchestrator] LLM selected tools for {pname}: {agent_plan['tools']}")
-				if not tool_plan:
-					tool_plan = None  # No plans found for any agent
 
 			# Target health check — wait for target to recover before starting
 			# each agent (skip Recon which must always run, and Report which
@@ -1253,70 +1161,9 @@ class Orchestrator:
 		
 		plan = self._remove_recon(plan_with_recon)
 		
-		# PHASE 2: Use LLM to plan testing strategy based on reconnaissance
-		# Skip if DISABLE_LLM_PLANNING=true (use fallback plan)
-		if self._is_job_cancelled():
-			print("[Orchestrator] Job cancelled by user, aborting...")
-			return
-		
-		disable_planning = os.getenv("DISABLE_LLM_PLANNING", "false").lower() == "true"
-		
-		if self.llm_planner and not disable_planning:
-			print("[Orchestrator] Phase 2: LLM analyzing reconnaissance and planning testing strategy...")
-			try:
-				recon_results = self._get_recon_results()
-				if recon_results:
-					# Get LLM-generated testing plan with timeout protection (5 minutes max)
-					print("[Orchestrator] Calling LLM planner with 300s timeout...")
-					from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-					
-					_t_plan_start = _time.monotonic()
-					with ThreadPoolExecutor(max_workers=1) as executor:
-						future = executor.submit(self.llm_planner.plan_testing_strategy, recon_results)
-						try:
-							self.llm_test_plan = future.result(timeout=300)  # 5 minutes
-							print("[Orchestrator] LLM planning completed successfully")
-						except FuturesTimeoutError:
-							print("[Orchestrator] ERROR: LLM planning timed out after 300s")
-							print("[Orchestrator] Falling back to default plan")
-							raise TimeoutError("LLM planning exceeded 5 minute timeout")
-					self._timing_llm_planning_s = _time.monotonic() - _t_plan_start
-					self._timing_llm_planning_detail = f"{len(self.llm_test_plan.get('owasp_categories', []))} OWASP categories planned"
-
-					# Save LLM test plan metadata for tool selection
-					print(f"[Orchestrator] LLM test plan keys: {list(self.llm_test_plan.keys())}")
-					print(f"[Orchestrator] owasp_categories count: {len(self.llm_test_plan.get('owasp_categories', []))}")
-					print(f"[Orchestrator] Testing strategy: {self.llm_test_plan.get('strategy') or self.llm_test_plan.get('testing_strategy', 'N/A')}")
-
-					# Save execution plan metadata for downstream consumers
-					meta = self.plan_metadata if isinstance(self.plan_metadata, dict) else {}
-					meta = dict(meta)
-					meta["llm_test_plan"] = self.llm_test_plan
-					self._save_plan_metadata(meta)
-
-					# OPTION B (FIX Bug #1 & #3): Use DEFAULT_PLAN parallel structure for Phase 2
-					# LLM planning is used ONLY for tool selection, NOT execution order
-					print("[Orchestrator] Phase 2: Using DEFAULT_PLAN parallel structure (LLM for tool selection only)")
-					plan = self._remove_recon(list(DEFAULT_PLAN))  # Preserves {"parallel": [...]}
-					print(f"[Orchestrator] Execution plan: {plan}")
-				else:
-					print("[Orchestrator] Warning: No reconnaissance results found, using default plan")
-					plan = self._remove_recon(list(DEFAULT_PLAN))
-			except Exception as e:
-				print(f"[Orchestrator] Error in LLM planning: {e}")
-				print("[Orchestrator] Falling back to default plan")
-				plan = self._remove_recon(list(DEFAULT_PLAN))  # Fallback only on error
-		elif disable_planning:
-			print("[Orchestrator] Phase 2: LLM planning disabled (DISABLE_LLM_PLANNING=true), using fallback plan")
-			plan = self._remove_recon(list(DEFAULT_PLAN))
-		else:
-			print("[Orchestrator] LLM planner not available, using default plan")
-			plan = self._remove_recon(list(DEFAULT_PLAN))
-
-		# Override with full WSTG coverage if explicitly enabled
-		if self.full_wstg_coverage:
-			print("[Orchestrator] Full WSTG coverage enabled – overriding with complete agent roster.")
-			plan = self._remove_recon(list(DEFAULT_PLAN))
+		# PHASE 2: Execution plan — strategic planning runs post-recon
+		plan = self._remove_recon(list(DEFAULT_PLAN))
+		print(f"[Orchestrator] Phase 2: execution plan = {plan}")
 
 		self._update_plan_sequence(["ReconnaissanceAgent", *plan])
 
