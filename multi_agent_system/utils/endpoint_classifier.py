@@ -40,7 +40,8 @@ def _signature_hash(ep: dict) -> str:
 
 
 def cache_key(hostname: str, ep: dict) -> str:
-    blob = f"{hostname}|{ep.get('path', '')}|{ep.get('method', '')}|{_signature_hash(ep)}"
+    path = ep.get("path") or ep.get("endpoint", "")
+    blob = f"{hostname}|{path}|{ep.get('method', '')}|{_signature_hash(ep)}"
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
@@ -137,7 +138,14 @@ class LLMEndpointClassifier:
 
     async def _classify_batch(self, prompt_template: str, eps: list[dict]) -> dict[str, dict]:
         endpoint_payload = json.dumps([
-            {k: ep.get(k) for k in ("id", "path", "method", "auth_required", "discovered_by", "response_signature")}
+            {
+                "id": ep.get("id"),
+                "path": ep.get("path") or ep.get("endpoint", ""),
+                "method": ep.get("method"),
+                "auth_required": ep.get("auth_required") if ep.get("auth_required") is not None else ep.get("requires_auth", False),
+                "discovered_by": ep.get("discovered_by") or ep.get("source", ""),
+                "response_signature": ep.get("response_signature"),
+            }
             for ep in eps
         ])
         prompt = prompt_template.replace("{endpoints_json}", endpoint_payload)

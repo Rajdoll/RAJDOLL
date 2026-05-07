@@ -121,3 +121,47 @@ async def test_classifier_drops_low_confidence_tags(tmp_path):
     )
     out = await classifier.classify("h", [make_endpoint("ep_001")])
     assert out[0]["tags"] == []
+
+
+# --- Crawl-format endpoint tests (field is 'endpoint' not 'path') ---
+
+def test_cache_key_differs_for_same_method_crawl_endpoints():
+    """Two GET crawl endpoints with different 'endpoint' paths must have different cache keys.
+
+    Bug: cache_key uses ep.get('path', '') which returns '' for crawl endpoints
+    (they use 'endpoint' field). All same-method crawl endpoints collapse to one key.
+    """
+    ep_users = {"id": "ep_001", "endpoint": "/api/users", "method": "GET"}
+    ep_products = {"id": "ep_002", "endpoint": "/api/products", "method": "GET"}
+    k_users = cache_key("juice-shop", ep_users)
+    k_products = cache_key("juice-shop", ep_products)
+    assert k_users != k_products
+
+
+@pytest.mark.asyncio
+async def test_classify_sends_actual_path_in_llm_payload_for_crawl_endpoints(tmp_path):
+    """LLM prompt must contain the actual path from 'endpoint' field, not null.
+
+    Bug: _classify_batch sends ep.get('path') which is None for crawl endpoints
+    (field name is 'endpoint'). LLM sees path=null → cannot classify → empty tags.
+    """
+    llm = AsyncMock()
+    llm.chat_completion = AsyncMock(return_value=json.dumps({
+        "classifications": [
+            {"id": "ep_001", "tags": ["user_login"], "confidence": {"user_login": 0.9}},
+        ]
+    }))
+    classifier = LLMEndpointClassifier(
+        llm_client=llm,
+        cache_path=tmp_path / "cache.json",
+        batch_size=30,
+        max_batches=3,
+    )
+    ep = {"id": "ep_001", "endpoint": "/rest/user/login", "method": "POST"}
+    await classifier.classify("juice-shop", [ep])
+
+    assert llm.chat_completion.await_count >= 1, "LLM must be called"
+    prompt_content = llm.chat_completion.call_args[0][0][0]["content"]
+    assert "/rest/user/login" in prompt_content, (
+        f"Path '/rest/user/login' missing from LLM prompt — 'endpoint' field not used as path."
+    )
