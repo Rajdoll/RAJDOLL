@@ -1354,33 +1354,46 @@ Operate autonomously without human guidance.
         """
         js_ctx = self.context_manager.read("js_routes_analysis") or {}
         if js_ctx.get("api_endpoints"):
-            return  # MCP tool already found endpoints — nothing to do
+            return  # MCP tool already found endpoints - nothing to do
 
         parsed = urlparse(target)
         base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme else target.rstrip("/")
 
-        # Primary candidates in priority order; katana JS files injected below
-        js_candidates: List[str] = [
-            f"{base_url}/main.js",
-            f"{base_url}/scripts.js",
-            f"{base_url}/vendor.js",
-        ]
+        api_regex = re.compile(r'["\'](\/?(?:api|rest|graphql)\/[\w/.\-]+)["\']')
+        script_re = re.compile(r'<script[^>]+src=["\']([^"\']+\.js)["\']', re.IGNORECASE)
 
-        # Prepend JS files already discovered by katana (excluding polyfills/runtime/chunks)
+        # Step 1: Fetch the page HTML and extract actual <script src="..."> URLs
+        js_candidates: list[str] = []
+        try:
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15) as client:
+                page_resp = await client.get(base_url + "/")
+                if page_resp.status_code == 200:
+                    for src in script_re.findall(page_resp.text):
+                        if src.startswith("http"):
+                            continue  # Skip external CDN scripts
+                        full = base_url + src if src.startswith("/") else f"{base_url}/{src}"
+                        if full not in js_candidates:
+                            js_candidates.append(full)
+        except Exception as exc:
+            self.log("debug", f"[JS fallback] Page fetch for script extraction failed: {exc}")
+
+        # Step 2: Also add any JS files discovered by katana (all, including chunks)
         katana_ctx = self.context_manager.read("katana_crawl") or {}
         for ep in katana_ctx.get("endpoints", []):
             url = ep.get("url", "")
-            if url.endswith(".js") and not any(x in url for x in ("chunk", "polyfill", "runtime")):
-                if url not in js_candidates:
-                    js_candidates.insert(0, url)
+            if url.endswith(".js") and url not in js_candidates:
+                js_candidates.append(url)
 
-        api_regex = re.compile(r'["\'](\/?(?:api|rest|graphql)\/[\w/.-]+)["\']')
+        if not js_candidates:
+            self.log("warning", "[JS fallback] No JS candidates found - discovered_endpoints may be incomplete")
+            return
 
+        # Step 3: Download and parse each JS file for API path patterns
         async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=20) as client:
-            for js_url in js_candidates[:5]:
+            for js_url in js_candidates[:8]:
                 try:
                     resp = await client.get(js_url)
-                    if resp.status_code != 200 or len(resp.text) < 500:
+                    if resp.status_code != 200 or len(resp.text) < 200:
                         continue
                     matches = api_regex.findall(resp.text)
                     if not matches:
@@ -1395,7 +1408,6 @@ Operate autonomously without human guidance.
                         "all_routes": [],
                         "source": "fallback",
                     })
-                    # Merge into discovered_endpoints
                     existing = self.context_manager.read("discovered_endpoints") or {}
                     existing_list = existing.get("endpoints", []) if isinstance(existing, dict) else []
                     existing_urls = {ep.get("url", "") for ep in existing_list}
@@ -1411,12 +1423,12 @@ Operate autonomously without human guidance.
                     if new_eps:
                         all_eps = existing_list + new_eps
                         self.write_context("discovered_endpoints", {"endpoints": all_eps, "count": len(all_eps)})
-                        self.log("info", f"[JS fallback] Merged {len(new_eps)} API endpoints into discovered_endpoints (total {len(all_eps)})")
-                    return  # Done — stop trying more JS files
+                        self.log("info", f"[JS fallback] Merged {len(new_eps)} API endpoints (total {len(all_eps)})")
+                    return  # Done on first successful parse
                 except Exception as exc:
                     self.log("debug", f"[JS fallback] Failed to fetch {js_url}: {exc}")
 
-        self.log("warning", "[JS fallback] No API endpoints found in any JS file — discovered_endpoints may be incomplete")
+        self.log("warning", "[JS fallback] No API endpoints found in any JS file - discovered_endpoints may be incomplete")
 
     async def _perform_endpoint_discovery(self, target: str, baseline_snapshot: Dict[str, Any]) -> None:
         self.log("info", "🔎 Executing custom endpoint discovery crawl")
