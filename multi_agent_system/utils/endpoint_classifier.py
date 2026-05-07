@@ -151,38 +151,20 @@ class LLMEndpointClassifier:
         prompt = prompt_template.replace("{endpoints_json}", endpoint_payload)
         messages = [{"role": "user", "content": prompt}]
 
-        schema = {
-            "name": "endpoint_classifications",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "classifications": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {"type": "string"},
-                                "tags": {"type": "array", "items": {"type": "string"}},
-                                "confidence": {"type": "object", "additionalProperties": {"type": "number"}},
-                            },
-                            "required": ["id", "tags", "confidence"],
-                        },
-                    },
-                },
-                "required": ["classifications"],
-            },
-        }
-
         raw = await asyncio.wait_for(
             self.llm.chat_completion(
                 messages,
                 max_tokens=2000,
                 temperature=0.1,
-                response_schema=schema["schema"],
             ),
             timeout=self.timeout,
         )
-        data = json.loads(raw)
+        # Strip markdown code fences if present, then extract the JSON object
+        import re as _re
+        match = _re.search(r'\{.*\}', raw, _re.DOTALL)
+        if not match:
+            return {}
+        data = json.loads(match.group())
 
         out: dict[str, dict] = {}
         for entry in data.get("classifications", []):

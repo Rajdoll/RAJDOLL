@@ -165,3 +165,54 @@ async def test_classify_sends_actual_path_in_llm_payload_for_crawl_endpoints(tmp
     assert "/rest/user/login" in prompt_content, (
         f"Path '/rest/user/login' missing from LLM prompt — 'endpoint' field not used as path."
     )
+
+
+@pytest.mark.asyncio
+async def test_classify_parses_markdown_wrapped_json_response(tmp_path):
+    """When LLM wraps its JSON in markdown code fences, classifier must still extract tags.
+
+    Bug: _classify_batch does json.loads(raw) directly. If LLM returns
+    ```json\\n{...}\\n``` the parse fails silently and all tags become [].
+    """
+    llm = AsyncMock()
+    llm.chat_completion = AsyncMock(return_value=(
+        "```json\n"
+        '{"classifications": [{"id": "ep_001", "tags": ["user_login"], "confidence": {"user_login": 0.9}}]}'
+        "\n```"
+    ))
+    classifier = LLMEndpointClassifier(
+        llm_client=llm,
+        cache_path=tmp_path / "cache.json",
+        batch_size=30,
+        max_batches=3,
+    )
+    out = await classifier.classify("juice-shop", [make_endpoint("ep_001", "/rest/user/login", "POST")])
+    assert out[0]["tags"] == ["user_login"], (
+        f"Expected ['user_login'], got {out[0]['tags']} — markdown-wrapped JSON not handled."
+    )
+
+
+@pytest.mark.asyncio
+async def test_classify_does_not_send_response_schema_to_llm(tmp_path):
+    """_classify_batch must NOT pass response_schema to chat_completion.
+
+    Bug: LM Studio returns invalid_request_error when response_schema is passed.
+    This causes the batch to fail silently and all tags become [].
+    """
+    llm = AsyncMock()
+    llm.chat_completion = AsyncMock(return_value=json.dumps({
+        "classifications": [{"id": "ep_001", "tags": ["api_generic"], "confidence": {"api_generic": 0.9}}]
+    }))
+    classifier = LLMEndpointClassifier(
+        llm_client=llm,
+        cache_path=tmp_path / "cache.json",
+        batch_size=30,
+        max_batches=3,
+    )
+    await classifier.classify("juice-shop", [make_endpoint("ep_001")])
+
+    assert llm.chat_completion.await_count >= 1
+    call_kwargs = llm.chat_completion.call_args[1]
+    assert "response_schema" not in call_kwargs, (
+        "response_schema must not be sent to LLM — LM Studio rejects it with invalid_request_error."
+    )
