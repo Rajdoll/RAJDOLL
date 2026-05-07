@@ -1162,9 +1162,12 @@ RESPONSE FORMAT (JSON):
         checkpoint_id: int,
         agent_name: str,
         poll_interval: int = 2,
-        timeout: int = 3600,  # 1 hour max wait
+        timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Poll database for user response to agent checkpoint."""
+        if timeout is None:
+            timeout = getattr(settings, "hitl_checkpoint_timeout_seconds", 600)
+
         elapsed = 0
 
         while elapsed < timeout:

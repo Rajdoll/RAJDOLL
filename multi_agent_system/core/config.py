@@ -86,6 +86,7 @@ class Settings:
     enable_tool_hitl: bool = field(init=False)
     hitl_mode: str = field(default_factory=lambda: os.getenv("HITL_MODE", "off"))  # off | agent | tool
     tool_hitl_timeout: int = _get_env_int("TOOL_APPROVAL_TIMEOUT", 600)
+    hitl_checkpoint_timeout_seconds: int = _get_env_int("HITL_CHECKPOINT_TIMEOUT_SECONDS", 600)
     auto_approve_tool_agents: List[str] = field(default_factory=list)
     scan_profile: str = field(default_factory=lambda: os.getenv("SCAN_PROFILE", "lab"))
 
