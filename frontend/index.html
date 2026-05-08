@@ -23,8 +23,9 @@
             <div class="system-status">
                 <span class="status-dot"></span> SYSTEM ONLINE
             </div>
-            <div id="hitl-allow-all-banner" class="hitl-allow-all-banner" onclick="hitlClearAllowAll()" title="Click to disable Allow all">
-                🟢 Allow all is ACTIVE — click to disable
+            <div id="hitl-allow-all-banner" class="hitl-allow-all-banner">
+                <span>🟢 Allow all this session is ACTIVE</span>
+                <button onclick="hitlClearAllowAll()" class="btn btn-danger btn-small" style="margin-left:12px;">✕ Disable</button>
             </div>
         </header>
 

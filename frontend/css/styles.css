@@ -765,11 +765,8 @@ body {
     color: var(--accent-green);
     font-family: 'Share Tech Mono', monospace;
     font-size: 0.78rem;
-    cursor: pointer;
-    user-select: none;
 }
 .hitl-allow-all-banner.active { display: inline-flex; }
-.hitl-allow-all-banner:hover { background: rgba(77, 255, 145, 0.18); }
 
 .hitl-countdown {
     margin-left: 10px;
