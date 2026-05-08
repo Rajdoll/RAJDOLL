@@ -14,6 +14,8 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import hashlib
+import hmac
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -157,13 +159,15 @@ class SecurityGuardRails:
             )
         
         # Check 2: Authorization token (skip for auto-approve domains)
+        _admin_env = os.getenv("ADMIN_TOKEN", "")
+        admin_authorized = bool(auth_token) and bool(_admin_env) and hmac.compare_digest(auth_token, _admin_env)
         if self.require_authorization_token and domain not in self.auto_approve_domains:
             if not auth_token or not self.verify_token(auth_token, domain):
                 raise InvalidAuthTokenError(
                     "Valid authorization token required. "
                     "Obtain from system administrator or target owner."
                 )
-        
+
         # Check 3: Security policy (robots.txt, security.txt)
         security_policy = await self.check_security_policy(url)
         if security_policy.disallow_scanning:
@@ -172,9 +176,9 @@ class SecurityGuardRails:
                 f"Policy: {security_policy.policy_url}\n"
                 f"Contact: {security_policy.contact_email}"
             )
-        
-        # Check 4: Human-in-the-loop confirmation
-        if self.hitl_mode and domain not in self.auto_approve_domains:
+
+        # Check 4: Human-in-the-loop confirmation (skip when ADMIN_TOKEN used)
+        if self.hitl_mode and domain not in self.auto_approve_domains and not admin_authorized:
             await self.request_user_confirmation(url)
         
         return True
@@ -236,15 +240,14 @@ class SecurityGuardRails:
     
     def verify_token(self, token: str, domain: str) -> bool:
         """
-        Verify authorization token is valid for domain
-        
-        Args:
-            token: Authorization token
-            domain: Domain to check authorization for
-        
-        Returns:
-            True if token is valid
+        Verify authorization token is valid for domain.
+        ADMIN_TOKEN is accepted as a universal override for any whitelisted domain.
         """
+        # ADMIN_TOKEN acts as universal authorization for whitelisted domains
+        admin_token = os.getenv("ADMIN_TOKEN", "")
+        if admin_token and hmac.compare_digest(token, admin_token) and self.is_whitelisted(domain):
+            return True
+
         if token not in self._valid_tokens:
             return False
         

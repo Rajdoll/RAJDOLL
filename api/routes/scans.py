@@ -320,6 +320,25 @@ def resume_scan(job_id: int):
 	}
 
 
+@router.post("/scans/{job_id}/requeue", status_code=202)
+def requeue_scan(job_id: int):
+	"""Re-dispatch a Celery task for a job stuck in queued status (task was lost on worker restart)."""
+	from multi_agent_system.tasks.celery_app import celery_app as _celery
+	with get_db() as db:
+		job = db.query(Job).get(job_id)
+		if not job:
+			raise HTTPException(status_code=404, detail="Job not found")
+		if job.status != JobStatus.queued:
+			raise HTTPException(status_code=409, detail=f"Job is not queued (status: {job.status.value}). Only stuck queued jobs can be requeued.")
+		job.updated_at = datetime.utcnow()
+		db.commit()
+
+	# Use a deterministic task_id so concurrent requeue calls dispatch at most one live task.
+	task_id = f"requeue-job-{job_id}"
+	_celery.send_task("multi_agent_system.tasks.tasks.run_job_task", args=[job_id], task_id=task_id)
+	return {"message": "Job requeued successfully", "job_id": job_id}
+
+
 # ============================================================================
 # HITL Live Execution Monitor — status & intervention
 # ============================================================================
