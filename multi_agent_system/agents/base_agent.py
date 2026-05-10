@@ -70,6 +70,7 @@ class BaseAgent:
 		"""Initialize agent with optional tool plan from LLM"""
 		self.tool_plan: Dict[str, Any] | None = None
 		self._tool_failures: Dict[str, int] = {}
+		self._tool_retry_counter: Dict[tuple, int] = {}
 		self._shared_context_snapshot: Dict[str, Any] = {}
 		self._target: Optional[str] = None
 		self._tool_reason_map: Dict[str, str] = {}
@@ -1006,8 +1007,6 @@ class BaseAgent:
 		findings = result.get("findings", []) if isinstance(result, dict) else []
 		if findings:
 			return result
-		if not hasattr(self, "_tool_retry_counter"):
-			self._tool_retry_counter = {}
 		key = (tool, subtest_id)
 		if self._tool_retry_counter.get(key, 0) >= 2:
 			self.log("info", f"Retry cap reached for {tool}/{subtest_id}")
@@ -1028,15 +1027,22 @@ class BaseAgent:
 		if not isinstance(new_args, dict) or not new_args:
 			return result
 		self._tool_retry_counter[key] = self._tool_retry_counter.get(key, 0) + 1
-		merged = {**args, **new_args}
+		_url_keys = {"url", "target", "domain", "host", "target_url"}
+		safe_new = {k: v for k, v in new_args.items() if k not in _url_keys}
+		if not safe_new:
+			return result
+		merged = {**args, **safe_new}
 		self.log(
 			"info",
 			f"Retry-on-empty: {tool}/{subtest_id}",
 			{"rationale": (proposal or {}).get("rationale", "")},
 		)
-		return await self.execute_tool(
-			server=server, tool=tool, args=merged, timeout=timeout, auth_session=auth_session
-		)
+		try:
+			return await self.execute_tool(
+				server=server, tool=tool, args=merged, timeout=timeout, auth_session=auth_session
+			)
+		except Exception:
+			return result
 
 	# Circuit breaker helpers (anti-stuck) + adaptive filtering
 	def should_run_tool(self, tool_name: str) -> bool:

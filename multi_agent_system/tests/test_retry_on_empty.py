@@ -47,6 +47,7 @@ async def test_no_retry_for_low_risk_subtest(monkeypatch):
     agent._tool_retry_counter = {}
     agent.log = MagicMock()
     agent._llm_client = MagicMock()
+    agent._llm_client.propose_retry_arguments = AsyncMock()
 
     calls = []
     async def fake_execute(*, server, tool, args, **kw):
@@ -60,7 +61,7 @@ async def test_no_retry_for_low_risk_subtest(monkeypatch):
         args={"url": "http://x/"}, subtest_id="WSTG-INFO-03",
     )
     assert len(calls) == 1
-    agent._llm_client.propose_retry_arguments.assert_not_called() if hasattr(agent._llm_client, "propose_retry_arguments") else None
+    agent._llm_client.propose_retry_arguments.assert_not_called()
 
 
 @pytest.mark.asyncio
