@@ -107,3 +107,54 @@ def test_category_derivation_bare_category_id(tmp_path):
     store.record("sig", "WSTG-INFO", "check_metafiles", {}, True, 1)
     top = store.top_patterns_for("sig", "WSTG-INFO")
     assert len(top) == 1
+
+
+def test_load_hints_returns_top_patterns_for_agent_category(tmp_path, monkeypatch):
+    import multi_agent_system.utils.learned_patterns as lp_mod
+    from multi_agent_system.agents.base_agent import BaseAgent
+
+    monkeypatch.setattr(lp_mod, "_DEFAULT_PATH", tmp_path / "lp.db")
+
+    store = lp_mod.LearnedPatternStore(tmp_path / "lp.db")
+    sig = lp_mod.target_signature({"server": "nginx", "tech": ["Node.js"]})
+    store.record(sig, "WSTG-INPV-05", "test_sqli", {"v": "blind"}, True, 3)
+
+    agent = BaseAgent.__new__(BaseAgent)
+    agent.agent_name = "InputValidationAgent"
+    agent._shared_context_snapshot = {"tech_stack": {"server": "nginx", "tech": ["Node.js"]}}
+
+    hints = agent._load_learned_pattern_hints()
+    assert any(h["tool"] == "test_sqli" for h in hints)
+
+
+def test_load_hints_returns_empty_for_unknown_agent(tmp_path, monkeypatch):
+    import multi_agent_system.utils.learned_patterns as lp_mod
+    monkeypatch.setattr(lp_mod, "_DEFAULT_PATH", tmp_path / "lp.db")
+    from multi_agent_system.agents.base_agent import BaseAgent
+
+    agent = BaseAgent.__new__(BaseAgent)
+    agent.agent_name = "NonExistentAgent"
+    agent._shared_context_snapshot = {}
+    assert agent._load_learned_pattern_hints() == []
+
+
+def test_record_pattern_outcome_writes_to_store(tmp_path, monkeypatch):
+    import multi_agent_system.utils.learned_patterns as lp_mod
+    from multi_agent_system.agents.base_agent import BaseAgent
+
+    monkeypatch.setattr(lp_mod, "_DEFAULT_PATH", tmp_path / "lp.db")
+
+    agent = BaseAgent.__new__(BaseAgent)
+    agent.agent_name = "InputValidationAgent"
+    agent._shared_context_snapshot = {"tech_stack": {"server": "nginx", "tech": ["Node.js"]}}
+
+    agent._record_pattern_outcome(
+        tool="test_sqli",
+        subtest_id="WSTG-INPV-05",
+        args={"url": "http://x/api"},
+        finding_count=2,
+    )
+    sig = lp_mod.target_signature({"server": "nginx", "tech": ["Node.js"]})
+    store = lp_mod.get_default_store()
+    rows = store.top_patterns_for(sig, "WSTG-INPV")
+    assert any(r["tool"] == "test_sqli" for r in rows)

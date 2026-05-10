@@ -333,6 +333,11 @@ class BaseAgent:
 				if director_text:
 					planning_context["director_instructions"] = director_text
 
+				# Inject learned-pattern hints from prior scans
+				hints = self._load_learned_pattern_hints()
+				if hints:
+					planning_context["learned_pattern_hints"] = hints
+
 				# LLM planning enabled: Ask LLM for adaptive tool selection
 				print(f"📋 {self.agent_name}: Available tools for LLM planning: {available_tools}", file=sys.stderr, flush=True)
 				selected = None
@@ -850,6 +855,7 @@ class BaseAgent:
 
 		client = self.get_mcp_client()
 		args = dict(args or {})
+		subtest_hint = args.pop("_wstg_subtest_id", None)  # strip before MCP call
 
 		# ✅ FIX: Call hook to merge LLM-generated arguments BEFORE execution
 		approval = await self._before_tool_execution(server, tool, args)
@@ -979,6 +985,15 @@ class BaseAgent:
 						})
 
 			self.log("info", "Tool execution finished", {"tool": tool, "duration_s": duration, "status": status})
+			# Record tool outcome for cross-scan learning (opt-in via _wstg_subtest_id arg)
+			if subtest_hint and isinstance(result, dict):
+				findings = result.get("findings", [])
+				self._record_pattern_outcome(
+					tool=tool,
+					subtest_id=subtest_hint,
+					args=args,  # already stripped of _wstg_subtest_id
+					finding_count=len(findings) if isinstance(findings, list) else 0,
+				)
 			return result
 
 	async def _execute_with_retry_on_empty(
@@ -1362,6 +1377,46 @@ class BaseAgent:
 	def _context_log_hook(self, level: str, message: str, data: Optional[Dict[str, Any]] = None) -> None:
 		try:
 			self.log(level, message, data)
+		except Exception:
+			pass
+
+	def _load_learned_pattern_hints(self) -> List[Dict[str, Any]]:
+		from .. import orchestrator as orch_mod
+		from ..utils.learned_patterns import get_default_store, target_signature
+		category = orch_mod.AGENT_TO_OWASP_MAP.get(self.agent_name, "")
+		if not category:
+			return []
+		tech = {}
+		if isinstance(getattr(self, "_shared_context_snapshot", None), dict):
+			tech = self._shared_context_snapshot.get("tech_stack", {}) or {}
+		sig = target_signature(tech)
+		try:
+			return get_default_store().top_patterns_for(sig, category, limit=5)
+		except Exception:
+			return []
+
+	def _record_pattern_outcome(
+		self,
+		*,
+		tool: str,
+		subtest_id: str,
+		args: Dict[str, Any],
+		finding_count: int,
+	) -> None:
+		from ..utils.learned_patterns import get_default_store, target_signature
+		tech = {}
+		if isinstance(getattr(self, "_shared_context_snapshot", None), dict):
+			tech = self._shared_context_snapshot.get("tech_stack", {}) or {}
+		sig = target_signature(tech)
+		try:
+			get_default_store().record(
+				signature=sig,
+				wstg_id=subtest_id,
+				tool=tool,
+				args={k: v for k, v in args.items() if not k.startswith("_")},
+				success=finding_count > 0,
+				finding_count=finding_count,
+			)
 		except Exception:
 			pass
 
