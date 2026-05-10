@@ -8,22 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-_LOCK = threading.Lock()
-
-_CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS patterns(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    signature TEXT NOT NULL,
-    wstg_id TEXT NOT NULL,
-    category TEXT NOT NULL,
-    tool TEXT NOT NULL,
-    args TEXT NOT NULL,
-    success INTEGER NOT NULL,
-    finding_count INTEGER NOT NULL,
-    ts REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_sig_cat ON patterns(signature, category);
-"""
+_LOCK = threading.Lock()  # serialises within-process; cross-process safety delegated to SQLite file locking
 
 
 def target_signature(props: Dict[str, Any]) -> str:
@@ -41,7 +26,22 @@ class LearnedPatternStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with _LOCK, sqlite3.connect(self.path) as c:
-            c.executescript(_CREATE_TABLE)
+            c.execute(
+                "CREATE TABLE IF NOT EXISTS patterns("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "signature TEXT NOT NULL,"
+                "wstg_id TEXT NOT NULL,"
+                "category TEXT NOT NULL,"
+                "tool TEXT NOT NULL,"
+                "args TEXT NOT NULL,"
+                "success INTEGER NOT NULL,"
+                "finding_count INTEGER NOT NULL,"
+                "ts REAL NOT NULL"
+                ")"
+            )
+            c.execute(
+                "CREATE INDEX IF NOT EXISTS ix_sig_cat ON patterns(signature, category)"
+            )
 
     def record(
         self,
@@ -52,7 +52,8 @@ class LearnedPatternStore:
         success: bool,
         finding_count: int = 0,
     ) -> None:
-        category = wstg_id.rsplit("-", 1)[0]
+        parts = wstg_id.rsplit("-", 1)
+        category = parts[0] if (len(parts) == 2 and parts[1].isdigit()) else wstg_id
         with _LOCK, sqlite3.connect(self.path) as c:
             c.execute(
                 "INSERT INTO patterns"

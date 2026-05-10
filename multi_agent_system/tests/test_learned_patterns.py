@@ -95,7 +95,15 @@ def test_store_thread_safe_concurrent_writes(tmp_path):
     assert len(top) == 20
 
 
-def test_get_default_store_returns_store_instance():
-    from multi_agent_system.utils.learned_patterns import get_default_store
-    store = get_default_store()
+def test_get_default_store_returns_store_instance(tmp_path, monkeypatch):
+    import multi_agent_system.utils.learned_patterns as lp_mod
+    monkeypatch.setattr(lp_mod, "_DEFAULT_PATH", tmp_path / "lp.db")
+    store = lp_mod.get_default_store()
     assert isinstance(store, LearnedPatternStore)
+
+
+def test_category_derivation_bare_category_id(tmp_path):
+    store = LearnedPatternStore(tmp_path / "lp.db")
+    store.record("sig", "WSTG-INFO", "check_metafiles", {}, True, 1)
+    top = store.top_patterns_for("sig", "WSTG-INFO")
+    assert len(top) == 1
