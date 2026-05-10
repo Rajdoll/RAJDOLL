@@ -51,7 +51,7 @@ AGENT_TO_OWASP_MAP = {
 	"ConfigDeploymentAgent": "WSTG-CONF",
 	"IdentityManagementAgent": "WSTG-IDNT",
 	"AuthenticationAgent": "WSTG-ATHN",
-	"AuthorizationAgent": "WSTG-AUTHZ",
+	"AuthorizationAgent": "WSTG-ATHZ",
 	"SessionManagementAgent": "WSTG-SESS",
 	"InputValidationAgent": "WSTG-INPV",
 	"ErrorHandlingAgent": "WSTG-ERRH",
