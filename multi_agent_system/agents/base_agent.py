@@ -1381,16 +1381,16 @@ class BaseAgent:
 			pass
 
 	def _load_learned_pattern_hints(self) -> List[Dict[str, Any]]:
-		from .. import orchestrator as orch_mod
-		from ..utils.learned_patterns import get_default_store, target_signature
-		category = orch_mod.AGENT_TO_OWASP_MAP.get(self.agent_name, "")
-		if not category:
-			return []
-		tech = {}
-		if isinstance(getattr(self, "_shared_context_snapshot", None), dict):
-			tech = self._shared_context_snapshot.get("tech_stack", {}) or {}
-		sig = target_signature(tech)
 		try:
+			from .. import orchestrator as orch_mod
+			from ..utils.learned_patterns import get_default_store, target_signature
+			category = orch_mod.AGENT_TO_OWASP_MAP.get(self.agent_name, "")
+			if not category:
+				return []
+			tech = {}
+			if isinstance(getattr(self, "_shared_context_snapshot", None), dict):
+				tech = self._shared_context_snapshot.get("tech_stack", {}) or {}
+			sig = target_signature(tech)
 			return get_default_store().top_patterns_for(sig, category, limit=5)
 		except Exception:
 			return []
