@@ -14,7 +14,7 @@ from .utils.hitl_manager import HITLManager
 from .utils.shared_context_manager import SharedContextManager
 from .utils.session_service import create_authenticated_session
 from .utils.simple_llm_client import SimpleLLMClient
-from .core.task_tree import build_task_tree
+from .core.task_tree import build_task_tree, build_subtest_task_tree
 from . import agents  # noqa: F401  # ensure agent classes are registered
 
 
@@ -664,64 +664,71 @@ class Orchestrator:
 		]
 
 	def _run_post_agent_coverage_audit(self, agent_name: str) -> None:
-		from .core.task_tree import build_subtest_task_tree
 		from .core.wstg_catalog import tools_for_subtest
 		from .utils.orchestrator_directive import OrchestratorDirective, merge_directives
 
-		if not hasattr(self, "_audit_retried"):
-			self._audit_retried = set()
-		if agent_name in self._audit_retried:
+		if not hasattr(self, "_audit_attempted"):
+			self._audit_attempted = set()
+		if agent_name in self._audit_attempted:
 			return
-		self._audit_retried.add(agent_name)
 
 		summarizer = self._get_llm_summarizer()
 		if not summarizer:
 			return
 
-		tree = build_subtest_task_tree(self.job_id)
-		gaps = self._identify_subtest_gaps(agent_name, tree)
-		if not gaps:
-			return
-
-		candidate_tools = sorted({t for g in gaps for t in tools_for_subtest(g["id"])})
-		target_props = self.shared_context.get("tech_stack") or {}
-
-		loop = self._ensure_event_loop()
 		try:
-			result = loop.run_until_complete(
-				asyncio.wait_for(
-					summarizer.propose_subtest_directive(
-						agent_name=agent_name,
-						gap_subtests=gaps,
-						candidate_tools=candidate_tools,
-						target_props=target_props,
-					),
-					timeout=90,
+			tree = build_subtest_task_tree(self.job_id)
+			gaps = self._identify_subtest_gaps(agent_name, tree)
+			if not gaps:
+				return
+
+			candidate_tools = sorted({t for g in gaps for t in tools_for_subtest(g["id"])})
+			target_props = self.shared_context.get("tech_stack") or {}
+
+			loop = self._ensure_event_loop()
+			try:
+				result = loop.run_until_complete(
+					asyncio.wait_for(
+						summarizer.propose_subtest_directive(
+							agent_name=agent_name,
+							gap_subtests=gaps,
+							candidate_tools=candidate_tools,
+							target_props=target_props,
+						),
+						timeout=90,
+					)
 				)
+			except Exception as e:
+				print(f"[Orchestrator] Coverage audit failed for {agent_name}: {e}")
+				return
+
+			if not result or not result.get("focus_instructions"):
+				return
+
+			directive = OrchestratorDirective()
+			directive.focus_instructions[agent_name] = result["focus_instructions"]
+			if result.get("preferred_tools"):
+				directive.inject_tools[agent_name] = [
+					{"tool": t, "arguments": {}} for t in result["preferred_tools"]
+				]
+			self._accumulated_directive = merge_directives(self._accumulated_directive, directive)
+			self._audit_attempted.add(agent_name)
+			self.context_manager.write(
+				"coverage_audit_directive",
+				{
+					"agent": agent_name,
+					"gaps": [g["id"] for g in gaps],
+					"focus_instructions": result["focus_instructions"],
+					"preferred_tools": result.get("preferred_tools", []),
+				},
+			)
+			print(
+				f"[Orchestrator] Coverage audit: {len(gaps)} gaps for {agent_name}; "
+				f"directive emitted ({len(result['focus_instructions'])} chars)"
 			)
 		except Exception as e:
 			print(f"[Orchestrator] Coverage audit failed for {agent_name}: {e}")
 			return
-
-		if not result or not result.get("focus_instructions"):
-			return
-
-		directive = OrchestratorDirective()
-		directive.focus_instructions[agent_name] = result["focus_instructions"]
-		self._accumulated_directive = merge_directives(self._accumulated_directive, directive)
-		self.context_manager.write(
-			"coverage_audit_directive",
-			{
-				"agent": agent_name,
-				"gaps": [g["id"] for g in gaps],
-				"focus_instructions": result["focus_instructions"],
-				"preferred_tools": result.get("preferred_tools", []),
-			},
-		)
-		print(
-			f"[Orchestrator] Coverage audit: {len(gaps)} gaps for {agent_name}; "
-			f"directive emitted ({len(result['focus_instructions'])} chars)"
-		)
 
 	def _gather_agent_checkpoint_data(self, agent_name: str) -> Dict[str, Any]:
 		"""Collect summary data for an agent checkpoint."""

@@ -7,6 +7,8 @@ import os
 import httpx
 from typing import Dict, Any, List, Optional
 
+_MAX_GAP_SUBTESTS_IN_PROMPT = 10
+
 
 class SimpleLLMClient:
     """
@@ -975,7 +977,7 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
         import re
         if not gap_subtests:
             return None
-        gap_lines = "\n".join(f"- {g['id']}: {g.get('title','')}" for g in gap_subtests[:10])
+        gap_lines = "\n".join(f"- {g['id']}: {g.get('title','')}" for g in gap_subtests[:_MAX_GAP_SUBTESTS_IN_PROMPT])
         tools_str = ", ".join(candidate_tools) or "(none mapped)"
         target_str = json.dumps(target_props, default=str)[:600]
         prompt = (
