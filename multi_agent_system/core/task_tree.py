@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Dict, List, Any, Optional
 from ..core.db import get_db
 from ..models.models import Finding, JobAgent, AgentStatus
+from .wstg_catalog import load_catalog
 
 
 # Map agent names to WSTG category codes + display names
@@ -114,9 +115,6 @@ def build_task_tree_dict(job_id: int) -> Dict[str, Any]:
     return tree
 
 
-from .wstg_catalog import load_catalog
-
-
 def build_subtest_task_tree(job_id: int) -> Dict[str, Dict[str, Any]]:
     """Per-WSTG-sub-test status: pending | tested-clean | vulnerable."""
     with get_db() as db:
@@ -133,7 +131,7 @@ def build_subtest_task_tree(job_id: int) -> Dict[str, Dict[str, Any]]:
     catalog = load_catalog()
     tree: Dict[str, Dict[str, Any]] = {}
     for st_id, st in catalog.items():
-        finding_count = findings_by_subtest.get(st_id, 0)
+        finding_count = findings_by_subtest.get(st_id.upper(), 0)
         owner_status = agent_status.get(st.owasp_agent)
         if finding_count > 0:
             status = "vulnerable"

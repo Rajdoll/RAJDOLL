@@ -53,15 +53,28 @@ def test_subtest_tree_marks_pending_for_unstarted_agent():
     assert tree["WSTG-CRYP-01"]["status"] == "pending"
 
 
-def test_subtest_tree_marks_tested_clean_when_owner_completed_no_finding():
+def test_subtest_tree_marks_tested_clean_when_completed_with_no_findings():
     job_agents = [_ja("InputValidationAgent", AgentStatus.completed)]
-    findings = [_f("InputValidationAgent", "WSTG-INPV-05")]
+    findings = []
     with patch("multi_agent_system.core.task_tree.get_db",
                return_value=_mock_db(job_agents, findings)):
         tree = build_subtest_task_tree(job_id=1)
-    inpv_others = {k: v for k, v in tree.items()
-                   if k.startswith("WSTG-INPV") and k != "WSTG-INPV-05"}
-    assert any(v["status"] == "tested-clean" for v in inpv_others.values())
+    inpv_entries = [v for k, v in tree.items() if k.startswith("WSTG-INPV")]
+    assert inpv_entries
+    assert all(v["status"] == "tested-clean" for v in inpv_entries)
+
+
+def test_subtest_tree_ignores_non_wstg_finding_category():
+    job_agents = [_ja("InputValidationAgent", AgentStatus.completed)]
+    findings = [_f("InputValidationAgent", "info"),
+                _f("InputValidationAgent", None),
+                _f("InputValidationAgent", "")]
+    with patch("multi_agent_system.core.task_tree.get_db",
+               return_value=_mock_db(job_agents, findings)):
+        tree = build_subtest_task_tree(job_id=1)
+    inpv_entries = [v for k, v in tree.items() if k.startswith("WSTG-INPV")]
+    assert all(v["finding_count"] == 0 for v in inpv_entries)
+    assert all(v["status"] == "tested-clean" for v in inpv_entries)
 
 
 def test_subtest_tree_returns_full_catalog_size():
