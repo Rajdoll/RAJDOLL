@@ -961,6 +961,54 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
             print(f"[SimpleLLMClient] generate_strategic_plan failed: {e}")
             return None
 
+    async def propose_subtest_directive(
+        self,
+        *,
+        agent_name: str,
+        gap_subtests: List[Dict[str, Any]],
+        candidate_tools: List[str],
+        target_props: Dict[str, Any],
+    ):
+        """After an agent finishes with high-risk pending WSTG sub-tests, ask LLM for focus
+        instructions + preferred tools. Returns dict {focus_instructions, preferred_tools} or None.
+        """
+        import re
+        if not gap_subtests:
+            return None
+        gap_lines = "\n".join(f"- {g['id']}: {g.get('title','')}" for g in gap_subtests[:10])
+        tools_str = ", ".join(candidate_tools) or "(none mapped)"
+        target_str = json.dumps(target_props, default=str)[:600]
+        prompt = (
+            f"Agent {agent_name} just completed but missed these high-risk WSTG sub-tests:\n"
+            f"{gap_lines}\n\n"
+            f"Available MCP tools that map to these sub-tests: {tools_str}\n"
+            f"Target properties: {target_str}\n\n"
+            "Emit JSON only:\n"
+            "{\n"
+            '  "focus_instructions": "<one paragraph guidance for re-running the agent>",\n'
+            '  "preferred_tools": [<subset of available MCP tools>]\n'
+            "}\n"
+            "Constraint: only suggest tools from the list above. Do not invent tool names."
+        )
+        messages = [
+            {"role": "system", "content": "You are a security testing strategist. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            raw = await self.chat_completion(messages, max_tokens=600, temperature=0.3)
+            raw = self._strip_thinking_tags(raw)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return None
+            data = json.loads(match.group())
+            return {
+                "focus_instructions": data.get("focus_instructions", "") or "",
+                "preferred_tools": data.get("preferred_tools", []) or [],
+            }
+        except Exception as e:
+            print(f"[SimpleLLMClient] propose_subtest_directive failed: {e}")
+            return None
+
     async def review_round1_for_escalation(
         self,
         agent_name: str,
