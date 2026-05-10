@@ -112,3 +112,42 @@ def build_task_tree_dict(job_id: int) -> Dict[str, Any]:
             "top_findings": [f["title"] for f in fl[:3]],
         }
     return tree
+
+
+from .wstg_catalog import load_catalog
+
+
+def build_subtest_task_tree(job_id: int) -> Dict[str, Dict[str, Any]]:
+    """Per-WSTG-sub-test status: pending | tested-clean | vulnerable."""
+    with get_db() as db:
+        job_agents = db.query(JobAgent).filter(JobAgent.job_id == job_id).all()
+        agent_status = {ja.agent_name: ja.status for ja in job_agents}
+        findings = db.query(Finding).filter(Finding.job_id == job_id).all()
+
+    findings_by_subtest: Dict[str, int] = {}
+    for f in findings:
+        cat = (f.category or "").upper()
+        if cat.startswith("WSTG-"):
+            findings_by_subtest[cat] = findings_by_subtest.get(cat, 0) + 1
+
+    catalog = load_catalog()
+    tree: Dict[str, Dict[str, Any]] = {}
+    for st_id, st in catalog.items():
+        finding_count = findings_by_subtest.get(st_id, 0)
+        owner_status = agent_status.get(st.owasp_agent)
+        if finding_count > 0:
+            status = "vulnerable"
+        elif owner_status == AgentStatus.completed:
+            status = "tested-clean"
+        else:
+            status = "pending"
+        tree[st_id] = {
+            "id": st_id,
+            "title": st.title,
+            "category": st.category,
+            "owner_agent": st.owasp_agent,
+            "high_risk": st.high_risk,
+            "status": status,
+            "finding_count": finding_count,
+        }
+    return tree
