@@ -40,3 +40,25 @@ def subtests_for_category(category: str) -> List[SubTest]:
 
 def subtests_for_agent(agent_name: str) -> List[SubTest]:
     return [st for st in load_catalog().values() if st.owasp_agent == agent_name]
+
+
+TOOL_MAP_PATH = Path(__file__).resolve().parent.parent / "data" / "tool_wstg_map.json"
+
+
+@lru_cache(maxsize=1)
+def _load_tool_map() -> Dict[str, List[str]]:
+    return json.loads(TOOL_MAP_PATH.read_text(encoding="utf-8"))
+
+
+def subtests_for_tool(tool_name: str) -> List[SubTest]:
+    cat = load_catalog()
+    ids = _load_tool_map().get(tool_name, [])
+    return [cat[i] for i in ids if i in cat]
+
+
+def tools_for_subtest(subtest_id: str) -> List[str]:
+    return [t for t, ids in _load_tool_map().items() if subtest_id in ids]
+
+
+def all_mapped_tools() -> List[str]:
+    return list(_load_tool_map().keys())

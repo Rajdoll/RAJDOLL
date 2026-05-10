@@ -1,5 +1,6 @@
 from multi_agent_system.core.wstg_catalog import (
     load_catalog, subtests_for_category, subtests_for_agent, SubTest,
+    subtests_for_tool, tools_for_subtest, all_mapped_tools,
 )
 
 
@@ -42,3 +43,33 @@ def test_subtests_for_agent_returns_correct_set():
 
 def test_subtests_for_agent_unknown_returns_empty():
     assert subtests_for_agent("NonExistentAgent") == []
+
+
+def test_tool_map_covers_at_least_one_subtest():
+    cat = load_catalog()
+    mapped = set()
+    for st_id in cat:
+        for tool in tools_for_subtest(st_id):
+            mapped.add(tool)
+    assert mapped, "tool map empty"
+
+
+def test_known_sql_tool_maps_to_inpv_05():
+    sts = subtests_for_tool("test_sqli")
+    assert any(st.id == "WSTG-INPV-05" for st in sts)
+
+
+def test_subtests_without_tool_below_threshold():
+    cat = load_catalog()
+    gaps = [st_id for st_id in cat if not tools_for_subtest(st_id)]
+    assert len(gaps) / len(cat) < 0.4, f"Too many gaps: {len(gaps)}/{len(cat)}"
+
+
+def test_all_mapped_tools_returns_list():
+    tools = all_mapped_tools()
+    assert isinstance(tools, list)
+    assert len(tools) > 0
+
+
+def test_tools_for_subtest_unknown_returns_empty():
+    assert tools_for_subtest("WSTG-FAKE-99") == []
