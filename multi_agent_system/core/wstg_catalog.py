@@ -23,7 +23,7 @@ def load_catalog() -> Dict[str, SubTest]:
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     return {
         k: SubTest(
-            id=v["id"],
+            id=k,
             title=v["title"],
             category=v["category"],
             owasp_agent=v["owasp_agent"],
