@@ -1011,6 +1011,50 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
             print(f"[SimpleLLMClient] propose_subtest_directive failed: {e}")
             return None
 
+    async def propose_retry_arguments(
+        self,
+        *,
+        tool_name: str,
+        subtest_id: str,
+        subtest_title: str,
+        prior_args: Dict[str, Any],
+        target_props: Dict[str, Any],
+    ):
+        """After 0-finding tool result, propose alternative arguments. Returns dict
+        {args: {...}, rationale: "..."} or None.
+        """
+        import re
+        prompt = (
+            f"The MCP tool `{tool_name}` was run for WSTG sub-test {subtest_id} "
+            f"({subtest_title}) but returned 0 findings.\n"
+            f"Prior arguments: {json.dumps(prior_args, default=str)[:600]}\n"
+            f"Target properties: {json.dumps(target_props, default=str)[:600]}\n\n"
+            "Emit JSON only:\n"
+            "{\n"
+            '  "args": { ... different args, same tool ... },\n'
+            '  "rationale": "<one sentence>"\n'
+            "}\n"
+            "Constraint: same tool, different vector/parameter/payload class. "
+            "Do not suggest a different tool."
+        )
+        messages = [
+            {"role": "system", "content": "You are a security testing strategist. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            raw = await self.chat_completion(messages, max_tokens=400, temperature=0.4)
+            raw = self._strip_thinking_tags(raw)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return None
+            data = json.loads(match.group())
+            if not isinstance(data.get("args"), dict):
+                return None
+            return {"args": data["args"], "rationale": data.get("rationale", "")}
+        except Exception as e:
+            print(f"[SimpleLLMClient] propose_retry_arguments failed: {e}")
+            return None
+
     async def review_round1_for_escalation(
         self,
         agent_name: str,

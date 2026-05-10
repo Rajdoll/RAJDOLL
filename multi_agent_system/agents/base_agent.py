@@ -980,6 +980,64 @@ class BaseAgent:
 			self.log("info", "Tool execution finished", {"tool": tool, "duration_s": duration, "status": status})
 			return result
 
+	async def _execute_with_retry_on_empty(
+		self,
+		*,
+		server: str,
+		tool: str,
+		args: Dict[str, Any],
+		subtest_id: Optional[str] = None,
+		timeout: Optional[int] = None,
+		auth_session: Optional[Dict[str, Any]] = None,
+	) -> Dict[str, Any] | str:
+		"""Run execute_tool; if it returns 0 findings AND subtest_id is high_risk,
+		ask LLM for one alternative argument set and rerun once. Cap: 2 retries per
+		(tool, subtest_id) per scan. No-op if subtest_id missing/unknown.
+		"""
+		result = await self.execute_tool(
+			server=server, tool=tool, args=args, timeout=timeout, auth_session=auth_session
+		)
+		if not subtest_id:
+			return result
+		from ..core.wstg_catalog import load_catalog
+		st = load_catalog().get(subtest_id)
+		if not st or not st.high_risk:
+			return result
+		findings = result.get("findings", []) if isinstance(result, dict) else []
+		if findings:
+			return result
+		if not hasattr(self, "_tool_retry_counter"):
+			self._tool_retry_counter = {}
+		key = (tool, subtest_id)
+		if self._tool_retry_counter.get(key, 0) >= 2:
+			self.log("info", f"Retry cap reached for {tool}/{subtest_id}")
+			return result
+		if not getattr(self, "_llm_client", None):
+			return result
+		target_props = {}
+		if isinstance(getattr(self, "_shared_context_snapshot", None), dict):
+			target_props = self._shared_context_snapshot.get("tech_stack", {})
+		proposal = await self._llm_client.propose_retry_arguments(
+			tool_name=tool,
+			subtest_id=subtest_id,
+			subtest_title=st.title,
+			prior_args=args,
+			target_props=target_props,
+		)
+		new_args = (proposal or {}).get("args") if isinstance(proposal, dict) else None
+		if not isinstance(new_args, dict) or not new_args:
+			return result
+		self._tool_retry_counter[key] = self._tool_retry_counter.get(key, 0) + 1
+		merged = {**args, **new_args}
+		self.log(
+			"info",
+			f"Retry-on-empty: {tool}/{subtest_id}",
+			{"rationale": (proposal or {}).get("rationale", "")},
+		)
+		return await self.execute_tool(
+			server=server, tool=tool, args=merged, timeout=timeout, auth_session=auth_session
+		)
+
 	# Circuit breaker helpers (anti-stuck) + adaptive filtering
 	def should_run_tool(self, tool_name: str) -> bool:
 		"""Centralized gating logic for MCP tools."""
