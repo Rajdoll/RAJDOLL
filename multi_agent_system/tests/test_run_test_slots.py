@@ -118,3 +118,16 @@ async def test_run_test_slots_respects_time_budget():
     await agent.run_test_slots(slots, time_budget_s=0.3)
     skipped = [s for s in slots if s.status == "skipped"]
     assert len(skipped) > 0
+    agent.context_manager.write.assert_called_once()
+
+
+def test_persist_slot_statuses_swallows_exception_and_logs_warning():
+    from multi_agent_system.core.slot_registry import TestSlot
+    from multi_agent_system.core.wstg_catalog import load_catalog
+    agent = _make_agent()
+    agent.context_manager.write.side_effect = RuntimeError("db down")
+    slot = TestSlot.make("http://t/", "GET", "WSTG-INPV-05", load_catalog())
+    # Must not raise
+    agent._persist_slot_statuses([slot])
+    agent.log.assert_called_once()
+    assert agent.log.call_args[0][0] == "warning"

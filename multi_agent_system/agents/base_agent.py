@@ -1447,7 +1447,7 @@ class BaseAgent:
 		from ..core.wstg_catalog import tools_for_subtest
 		if not slots:
 			return
-		loop = asyncio.get_event_loop()
+		loop = asyncio.get_running_loop()
 		deadline = loop.time() + time_budget_s
 
 		for slot in slots:
@@ -1464,10 +1464,12 @@ class BaseAgent:
 				continue
 
 			found = False
+			executed_any = False
 			for tool in mapped_tools[:3]:
 				server = self._server_for_tool(tool)
 				if not server:
 					continue
+				executed_any = True
 				args = self._build_slot_args(slot)
 				try:
 					result = await self._execute_with_retry_on_empty(
@@ -1485,7 +1487,9 @@ class BaseAgent:
 				except Exception as e:
 					self.log("warning", f"Slot {slot.id} tool {tool} error: {e}")
 
-			if not found and slot.status == "pending":
+			if not executed_any:
+				slot.status = "skipped"
+			elif not found and slot.status == "pending":
 				slot.status = "tested-clean"
 
 		self._persist_slot_statuses(slots)
