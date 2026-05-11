@@ -241,19 +241,29 @@ Operate autonomously without human guidance.
             "handler": "_handle_endpoint_discovery",
             "timeout": 240,
         },
+        "rest_endpoint_discovery": {
+            "server": "information-gathering",
+            "tool": "discover_rest_endpoints",
+            "priority": "HIGH",
+            "arg_builder": lambda target, domain: {
+                "target_url": target,
+                "existing_endpoints": [],
+            },
+            "timeout": 60,
+        },
         "katana_js_crawl": {
             "server": "katana-crawler",
             "tool": "crawl_with_js_parsing",
-            "priority": "CRITICAL",  # CRITICAL: Advanced JS parsing for modern SPAs
+            "priority": "HIGH",  # Non-headless: fast, no Chromium timeout. REST discoverer handles API depth.
             "arg_builder": lambda target, domain: {
                 "url": target,
                 "depth": 3,
                 "js_parsing": True,
-                "headless": True,  # FIX: Enable headless for comprehensive SPA endpoint discovery (189 vs 6 endpoints)
-                "config": {"timeout": 300, "concurrency": 5, "rate_limit": 100}  # Adjusted for headless mode
+                "headless": False,  # Non-headless: fast, no Chromium timeout. REST discoverer handles API depth.
+                "config": {"timeout": 120, "concurrency": 10, "rate_limit": 150}
             },
             "handler": "_handle_katana_crawl",
-            "timeout": 320,  # Increased timeout for headless execution (300s + 20s buffer)
+            "timeout": 140,
         },
         "analyze_javascript_routes": {
             "server": "information-gathering",
