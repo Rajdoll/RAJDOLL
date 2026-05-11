@@ -273,8 +273,16 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
             job = db.query(Job).get(self.job_id)
             return job.target if job else None
     
+    def _get_tool_info(self) -> dict:
+        return {
+            "test_unrestricted_upload":    {"priority": "CRITICAL", "description": "Unrestricted file upload (WSTG-BUSL-08)"},
+            "test_upload_size_limit":      {"priority": "HIGH",     "description": "Upload size limit bypass (WSTG-BUSL-08)"},
+            "test_mime_type_bypass":       {"priority": "HIGH",     "description": "MIME type bypass (WSTG-BUSL-08)"},
+            "test_xxe_via_svg":            {"priority": "HIGH",     "description": "XXE via SVG upload (WSTG-INPV-07)"},
+            "test_path_traversal_upload":  {"priority": "HIGH",     "description": "Path traversal via upload"},
+        }
+
     def _get_available_tools(self) -> list[str]:
-        """Return file upload testing tools for LLM planning"""
         return [
             'test_unrestricted_upload',
             'test_path_traversal_upload',

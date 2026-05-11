@@ -452,7 +452,12 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
 
     def _get_tool_info(self) -> dict:
         return {
-            "scan_vulnerable_components": {"priority": "CRITICAL", "description": "Detect known-vulnerable JS libraries (jQuery, Angular, Bootstrap) via HTTP analysis"},
+            "scan_vulnerable_components": {"priority": "CRITICAL", "description": "Detect known-vulnerable JS libraries via HTTP analysis"},
+            "test_dom_xss":               {"priority": "HIGH", "description": "DOM-based XSS (WSTG-CLNT-01)"},
+            "test_cors_misconfiguration": {"priority": "HIGH", "description": "CORS misconfiguration (WSTG-CLNT-07)"},
+            "test_clickjacking":          {"priority": "HIGH", "description": "Clickjacking / missing XFO+CSP (WSTG-CLNT-09)"},
+            "test_csp_bypass":            {"priority": "HIGH", "description": "CSP bypass (WSTG-CLNT-12)"},
+            "test_client_url_redirect":   {"priority": "HIGH", "description": "Open redirect (WSTG-CLNT-04)"},
         }
 
     def _get_available_tools(self) -> list[str]:
