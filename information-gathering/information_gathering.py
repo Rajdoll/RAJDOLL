@@ -2894,7 +2894,6 @@ def _derive_api_prefixes(base_url: str, existing_endpoints: List[str]) -> List[D
 
     Returns list of {path, reason} dicts to probe via HTTP.
     """
-    from urllib.parse import urlparse
     candidates: Dict[str, str] = {}
 
     # Generic REST roots - always probe (common patterns, not target-specific)
@@ -2942,8 +2941,6 @@ async def discover_rest_endpoints(
 
     Generic - probes derived from already-found paths, not hardcoded to any target.
     """
-    from urllib.parse import urlparse
-
     base = urlparse(target_url)
     base_url = f"{base.scheme}://{base.netloc}"
     prefixes = _derive_api_prefixes(base_url, existing_endpoints or [])
