@@ -63,3 +63,57 @@ async def test_tag_endpoints_filters_invalid_ids():
     )
     # FAKE-99 and non-WSTG IDs filtered out
     assert result["http://t/"] == ["WSTG-INPV-05"]
+
+
+@pytest.mark.asyncio
+async def test_tag_endpoints_uses_prefilter_and_llm():
+    """Pre-filter reduces catalog, LLM still makes final decision."""
+    from multi_agent_system.core.endpoint_tagger import tag_endpoints
+    from multi_agent_system.core.wstg_catalog import load_catalog
+
+    cat = load_catalog()
+    endpoints = [
+        {"url": "http://t/api/products?q=test", "method": "GET", "params": ["q"], "content_type": ""},
+        {"url": "http://t/rest/user/login", "method": "POST", "params": ["email", "password"], "content_type": "application/json"},
+    ]
+    fake_llm = MagicMock()
+    fake_llm.tag_endpoints_with_subtests = AsyncMock(
+        return_value={
+            "http://t/api/products?q=test": ["WSTG-INPV-05"],
+            "http://t/rest/user/login": ["WSTG-ATHN-01"],
+        }
+    )
+    result = await tag_endpoints(endpoints, cat, {"backend": "Node.js"}, fake_llm)
+    assert "http://t/api/products?q=test" in result
+    assert "WSTG-INPV-05" in result["http://t/api/products?q=test"]
+    assert fake_llm.tag_endpoints_with_subtests.called
+
+
+@pytest.mark.asyncio
+async def test_tag_endpoints_returns_empty_on_no_endpoints():
+    from multi_agent_system.core.endpoint_tagger import tag_endpoints
+    from multi_agent_system.core.wstg_catalog import load_catalog
+    cat = load_catalog()
+    fake_llm = MagicMock()
+    fake_llm.tag_endpoints_with_subtests = AsyncMock(return_value={})
+    result = await tag_endpoints([], cat, {}, fake_llm)
+    assert result == {}
+    fake_llm.tag_endpoints_with_subtests.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_tag_endpoints_only_returns_ids_in_catalog():
+    """Post-filter: IDs returned by LLM that are not in catalog are dropped."""
+    from multi_agent_system.core.endpoint_tagger import tag_endpoints
+    from multi_agent_system.core.wstg_catalog import load_catalog
+    cat = load_catalog()
+    fake_llm = MagicMock()
+    fake_llm.tag_endpoints_with_subtests = AsyncMock(
+        return_value={"http://t/": ["WSTG-INPV-05", "WSTG-FAKE-99"]}
+    )
+    result = await tag_endpoints(
+        [{"url": "http://t/", "method": "GET", "params": [], "content_type": ""}],
+        cat, {}, fake_llm,
+    )
+    assert "WSTG-FAKE-99" not in result.get("http://t/", [])
+    assert "WSTG-INPV-05" in result.get("http://t/", [])
