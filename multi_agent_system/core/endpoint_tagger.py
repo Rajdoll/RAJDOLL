@@ -12,9 +12,9 @@ _APPLICABILITY_CHECKS: Dict[str, Any] = {
     "has_post_body": lambda e: e.get("method", "GET").upper() in ("POST", "PUT", "PATCH"),
     "has_file_upload": lambda e: "multipart" in (e.get("content_type") or "").lower(),
     "has_xml_input": lambda e: "xml" in (e.get("content_type") or "").lower(),
-    "uses_jwt": lambda e: True,
+    "uses_jwt":       lambda e: True,      # no jwt field in endpoint dict yet; LLM decides
     "has_graphql": lambda e: "graphql" in (e.get("url") or "").lower(),
-    "has_db_backend": lambda e: True,
+    "has_db_backend": lambda e: True,      # no db_backend field in endpoint dict yet; LLM decides
     "always": lambda e: True,
 }
 
@@ -34,7 +34,9 @@ async def tag_endpoints(
     tech_stack: Dict[str, Any],
     llm_client: "SimpleLLMClient",
 ) -> Dict[str, List[str]]:
-    if not endpoints or not catalog:
+    if not endpoints:
+        return {}
+    if not catalog:
         return {}
 
     all_candidates: set = set()
