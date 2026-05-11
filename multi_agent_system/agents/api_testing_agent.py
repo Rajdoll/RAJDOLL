@@ -324,3 +324,6 @@ class APITestingAgent(BaseAgent):
             'test_rate_limiting',
             'test_api_versioning_issues',
         ]
+
+    def _get_tool_server_map(self) -> Dict[str, str]:
+        return {tool: "api-testing" for tool in self._get_available_tools()}

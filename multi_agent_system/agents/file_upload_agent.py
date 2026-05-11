@@ -283,3 +283,6 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
             'test_upload_size_limit',
             'test_path_traversal_download',
         ]
+
+    def _get_tool_server_map(self) -> Dict[str, str]:
+        return {tool: "file-upload-testing" for tool in self._get_available_tools()}

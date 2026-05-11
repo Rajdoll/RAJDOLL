@@ -57,3 +57,19 @@ def test_inject_test_slots_for_agent_adds_my_test_slots():
     assert "my_test_slots" in result
     assert len(result["my_test_slots"]) == 1
     assert result["my_test_slots"][0]["wstg_id"] == "WSTG-INPV-05"
+
+
+def test_all_scanning_agents_have_tool_server_map():
+    """All agents that have MCP tools must implement _get_tool_server_map."""
+    from multi_agent_system.agents.client_side_agent import ClientSideAgent
+    from multi_agent_system.agents.business_logic_agent import BusinessLogicAgent
+    from multi_agent_system.agents.error_handling_agent import ErrorHandlingAgent
+    from multi_agent_system.agents.file_upload_agent import FileUploadAgent
+    from multi_agent_system.agents.api_testing_agent import APITestingAgent
+    from multi_agent_system.agents.base_agent import BaseAgent
+
+    for cls in [ClientSideAgent, BusinessLogicAgent, ErrorHandlingAgent,
+                FileUploadAgent, APITestingAgent]:
+        # Must override base class (which returns {})
+        assert cls._get_tool_server_map is not BaseAgent._get_tool_server_map, \
+            f"{cls.__name__} does not override _get_tool_server_map"

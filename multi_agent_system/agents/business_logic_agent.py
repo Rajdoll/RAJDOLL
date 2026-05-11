@@ -527,6 +527,9 @@ Write to shared_context:
             'test_coupon_forgery',
         ]
 
+    def _get_tool_server_map(self) -> Dict[str, str]:
+        return {tool: "business-logic-testing" for tool in self._get_available_tools()}
+
     def _get_tool_info(self) -> dict:
         return {
             'test_race_conditions':              {'priority': 'HIGH', 'description': 'TOCTOU race condition testing'},

@@ -477,6 +477,9 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             'test_open_redirect',
         ]
 
+    def _get_tool_server_map(self) -> Dict[str, str]:
+        return {tool: "client-side-testing" for tool in self._get_available_tools()}
+
     def _get_target(self) -> str | None:
         from ..core.db import get_db
         from ..models.models import Job

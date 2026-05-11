@@ -253,6 +253,9 @@ Write to shared_context:
             'probe_for_error_leaks'
         ]
 
+    def _get_tool_server_map(self) -> Dict[str, str]:
+        return {tool: "error-handling-testing" for tool in self._get_available_tools()}
+
     def _get_target(self) -> str | None:
         from ..core.db import get_db
         from ..models.models import Job
