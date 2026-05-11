@@ -9,8 +9,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Ensure /app is on path when run as a script inside Docker
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import httpx
 
