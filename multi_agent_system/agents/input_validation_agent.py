@@ -228,10 +228,15 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         api_eps = read_tag(inventory, "api_generic")
         targets = param_eps + api_eps
         if not targets:
-            self.log("info", "no endpoints classified as error_prone_param or api_generic, skipping")
-            return
+            # Fallback: use all discovered endpoints when LLM classifier produced no matching tags
+            all_eps = inventory.get("endpoints", [])
+            targets = [e for e in all_eps if isinstance(e, dict)]
+            self.log("info", f"no api_generic/error_prone_param tags — falling back to {len(targets)} total endpoints")
 
-        discovered_urls: list[str] = [ep["path"] for ep in targets if ep.get("path")]
+        discovered_urls: list[str] = [
+            ep.get("path") or ep.get("url", "") for ep in targets if isinstance(ep, dict)
+        ]
+        discovered_urls = [u for u in discovered_urls if u]
         if not discovered_urls:
             discovered_urls = [target]
         priority_endpoints = list(discovered_urls)
