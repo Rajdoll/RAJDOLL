@@ -22,7 +22,7 @@ class TestSlot:
     def make(cls, endpoint: str, method: str, wstg_id: str, catalog: Dict[str, SubTest]) -> "TestSlot":
         st = catalog[wstg_id]  # raises KeyError for unknown IDs
         raw = f"{endpoint}|{wstg_id}"
-        slot_id = hashlib.sha1(raw.encode()).hexdigest()[:12]
+        slot_id = hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:12]
         return cls(
             id=slot_id,
             endpoint=endpoint,

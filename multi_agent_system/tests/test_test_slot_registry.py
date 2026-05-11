@@ -1,5 +1,5 @@
 import pytest
-from multi_agent_system.core.test_slot_registry import TestSlot, TestSlotRegistry
+from multi_agent_system.core.slot_registry import TestSlot, TestSlotRegistry
 
 
 def _catalog():
