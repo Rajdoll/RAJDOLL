@@ -59,9 +59,7 @@ def categorize_result(result: Dict[str, Any], elapsed_s: float) -> Dict[str, str
         category = "CONTAINER_DOWN"
     elif any(kw in error_str for kw in ("command not found", "no such file", "exit code 127")):
         category = "BINARY_MISSING"
-    elif elapsed_s >= 10.0 and ("timeout" in error_str or status == "error"):
-        category = "TIMEOUT"
-    elif "timed out" in error_str or ("timeout" in error_str and status == "error"):
+    elif "timed out" in error_str or "timeout" in error_str or elapsed_s >= 10.0:
         category = "TIMEOUT"
     elif status == "error" and "500" in error_str:
         category = "TOOL_BUG"
@@ -78,14 +76,25 @@ def categorize_result(result: Dict[str, Any], elapsed_s: float) -> Dict[str, str
     return {"category": category, "suggestion": SUGGESTIONS.get(category, SUGGESTIONS["UNKNOWN"])}
 
 
+_FALLBACK_URLS: Dict[str, str] = {
+    "client-side-testing":    "http://client-mcp:9008/jsonrpc",
+    "file-upload-testing":    "http://fileupload-mcp:9012/jsonrpc",
+    "api-testing":            "http://api-testing-mcp:9013/jsonrpc",
+    "error-handling-testing": "http://error-mcp:9006/jsonrpc",
+    "business-logic-testing": "http://biz-mcp:9009/jsonrpc",
+}
+
+
 def _get_mcp_url(server_name: str) -> str:
     import os
     urls_json = os.getenv("MCP_SERVER_URLS", "{}")
     try:
         urls = json.loads(urls_json)
-        return urls.get(server_name, f"http://{server_name}:9001/jsonrpc")
+        if server_name in urls:
+            return urls[server_name]
     except Exception:
-        return f"http://{server_name}:9001/jsonrpc"
+        pass
+    return _FALLBACK_URLS.get(server_name, f"http://{server_name}:9001/jsonrpc")
 
 
 def _get_target_and_endpoints(job_id: Optional[int]) -> tuple:
@@ -131,9 +140,9 @@ async def call_tool(mcp_url: str, tool_name: str, args: Dict[str, Any]) -> tuple
             if isinstance(result, dict) and "data" in result:
                 result = result["data"]
             return result if isinstance(result, dict) else {"status": "success", "raw": result}, elapsed
-    except httpx.ConnectError as e:
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         return {"status": "error", "error": f"Connection refused: {e}"}, time.perf_counter() - start
-    except asyncio.TimeoutError:
+    except (asyncio.TimeoutError, httpx.TimeoutException):
         return {"status": "error", "error": "timed out"}, time.perf_counter() - start
     except Exception as e:
         return {"status": "error", "error": str(e)}, time.perf_counter() - start
