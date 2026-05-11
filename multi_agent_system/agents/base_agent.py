@@ -400,6 +400,13 @@ class BaseAgent:
 			await self.run()
 			self.log("info", "Agent execution completed")
 			await self._execute_round2()
+			# DETA Phase 2: iterate TestSlots assigned by orchestrator
+			_raw_slots = self._shared_context_snapshot.get("my_test_slots") or []
+			if _raw_slots:
+				from ..core.slot_registry import TestSlot
+				_slots = [TestSlot.from_dict(s) for s in _raw_slots]
+				_slot_budget = float(AGENT_EXECUTION_TIMEOUT) * 0.5
+				await self.run_test_slots(_slots, time_budget_s=_slot_budget)
 		except Exception as e:
 			self.log("error", f"Agent execution failed: {type(e).__name__}: {e}")
 			import traceback
@@ -1419,4 +1426,67 @@ class BaseAgent:
 			)
 		except Exception:
 			pass
+
+	def _server_for_tool(self, tool_name: str) -> Optional[str]:
+		return self._get_tool_server_map().get(tool_name)
+
+	def _build_slot_args(self, slot: Any) -> Dict[str, Any]:
+		return {"url": slot.endpoint, "params": slot.params or []}
+
+	def _persist_slot_statuses(self, slots: List[Any]) -> None:
+		try:
+			self.context_manager.write(
+				"test_slots_status",
+				[{"id": s.id, "status": s.status, "finding_count": s.finding_count} for s in slots],
+			)
+		except Exception as e:
+			self.log("warning", f"Failed to persist slot statuses: {e}")
+
+	async def run_test_slots(self, slots: List[Any], time_budget_s: float) -> None:
+		"""Phase 2: test each (endpoint, WSTG sub-test) slot after the normal run()."""
+		from ..core.wstg_catalog import tools_for_subtest
+		if not slots:
+			return
+		loop = asyncio.get_event_loop()
+		deadline = loop.time() + time_budget_s
+
+		for slot in slots:
+			if loop.time() >= deadline:
+				remaining_pending = [s for s in slots if s.status == "pending"]
+				for s in remaining_pending:
+					s.status = "skipped"
+				self.log("info", f"Slot budget exhausted — {len(remaining_pending)} slots skipped")
+				break
+
+			mapped_tools = tools_for_subtest(slot.wstg_id)
+			if not mapped_tools:
+				slot.status = "skipped"
+				continue
+
+			found = False
+			for tool in mapped_tools[:3]:
+				server = self._server_for_tool(tool)
+				if not server:
+					continue
+				args = self._build_slot_args(slot)
+				try:
+					result = await self._execute_with_retry_on_empty(
+						server=server,
+						tool=tool,
+						args=args,
+						subtest_id=slot.wstg_id,
+					)
+					findings = result.get("findings", []) if isinstance(result, dict) else []
+					if findings:
+						slot.status = "vulnerable"
+						slot.finding_count = len(findings)
+						found = True
+						break
+				except Exception as e:
+					self.log("warning", f"Slot {slot.id} tool {tool} error: {e}")
+
+			if not found and slot.status == "pending":
+				slot.status = "tested-clean"
+
+		self._persist_slot_statuses(slots)
 
