@@ -1210,7 +1210,7 @@ class Orchestrator:
 					if isinstance(s, str) and s not in skip_agents_set
 				]
 				if step == "ReconnaissanceAgent":
-					# Post-recon: strategic plan + DETA slot build
+					# Post-recon strategic plan for resume path (normal path uses run() directly)
 					self._generate_post_recon_strategic_plan(remaining_for_directive)
 					self._refresh_shared_context_cache()
 					self._build_and_persist_test_slots()
@@ -1367,12 +1367,15 @@ class Orchestrator:
 
 		# Populate shared_context from recon results for other agents
 		self._populate_shared_context_from_recon()
-		
+		self._refresh_shared_context_cache()
+
 		plan = self._remove_recon(plan_with_recon)
-		
-		# PHASE 2: Execution plan — strategic planning runs post-recon
+
+		# PHASE 2: Execution plan — strategic planning + DETA slot build run post-recon
 		plan = self._remove_recon(list(DEFAULT_PLAN))
 		print(f"[Orchestrator] Phase 2: execution plan = {plan}")
+		self._generate_post_recon_strategic_plan(plan)
+		self._build_and_persist_test_slots()
 
 		self._update_plan_sequence(["ReconnaissanceAgent", *plan])
 
