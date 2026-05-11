@@ -65,8 +65,19 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
         upload_eps = read_tag(inventory, "file_upload")
         upload_endpoints = [{"url": ep["path"]} for ep in upload_eps if ep.get("path")]
         if not upload_endpoints:
-            self.log("info", "no endpoints classified as file_upload, skipping")
-            return
+            # Fallback: probe well-known upload paths derived from discovered endpoints
+            all_eps = inventory.get("endpoints", [])
+            upload_candidates = [
+                e for e in all_eps if isinstance(e, dict)
+                and any(kw in (e.get("url") or e.get("path") or "").lower()
+                        for kw in ("upload", "file", "image", "photo", "avatar", "attachment"))
+            ]
+            if upload_candidates:
+                upload_endpoints = [{"url": e.get("url") or e.get("path")} for e in upload_candidates[:3]]
+                self.log("info", f"no file_upload tag — falling back to {len(upload_endpoints)} URL-matched endpoints")
+            else:
+                upload_endpoints = [{"url": target}]
+                self.log("info", "no file_upload tag and no upload-keyword endpoints — using base target")
         
         # Step 2: Test each discovered endpoint
         for endpoint in upload_endpoints[:2]:  # Test up to 2 endpoints (5 caused cascading timeout issues)
