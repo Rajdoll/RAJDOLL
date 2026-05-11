@@ -69,11 +69,14 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
         sinks = read_tag(inventory, "client_render_sink")
         param_eps = read_tag(inventory, "error_prone_param")
         if not sinks and not param_eps:
-            self.log("info", "no endpoints classified as client_render_sink/error_prone_param, skipping")
-            return
-
-        all_eps = sinks + param_eps
-        test_urls = [ep["path"] for ep in all_eps if ep.get("path")][:10]
+            # Fallback: use all endpoints when LLM classifier produces no matching tags
+            all_inv_eps = inventory.get("endpoints", [])
+            all_eps = [e for e in all_inv_eps if isinstance(e, dict)]
+            self.log("info", f"no client_render_sink/error_prone_param tags — falling back to {len(all_eps)} endpoints")
+        else:
+            all_eps = sinks + param_eps
+        test_urls = [ep.get("path") or ep.get("url", "") for ep in all_eps if isinstance(ep, dict)]
+        test_urls = [u for u in test_urls if u][:10]
         if not test_urls:
             test_urls = [target]
 
@@ -100,7 +103,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                         timeout=180
                     )
                     if isinstance(dom_xss_res, dict) and dom_xss_res.get("status") == "success":
-                        data = dom_xss_res.get("data", {})
+                        data = dom_xss_res.get("data") or dom_xss_res
                         if data.get("vulnerable"):
                             self.add_finding("WSTG-CLNT-01", "DOM-based XSS detected",
                                            severity="high", evidence=data,
@@ -120,7 +123,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 timeout=150
             )
             if isinstance(js_exec_res, dict) and js_exec_res.get("status") == "success":
-                data = js_exec_res.get("data", {})
+                data = js_exec_res.get("data") or js_exec_res
                 if data.get("vulnerable"):
                     self.add_finding("WSTG-CLNT-02", "JavaScript execution vulnerabilities detected", 
                                    severity="medium", evidence=data,
@@ -141,7 +144,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=150
                 )
                 if isinstance(html_inj_res, dict) and html_inj_res.get("status") == "success":
-                    data = html_inj_res.get("data", {})
+                    data = html_inj_res.get("data") or html_inj_res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-03", "HTML Injection detected",
                                        severity="medium", evidence=data,
@@ -162,7 +165,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=120
                 )
                 if isinstance(redirect_res, dict) and redirect_res.get("status") == "success":
-                    data = redirect_res.get("data", {})
+                    data = redirect_res.get("data") or redirect_res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-04", "Client-side URL redirect vulnerability",
                                        severity="medium", evidence=data,
@@ -183,7 +186,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=120
                 )
                 if isinstance(css_inj_res, dict) and css_inj_res.get("status") == "success":
-                    data = css_inj_res.get("data", {})
+                    data = css_inj_res.get("data") or css_inj_res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-05", "CSS Injection detected",
                                        severity="low", evidence=data,
@@ -204,7 +207,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=150
                 )
                 if isinstance(cors_res, dict) and cors_res.get("status") == "success":
-                    data = cors_res.get("data", {})
+                    data = cors_res.get("data") or cors_res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-07", "CORS misconfiguration detected", 
                                        severity="high", evidence=data,
@@ -225,7 +228,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=120
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-09", "Clickjacking possible (missing XFO/CSP)", 
                                        severity="medium", evidence=data,
@@ -246,7 +249,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=150
                 )
                 if isinstance(ws_res, dict) and ws_res.get("status") == "success":
-                    data = ws_res.get("data", {})
+                    data = ws_res.get("data") or ws_res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-10", "WebSocket security issues detected", 
                                        severity="medium", evidence=data,
@@ -267,7 +270,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=150
                 )
                 if isinstance(storage_res, dict) and storage_res.get("status") == "success":
-                    data = storage_res.get("data", {})
+                    data = storage_res.get("data") or storage_res
                     if data.get("vulnerable"):
                         severity = "high" if data.get("sensitive_data_exposed") else "medium"
                         self.add_finding("WSTG-CLNT-12", "Insecure browser storage usage",
@@ -286,7 +289,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     auth_session=auth_data
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         severity = "critical" if any(f.get('severity') == 'CRITICAL' for f in data.get('findings', [])) else "high"
                         self.add_finding("WSTG-CLNT-13", "Prototype pollution vulnerabilities detected",
@@ -305,7 +308,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     auth_session=auth_data
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         severity = "critical" if any(f.get('severity') == 'CRITICAL' for f in data.get('findings', [])) else "high"
                         self.add_finding("WSTG-CLNT-14", "postMessage security vulnerabilities detected",
@@ -324,7 +327,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     auth_session=auth_data
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         severity = "critical" if any(f.get('severity') == 'CRITICAL' for f in data.get('findings', [])) else "high"
                         self.add_finding("WSTG-CLNT-13", "Client-side template injection detected",
@@ -346,7 +349,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=120
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-06", "Client-side resource manipulation detected",
                                        severity="high", evidence=data,
@@ -367,7 +370,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=120
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-11", "Web messaging security issues detected",
                                        severity="high", evidence=data,
@@ -386,7 +389,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                         args={"url": target}, auth_session=auth_data), timeout=60
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         for finding in data.get("findings", []):
                             self.add_finding(
@@ -409,7 +412,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                         args={"url": target}, auth_session=auth_data), timeout=90
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         for finding in data.get("findings", []):
                             self.add_finding(
@@ -436,7 +439,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     timeout=60
                 )
                 if isinstance(vc_res, dict) and vc_res.get("status") == "success":
-                    data = vc_res.get("data", {})
+                    data = vc_res.get("data") or vc_res
                     for f in data.get("findings", []):
                         self.add_finding(
                             "WSTG-CONF-01",

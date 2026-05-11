@@ -87,7 +87,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                     )
                     
                     if isinstance(res, dict) and res.get("status") == "success":
-                        data = res.get("data", {})
+                        data = res.get("data") or res
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
@@ -121,7 +121,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                     )
                     
                     if isinstance(res, dict) and res.get("status") == "success":
-                        data = res.get("data", {})
+                        data = res.get("data") or res
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
@@ -154,7 +154,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                     )
                     
                     if isinstance(res, dict) and res.get("status") == "success":
-                        data = res.get("data", {})
+                        data = res.get("data") or res
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
@@ -188,7 +188,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                     )
                     
                     if isinstance(res, dict) and res.get("status") == "success":
-                        data = res.get("data", {})
+                        data = res.get("data") or res
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
@@ -223,7 +223,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                         timeout=90
                     )
                     if isinstance(res, dict) and res.get("status") == "success":
-                        data = res.get("data", {})
+                        data = res.get("data") or res
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
@@ -250,7 +250,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                     timeout=120
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
+                    data = res.get("data") or res
                     if data.get("vulnerable"):
                         findings = data.get("findings", [])
                         for finding in findings:
