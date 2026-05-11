@@ -31,15 +31,15 @@ ZERO_AGENTS: Dict[str, Dict[str, Any]] = {
     },
     "APITestingAgent": {
         "server": "api-testing",
-        "tools_sample": ["test_graphql_injection", "test_api_rate_limiting"],
+        "tools_sample": ["test_graphql_introspection", "test_rest_api_abuse", "test_rate_limiting"],
     },
     "ErrorHandlingAgent": {
         "server": "error-handling-testing",
-        "tools_sample": ["test_error_disclosure", "test_stack_trace_exposure"],
+        "tools_sample": ["probe_for_error_leaks", "check_generic_error_pages"],
     },
     "BusinessLogicAgent": {
         "server": "business-logic-testing",
-        "tools_sample": ["test_workflow_bypass", "test_price_manipulation"],
+        "tools_sample": ["test_workflow_bypass", "test_parameter_tampering", "test_data_validation_extremes"],
     },
 }
 
@@ -70,11 +70,15 @@ def categorize_result(result: Dict[str, Any], elapsed_s: float) -> Dict[str, str
         category = "TOOL_BUG"
     elif isinstance(findings, list) and len(findings) > 0:
         category = "TOOL_FOUND"
-    elif status == "success" and isinstance(findings, list) and len(findings) == 0:
+    elif result.get("vulnerable") is True:
+        category = "TOOL_FOUND"
+    elif isinstance(findings, list) and len(findings) == 0:
         if "401" in error_str or "403" in error_str:
             category = "AUTH_REQUIRED"
         else:
             category = "TOOL_OK_NO_VULN"
+    elif result.get("vulnerable") is False:
+        category = "TOOL_OK_NO_VULN"
     else:
         category = "UNKNOWN"
 
