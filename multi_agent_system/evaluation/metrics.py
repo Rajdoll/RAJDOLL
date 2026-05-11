@@ -12,7 +12,7 @@ Last Updated: December 14, 2025
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -599,3 +599,21 @@ class MetricsCalculator:
                 print("   - System reliability needs improvement (fix crashes)")
 
         print("="*70 + "\n")
+
+
+def compute_wstg_slot_coverage(job_id: int) -> Dict[str, Any]:
+    """Compute WSTG sub-test coverage from TestSlot statuses persisted in SharedContext."""
+    from ..core.db import get_db
+    from ..models.models import SharedContext
+    from ..core.slot_registry import TestSlotRegistry
+    import json
+    with get_db() as db:
+        ctx = db.query(SharedContext).filter(
+            SharedContext.job_id == job_id,
+            SharedContext.key == "test_slots",
+        ).first()
+    if not ctx:
+        return {"total": 0, "tested": 0, "pct_tested": 0.0, "note": "no DETA slots"}
+    data = ctx.value if isinstance(ctx.value, dict) else json.loads(ctx.value)
+    registry = TestSlotRegistry.from_dict(data)
+    return registry.coverage_summary()
