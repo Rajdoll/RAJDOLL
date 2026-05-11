@@ -1442,6 +1442,50 @@ class BaseAgent:
 		except Exception as e:
 			self.log("warning", f"Failed to persist slot statuses: {e}")
 
+	def _extract_slot_findings(self, result: Any, wstg_id: str, tool: str) -> List[Dict[str, Any]]:
+		"""Extract findings from tool result and persist each via add_finding().
+
+		Handles: {findings:[...]}, {vulnerable:true, findings:[...]}, {info_leaks:[...]}.
+		Returns the list of findings that were added.
+		"""
+		if not isinstance(result, dict):
+			return []
+
+		# Collect raw finding dicts from result (various tool output formats)
+		raw: List[Dict[str, Any]] = []
+		if isinstance(result.get("findings"), list):
+			raw = [f for f in result["findings"] if isinstance(f, dict)]
+		elif isinstance(result.get("info_leaks"), list):
+			raw = [f for f in result["info_leaks"] if isinstance(f, dict)]
+
+		# If tool signals vulnerable but has no structured findings, synthesize one
+		if not raw and result.get("vulnerable") is True:
+			raw = [{"type": tool, "severity": "medium", "description": "Vulnerability detected"}]
+
+		if not raw:
+			return []
+
+		_SEV_MAP = {"critical": "critical", "high": "high", "medium": "medium",
+					"low": "low", "info": "info", "informational": "info"}
+		added: List[Dict[str, Any]] = []
+		for f in raw:
+			title = f.get("type") or f.get("title") or f.get("name") or tool
+			raw_sev = str(f.get("severity") or "medium").lower()
+			severity = _SEV_MAP.get(raw_sev, "medium")
+			details = f.get("description") or f.get("evidence") or f.get("message") or ""
+			try:
+				self.add_finding(
+					category=wstg_id,
+					title=str(title)[:200],
+					severity=severity,
+					evidence=f,
+					details=str(details)[:1000],
+				)
+				added.append(f)
+			except Exception as e:
+				self.log("warning", f"DETA add_finding failed for {wstg_id}: {e}")
+		return added
+
 	async def run_test_slots(self, slots: List[Any], time_budget_s: float) -> None:
 		"""Phase 2: test each (endpoint, WSTG sub-test) slot after the normal run()."""
 		from ..core.wstg_catalog import tools_for_subtest
@@ -1478,10 +1522,10 @@ class BaseAgent:
 						args=args,
 						subtest_id=slot.wstg_id,
 					)
-					findings = result.get("findings", []) if isinstance(result, dict) else []
-					if findings:
+					slot_findings = self._extract_slot_findings(result, slot.wstg_id, tool)
+					if slot_findings:
 						slot.status = "vulnerable"
-						slot.finding_count = len(findings)
+						slot.finding_count = len(slot_findings)
 						found = True
 						break
 				except Exception as e:
