@@ -291,6 +291,80 @@ class Orchestrator:
 			asyncio.set_event_loop(loop)
 		return loop
 
+	def _wait_for_target_ready(self, timeout_s: int = 60, interval_s: int = 5) -> None:
+		"""Block until target responds 200 OK, or give up after timeout_s.
+		Guards against target crash/restart between Recon and Phase 3.
+		"""
+		import time
+		import urllib.request
+		target = self._get_target()
+		if not target:
+			return
+		deadline = time.monotonic() + timeout_s
+		while time.monotonic() < deadline:
+			try:
+				with urllib.request.urlopen(target, timeout=5) as resp:
+					if resp.status < 500:
+						return
+			except Exception:
+				pass
+			remaining = int(deadline - time.monotonic())
+			print(f"[Orchestrator] Target not ready, waiting {interval_s}s (up to {remaining}s remaining)...")
+			time.sleep(interval_s)
+		print(f"[Orchestrator] WARNING: target {target} did not recover in {timeout_s}s — proceeding anyway")
+
+	def _build_and_persist_test_slots(self) -> None:
+		"""After Recon: LLM tags endpoints with WSTG sub-tests, build registry, persist."""
+		from .core.endpoint_tagger import tag_endpoints
+		from .core.slot_registry import TestSlotRegistry
+		from .core.wstg_catalog import load_catalog
+		summarizer = self._get_llm_summarizer()
+		if not summarizer:
+			return
+		inv = self.shared_context.get("endpoint_inventory") or {}
+		endpoints = inv.get("endpoints", [])
+		if not endpoints:
+			print("[Orchestrator] DETA: no endpoints — skipping slot build")
+			return
+		tech = self.shared_context.get("tech_stack") or {}
+		cat = load_catalog()
+		loop = self._ensure_event_loop()
+		try:
+			endpoint_map = loop.run_until_complete(
+				asyncio.wait_for(
+					tag_endpoints(endpoints, cat, tech, summarizer),
+					timeout=120,
+				)
+			)
+		except Exception as e:
+			print(f"[Orchestrator] DETA: tag_endpoints failed: {e}")
+			return
+		if not endpoint_map:
+			print("[Orchestrator] DETA: empty mapping — skipping")
+			return
+		registry = TestSlotRegistry.build(endpoint_map, endpoints, cat)
+		self.context_manager.write("test_slots", registry.to_dict())
+		print(f"[Orchestrator] DETA: {registry.total} slots built from {len(endpoints)} endpoints")
+
+	def _inject_test_slots_for_agent(
+		self, shared_ctx: Dict[str, Any], agent_name: str
+	) -> Dict[str, Any]:
+		"""Inject this agent's TestSlots into the shared context snapshot."""
+		slots_data = shared_ctx.get("test_slots") or self.shared_context.get("test_slots")
+		if not slots_data:
+			return shared_ctx
+		try:
+			from .core.slot_registry import TestSlotRegistry
+			registry = TestSlotRegistry.from_dict(slots_data)
+			my_slots = registry.slots_for_agent(agent_name)
+			if my_slots:
+				shared_ctx = dict(shared_ctx)
+				shared_ctx["my_test_slots"] = [s.to_dict() for s in my_slots]
+				print(f"[Orchestrator] DETA: injected {len(my_slots)} slots for {agent_name}")
+		except Exception as e:
+			print(f"[Orchestrator] DETA: slot injection failed for {agent_name}: {e}")
+		return shared_ctx
+
 	def _is_job_cancelled(self) -> bool:
 		"""Check if the job has been cancelled by user"""
 		with get_db() as db:
@@ -955,6 +1029,10 @@ class Orchestrator:
 			if inject_specs:
 				ctx["llm_orchestrator_inject_tools"] = inject_specs
 
+		# DETA: inject per-agent TestSlots
+		if agent_name:
+			ctx = self._inject_test_slots_for_agent(ctx, agent_name)
+
 		return ctx
 
 	def _run_phases_4_5(self) -> None:
@@ -1132,8 +1210,10 @@ class Orchestrator:
 					if isinstance(s, str) and s not in skip_agents_set
 				]
 				if step == "ReconnaissanceAgent":
-					# Post-recon: comprehensive strategic plan for all remaining agents
+					# Post-recon: strategic plan + DETA slot build
 					self._generate_post_recon_strategic_plan(remaining_for_directive)
+					self._refresh_shared_context_cache()
+					self._build_and_persist_test_slots()
 				else:
 					# Per-agent: tactical directive for next agent
 					self._generate_and_merge_directive(step, remaining_for_directive)
@@ -1295,6 +1375,9 @@ class Orchestrator:
 		print(f"[Orchestrator] Phase 2: execution plan = {plan}")
 
 		self._update_plan_sequence(["ReconnaissanceAgent", *plan])
+
+		# Wait for target to be responsive before Phase 3 (guards against crash/restart mid-scan)
+		self._wait_for_target_ready()
 
 		# PHASE 3: Execute agent loop (returns True if paused mid-phase)
 		if self._run_phase_3(plan, start_idx=0):
