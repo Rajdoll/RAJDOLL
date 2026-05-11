@@ -2,6 +2,7 @@
 Simple LLM Client using direct HTTP calls
 Bypasses OpenAI SDK to avoid httpx/proxies compatibility issues
 """
+import asyncio
 import json
 import os
 import httpx
@@ -1010,6 +1011,74 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
         except Exception as e:
             print(f"[SimpleLLMClient] propose_subtest_directive failed: {e}")
             return None
+
+    async def tag_endpoints_with_subtests(
+        self,
+        *,
+        endpoints: List[Dict[str, Any]],
+        catalog_summary: List[Dict[str, Any]],
+        tech_stack: Dict[str, Any],
+        known_ids: Optional[set] = None,
+        timeout_s: int = 90,
+    ) -> Dict[str, List[str]]:
+        """For each endpoint, return which WSTG sub-test IDs are applicable.
+
+        Returns {url: [wstg_id, ...]} or {} on failure.
+        """
+        import re
+        if not endpoints:
+            return {}
+        ep_lines = "\n".join(
+            f"  {e.get('method','GET')} {e['url']}"
+            f"{' params:' + str(e.get('params',[])) if e.get('params') else ''}"
+            for e in endpoints[:60]
+        )
+        cat_lines = "\n".join(
+            f"  {c['id']}: {c['title']}"
+            for c in catalog_summary[:80]
+        )
+        tech_str = ", ".join(f"{k}:{v}" for k, v in (tech_stack or {}).items()) or "unknown"
+        prompt = (
+            f"You are a penetration tester. For each endpoint below, list which WSTG v4.2 "
+            f"sub-test IDs are applicable based on the URL, HTTP method, parameters, and tech stack.\n\n"
+            f"Tech stack: {tech_str}\n\n"
+            f"Endpoints:\n{ep_lines}\n\n"
+            f"WSTG sub-tests to consider:\n{cat_lines}\n\n"
+            f"Return ONLY valid JSON: {{\"<url>\": [\"<WSTG-XXX-YY>\", ...], ...}}\n"
+            f"Only include IDs from the list above. If no sub-tests apply to an endpoint, omit it."
+        )
+        messages = [
+            {"role": "system", "content": "You are a security testing strategist. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            raw = await asyncio.wait_for(
+                self.chat_completion(messages, max_tokens=2000, temperature=0.2),
+                timeout=timeout_s,
+            )
+            raw = self._strip_thinking_tags(raw)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return {}
+            data = json.loads(match.group())
+            if not isinstance(data, dict):
+                return {}
+            valid_prefix = "WSTG-"
+            result = {}
+            for url, ids in data.items():
+                if not isinstance(ids, list):
+                    continue
+                filtered = [
+                    i for i in ids
+                    if isinstance(i, str) and i.startswith(valid_prefix)
+                    and (known_ids is None or i in known_ids)
+                ]
+                if filtered:
+                    result[url] = filtered
+            return result
+        except Exception as e:
+            print(f"[SimpleLLMClient] tag_endpoints_with_subtests failed: {e}")
+            return {}
 
     async def propose_retry_arguments(
         self,
