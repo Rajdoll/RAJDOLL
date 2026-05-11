@@ -2882,4 +2882,100 @@ __all__ = [
 if __name__ == "__main__":
     ensure_directories()
     logger.info("Enhanced Information Gathering MCP Server starting...")
+
+
+# ---------------------------------------------------------------------------
+# REST Endpoint Discoverer - lightweight httpx-based REST API discovery
+# No Chromium required. Derives probes from already-discovered paths only.
+# ---------------------------------------------------------------------------
+
+def _derive_api_prefixes(base_url: str, existing_endpoints: List[str]) -> List[Dict[str, str]]:
+    """Derive REST API root prefixes from paths already discovered by Recon.
+
+    Returns list of {path, reason} dicts to probe via HTTP.
+    """
+    from urllib.parse import urlparse
+    candidates: Dict[str, str] = {}
+
+    # Generic REST roots - always probe (common patterns, not target-specific)
+    for generic in ("/api/", "/api/v1/", "/api/v2/", "/rest/", "/v1/", "/v2/"):
+        candidates[generic] = "generic REST root"
+
+    for ep in existing_endpoints:
+        try:
+            path = urlparse(ep).path
+        except Exception:
+            continue
+        parts = [p for p in path.split("/") if p]
+        if not parts:
+            continue
+        root = f"/{parts[0]}/"
+        if root not in candidates:
+            candidates[root] = f"derived from {path}"
+        if len(parts) >= 2:
+            prefix = f"/{parts[0]}/{parts[1]}/"
+            if prefix not in candidates:
+                candidates[prefix] = f"derived from {path}"
+        if "graphql" in path.lower():
+            for gql in ("/graphql", "/api/graphql", "/graphql/v1"):
+                if gql not in candidates:
+                    candidates[gql] = "graphql pattern"
+        if any(s in path.lower() for s in ("swagger", "openapi", "api-docs")):
+            for doc in ("/swagger.json", "/openapi.json", "/api-docs"):
+                if doc not in candidates:
+                    candidates[doc] = "api docs pattern"
+
+    _STATIC = {"/static/", "/assets/", "/images/", "/fonts/", "/css/", "/js/"}
+    return [
+        {"path": p, "reason": r}
+        for p, r in candidates.items()
+        if not any(p.startswith(s) for s in _STATIC)
+    ]
+
+
+async def discover_rest_endpoints(
+    target_url: str,
+    existing_endpoints: Optional[List[str]] = None,
+    timeout: int = 5,
+) -> Dict[str, Any]:
+    """Probe derived REST prefixes via httpx and return newly discovered endpoints.
+
+    Generic - probes derived from already-found paths, not hardcoded to any target.
+    """
+    from urllib.parse import urlparse
+
+    base = urlparse(target_url)
+    base_url = f"{base.scheme}://{base.netloc}"
+    prefixes = _derive_api_prefixes(base_url, existing_endpoints or [])
+
+    found: List[Dict[str, Any]] = []
+    _VALID_STATUSES = {200, 201, 400, 401, 403, 405, 422}
+
+    async with httpx.AsyncClient(
+        verify=False,
+        follow_redirects=True,
+        timeout=timeout,
+        headers={"Accept": "application/json"},
+    ) as client:
+        for item in prefixes:
+            url = base_url.rstrip("/") + item["path"]
+            try:
+                resp = await client.get(url)
+                if resp.status_code in _VALID_STATUSES:
+                    found.append({
+                        "url": url,
+                        "method": "GET",
+                        "status": resp.status_code,
+                        "content_type": resp.headers.get("content-type", ""),
+                        "source": "rest_discoverer",
+                        "reason": item["reason"],
+                    })
+            except Exception:
+                pass
+
+    return {
+        "endpoints": found,
+        "total_probed": len(prefixes),
+        "total_found": len(found),
+    }
 #     mcp.run(transport='stdio')
