@@ -1601,9 +1601,9 @@ Operate autonomously without human guidance.
                     _extra_r3.extend(await _runner.run(_target_url, _wordlist))
                     _extra_r3.extend(await _runner.run_per_segment(_target_url, _wordlist, seed_endpoints=all_eps + _extra_r1))
                 try:
-                    await asyncio.wait_for(_run_ffuf(), timeout=120)
+                    await asyncio.wait_for(_run_ffuf(), timeout=300)
                 except asyncio.TimeoutError:
-                    self.log("warning", "[Recon] R3 ffuf timed out after 120s; using partial results")
+                    self.log("warning", "[Recon] R3 ffuf timed out after 300s; using partial results")
                 except Exception as _exc:
                     self.log("warning", f"[Recon] R3 ffuf failed: {_exc}")
             _param_wl = _Path(_os.getenv("RECON_PARAM_WORDLIST", "/usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt"))
