@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from .base_agent import BaseAgent, AgentRegistry
+from ..core.config import settings as _settings
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
@@ -326,6 +327,34 @@ Write to shared_context:
                     self.log("info", "No JWT token available for testing (requires authenticated session)")
             except Exception as e:
                 self.log("warning", f"test_jwt_weakness failed: {e}")
+
+        # Active JWT manipulation (Component C)
+        if _settings.use_framework and getattr(self, "active_flow", None):
+            from multi_agent_system.framework.types import EndpointSpec
+            auth_session = (getattr(self, "get_auth_session", None) or (lambda: {}))() or {}
+            jwt_token = auth_session.get("jwt_token")
+            if jwt_token:
+                inv = self.shared_context.get("endpoint_inventory") or {}
+                token_eps = inv.get("by_tag", {}).get("auth_token_endpoint", [])
+                if token_eps:
+                    target_url = (token_eps[0].get("url") if isinstance(token_eps[0], dict)
+                                  else token_eps[0])
+                else:
+                    target_url = self._get_target() + "/api/whoami"
+                ep = EndpointSpec(url=target_url, method="GET")
+                try:
+                    jwt_result = await self.active_flow.test_jwt_manipulation(jwt_token, ep)
+                except Exception as exc:
+                    self.log("warning", f"JWT manipulation test errored: {exc}")
+                else:
+                    if jwt_result.success:
+                        self.add_finding(
+                            category="WSTG-CRYP-04",
+                            title=f"JWT vulnerability: {jwt_result.evidence.get('technique', 'forged accepted')}",
+                            severity=jwt_result.severity,
+                            evidence=jwt_result.evidence,
+                            details="JWT signature verification can be bypassed.",
+                        )
 
         self.log("info", "Weak cryptography checks complete")
 
