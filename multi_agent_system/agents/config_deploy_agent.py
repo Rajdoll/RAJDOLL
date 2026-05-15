@@ -439,7 +439,8 @@ Write to shared_context:
                 self.log("warning", f"test_npm_vulnerabilities failed: {e}")
 
         # Vulnerable Library findings from JS Bundle Analysis (Component B)
-        js_analysis = self.shared_context.get("js_bundle_analysis", {})
+        # Use _raw_ key which has full dependency+advisory data (compact summary key lacks it)
+        js_analysis = self.shared_context.get("js_bundle_analysis_raw") or self.shared_context.get("js_bundle_analysis", {})
         for dep in js_analysis.get("dependencies", []):
             advisories = dep.get("advisories", []) or []
             if not advisories:
