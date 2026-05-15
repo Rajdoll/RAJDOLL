@@ -21,3 +21,5 @@ markdown==3.9  # Markdown to HTML conversion
 numpy==1.26.4  # Numerical computing for evaluation metrics
 scipy==1.11.4  # Statistical functions (pearsonr for CVSS correlation)
 Jinja2>=3.1.0  # Template rendering for enrichment prompts and PDF reports
+cryptography==43.0.3  # Fernet encryption for secure shared-context secret refs
+esprima==4.0.1  # JavaScript AST parser for bundle analysis
