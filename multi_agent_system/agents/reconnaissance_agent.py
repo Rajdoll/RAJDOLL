@@ -1648,7 +1648,7 @@ Operate autonomously without human guidance.
             self.log("error", f"[Recon] endpoint_inventory build failed: {_exc}")
 
         # R6: JS bundle analysis (Component B) — gated by USE_FRAMEWORK
-        if _settings.use_framework and getattr(self, "js_bundle_analyzer", None):
+        if _settings.use_framework and _settings.use_js_analyzer and getattr(self, "js_bundle_analyzer", None):
             try:
                 import httpx as _httpx
                 async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15) as _client:

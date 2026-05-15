@@ -413,7 +413,7 @@ Write to shared_context:
                 self.log("warning", f"test_session_hijacking failed: {e}")
 
         # Active CSRF test (Component C) -- opt-in via USE_FRAMEWORK
-        if _settings.use_framework and getattr(self, "active_flow", None):
+        if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None):
             from multi_agent_system.framework.types import EndpointSpec
             from multi_agent_system.framework.active_flow import SessionRef
             inventory = self.shared_context.get("endpoint_inventory") or {}

@@ -93,6 +93,10 @@ class Settings:
     scan_profile: str = field(default_factory=lambda: os.getenv("SCAN_PROFILE", "lab"))
     allow_default_auto_login: bool = field(init=False)
     use_framework: bool = field(default_factory=lambda: _env_flag("USE_FRAMEWORK", False))
+    use_payload_synth: bool = field(default_factory=lambda: _env_flag("USE_PAYLOAD_SYNTH", False))
+    use_js_analyzer: bool = field(default_factory=lambda: _env_flag("USE_JS_ANALYZER", False))
+    use_active_flow: bool = field(default_factory=lambda: _env_flag("USE_ACTIVE_FLOW", False))
+    use_semantic_classifier: bool = field(default_factory=lambda: _env_flag("USE_SEMANTIC_CLASSIFIER", False))
 
     def __post_init__(self):
         base_hitl = _env_flag("HITL_ENABLED", True)
@@ -113,6 +117,19 @@ class Settings:
         if agents_env is None and self.lab_mode:
             agents_env = "InputValidationAgent"
         self.auto_approve_tool_agents = _parse_csv(agents_env)
+
+        # When use_framework=True and per-component flags not explicitly set via env,
+        # enable all components (backward compat: USE_FRAMEWORK=true means full framework)
+        if self.use_framework:
+            component_flags = {
+                "USE_PAYLOAD_SYNTH": "use_payload_synth",
+                "USE_JS_ANALYZER": "use_js_analyzer",
+                "USE_ACTIVE_FLOW": "use_active_flow",
+                "USE_SEMANTIC_CLASSIFIER": "use_semantic_classifier",
+            }
+            for env_key, attr in component_flags.items():
+                if env_key not in os.environ and not getattr(self, attr):
+                    setattr(self, attr, True)
 
 
 settings = Settings()

@@ -362,7 +362,7 @@ Write to shared_context:
 				self.log("warning", f"test_password_reset failed: {e}")
 
 		# Active password reset test (Component C)
-		if _settings.use_framework and getattr(self, "active_flow", None) and recovery_eps:
+		if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None) and recovery_eps:
 			from multi_agent_system.framework.types import EndpointSpec
 			recovery_ep_url = (recovery_eps[0].get("url") if isinstance(recovery_eps[0], dict)
 							   else recovery_eps[0])

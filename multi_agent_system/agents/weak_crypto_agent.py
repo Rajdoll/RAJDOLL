@@ -329,7 +329,7 @@ Write to shared_context:
                 self.log("warning", f"test_jwt_weakness failed: {e}")
 
         # Active JWT manipulation (Component C)
-        if _settings.use_framework and getattr(self, "active_flow", None):
+        if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None):
             from multi_agent_system.framework.types import EndpointSpec
             auth_session = (getattr(self, "get_auth_session", None) or (lambda: {}))() or {}
             jwt_token = auth_session.get("jwt_token")
