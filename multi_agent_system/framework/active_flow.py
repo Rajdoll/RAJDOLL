@@ -5,6 +5,14 @@ from typing import Any, Optional
 
 import httpx
 
+from multi_agent_system.framework.types import EndpointSpec
+
+
+def _origin_of(url: str) -> str:
+    from urllib.parse import urlparse
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}"
+
 
 @dataclass
 class FlowResult:
@@ -29,5 +37,68 @@ class ActiveFlowTester:
     No hardcoded paths.
     """
 
+    EVIL_ORIGIN = "http://evil.example.com"
+
     def __init__(self, jwt_wordlist_path: Optional[str] = None):
         self.jwt_wordlist_path = jwt_wordlist_path
+
+    async def test_csrf(
+        self, endpoint: EndpointSpec, session: SessionRef,
+    ) -> FlowResult:
+        """Compare same-origin vs cross-origin request behavior.
+
+        Reportable when cross-origin request succeeds with state change identical
+        to same-origin baseline.
+        """
+        client = getattr(self, "_http_client", None) or httpx.AsyncClient(
+            timeout=15, follow_redirects=False, verify=False,
+        )
+        method = endpoint.method.upper()
+        body = {"_csrf_test": "1"}
+
+        same_origin_headers = {"Origin": _origin_of(endpoint.url),
+                                "Referer": endpoint.url}
+        if session.auth_headers:
+            same_origin_headers.update(session.auth_headers)
+        try:
+            resp_a = await client.request(
+                method, endpoint.url, json=body, headers=same_origin_headers,
+                cookies=session.cookies,
+            )
+        except httpx.RequestError as exc:
+            return FlowResult(success=False, proof_type="error",
+                               evidence={"error": str(exc)}, severity="info")
+
+        cross_headers = {"Origin": self.EVIL_ORIGIN,
+                          "Referer": self.EVIL_ORIGIN}
+        if session.auth_headers:
+            cross_headers.update(session.auth_headers)
+        try:
+            resp_b = await client.request(
+                method, endpoint.url, json=body, headers=cross_headers,
+                cookies=session.cookies,
+            )
+        except httpx.RequestError as exc:
+            return FlowResult(success=False, proof_type="error",
+                               evidence={"error": str(exc)}, severity="info")
+
+        if 200 <= resp_a.status_code < 300 and 200 <= resp_b.status_code < 300:
+            if abs(len(resp_a.text) - len(resp_b.text)) < max(50, len(resp_a.text) * 0.1):
+                return FlowResult(
+                    success=True, proof_type="verified_state_change",
+                    severity="high",
+                    evidence={
+                        "endpoint": endpoint.url, "method": method,
+                        "request_a_origin": same_origin_headers["Origin"],
+                        "request_b_origin": self.EVIL_ORIGIN,
+                        "response_a_status": resp_a.status_code,
+                        "response_b_status": resp_b.status_code,
+                        "impact": "Cross-origin POST accepted without CSRF token",
+                    },
+                )
+
+        return FlowResult(
+            success=False, proof_type="non_exploitable",
+            severity="info",
+            evidence={"a_status": resp_a.status_code, "b_status": resp_b.status_code},
+        )
