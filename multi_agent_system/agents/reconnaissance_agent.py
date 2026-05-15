@@ -409,7 +409,7 @@ Operate autonomously without human guidance.
 
         print("🔴 [STDERR TRACE] About to call _perform_endpoint_discovery()", file=sys.stderr, flush=True)
         try:
-            await asyncio.wait_for(self._perform_endpoint_discovery(target, baseline_snapshot), timeout=900)
+            await asyncio.wait_for(self._perform_endpoint_discovery(target, baseline_snapshot), timeout=3600)
         except asyncio.TimeoutError:
             self.log("warning", "Endpoint discovery timed out after 600s; continuing with partial endpoint inventory")
             self.record_tool_failure("perform_endpoint_discovery", "timeout after 600s")
@@ -1589,34 +1589,26 @@ Operate autonomously without human guidance.
         except Exception as _exc:
             self.log("warning", f"[Recon] R1 extra probes failed: {_exc}")
 
-        # R3+R4 (aggressive mode only) — each wrapped in its own sub-timeout
-        # so R5 inventory build is always reached even when ffuf or param miner is slow.
+        # R3+R4 (aggressive mode only) — no sub-timeouts; both tools are self-bounding
+        # (finite wordlist ÷ rate_limit). Outer _perform_endpoint_discovery timeout handles hangs.
         _extra_r3: list[dict] = []
         _extra_r4: list[dict] = []
         if _settings.recon_mode == "aggressive":
             _wordlist = _Path(_os.getenv("RECON_WORDLIST", "/usr/share/seclists/Discovery/Web-Content/quickhits.txt"))
             if _wordlist.exists():
-                async def _run_ffuf():
+                try:
                     _runner = FfufRunner(rate_per_sec=_settings.recon_fuzz_rps)
                     _extra_r3.extend(await _runner.run(_target_url, _wordlist))
                     _extra_r3.extend(await _runner.run_per_segment(_target_url, _wordlist, seed_endpoints=all_eps + _extra_r1))
-                try:
-                    await asyncio.wait_for(_run_ffuf(), timeout=400)
-                except asyncio.TimeoutError:
-                    self.log("warning", "[Recon] R3 ffuf timed out after 400s; using partial results")
                 except Exception as _exc:
                     self.log("warning", f"[Recon] R3 ffuf failed: {_exc}")
             _param_wl = _Path(_os.getenv("RECON_PARAM_WORDLIST", "/usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt"))
             if _param_wl.exists():
-                async def _run_param_miner():
+                try:
                     import httpx as _httpx
                     async with _httpx.AsyncClient(timeout=10) as _client:
                         await mine_params(_client, all_eps + _extra_r1 + _extra_r3, wordlist=_param_wl, top_n=20, rate_per_sec=5)
-                try:
-                    await asyncio.wait_for(_run_param_miner(), timeout=180)
                     _extra_r4 = [ep for ep in all_eps + _extra_r1 + _extra_r3 if ep.get("discovered_params")]
-                except asyncio.TimeoutError:
-                    self.log("warning", "[Recon] R4 param mining timed out after 180s; skipping")
                 except Exception as _exc:
                     self.log("warning", f"[Recon] R4 param mining failed: {_exc}")
 

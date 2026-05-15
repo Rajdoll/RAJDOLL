@@ -67,9 +67,9 @@ class Settings:
     celery_soft_time_limit: int = _get_env_int("CELERY_SOFT_TIME_LIMIT", 900)
     celery_hard_time_limit: int = _get_env_int("CELERY_HARD_TIME_LIMIT", 960)
 
-    # Timeouts: 4-hour budget for 14 sequential agents with LLM summarisation
-    job_total_timeout: int = _get_env_int("JOB_TOTAL_TIMEOUT", 14400)   # 4 hours
-    agent_timeout: int = _get_env_int("AGENT_TIMEOUT", 2700)            # 45 min per agent
+    # Timeouts: 8-hour budget, 2 hours per agent
+    job_total_timeout: int = _get_env_int("JOB_TOTAL_TIMEOUT", 28800)   # 8 hours
+    agent_timeout: int = _get_env_int("AGENT_TIMEOUT", 7200)            # 2 hours per agent
     tool_timeout: int = _get_env_int("TOOL_TIMEOUT", 420)               # 7 min per tool
     celery_visibility_timeout: int = _get_env_int("CELERY_VISIBILITY_TIMEOUT", 18000)
     execution_lease_timeout: int = _get_env_int("EXECUTION_LEASE_TIMEOUT", 21600)

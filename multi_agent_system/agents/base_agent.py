@@ -24,7 +24,7 @@ from ..utils.enrichment_service import EnrichmentService
 from ..utils.finding_policy import build_finding_meta
 
 # Timeouts aligned with job_total_timeout (3600s) to prevent cascading delays
-AGENT_EXECUTION_TIMEOUT = 2700  # 45 minutes per agent (leaves room for other phases within 1hr job timeout)
+AGENT_EXECUTION_TIMEOUT = 7200  # 2 hours per agent
 LLM_PLANNING_TIMEOUT = 300      # 5 minutes safety fallback (GPT-4o-mini: 1-5s; was 120s which timed out on LM Studio)
 TOOL_EXECUTION_TIMEOUT = 600    # 10 minutes per tool (sufficient for SQLMap; was 1800s which let stuck tools block everything)
 MAX_LLM_RETRIES = 1             # No retry on timeout — LM Studio is single-threaded; a 2nd attempt immediately after a 120s timeout wastes another 120s with identical outcome
