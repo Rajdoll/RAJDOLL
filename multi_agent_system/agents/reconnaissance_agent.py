@@ -1652,7 +1652,11 @@ Operate autonomously without human guidance.
             try:
                 import httpx as _httpx
                 async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15) as _client:
-                    _js_result = await self.js_bundle_analyzer.analyze(_target_url, _client)
+                    # Hard 90s total timeout — OSV.dev queries can hang if rate-limited
+                    _js_result = await asyncio.wait_for(
+                        self.js_bundle_analyzer.analyze(_target_url, _client),
+                        timeout=90,
+                    )
                 # Write ONLY compact summary to shared context.
                 # Keeping the full deps array out of shared context prevents
                 # the LLM planner for downstream agents from seeing a huge
