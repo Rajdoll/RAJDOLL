@@ -1684,8 +1684,9 @@ Operate autonomously without human guidance.
                                   f"{len(_all_deps)} deps, "
                                   f"{len(_vulns)} with advisories")
                 # Add SPA routes to inventory as additional endpoints
+                # CRITICAL: read from DB (not stale snapshot) so R5-built tags are preserved
                 if _js_result["routes"]:
-                    _inventory = self.shared_context.get("endpoint_inventory") or {}
+                    _inventory = self.read_context("endpoint_inventory") or self.shared_context.get("endpoint_inventory") or {}
                     for _route in _js_result["routes"]:
                         _inventory.setdefault("by_tag", {}).setdefault("spa_route", []).append(
                             {"url": _target_url.rstrip("/") + _route["path"],
