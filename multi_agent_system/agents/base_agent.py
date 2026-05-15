@@ -438,10 +438,12 @@ class BaseAgent:
 							flush=True,
 						)
 
-				if selected is None:
+				if not selected:  # None or empty list — both are planning failures
 					reason = "Comprehensive fallback - all tools"
 					if last_error is not None:
 						reason = f"LLM planning unavailable ({type(last_error).__name__}); {reason}"
+					elif selected is not None:
+						reason = "LLM returned empty tool list; " + reason
 					print(f"❌ {self.agent_name}: Using ALL available tools. Reason: {reason}", file=sys.stderr, flush=True)
 					self.tool_plan = {"tools": available_tools, "reasoning": reason, "priority": "high"}
 
