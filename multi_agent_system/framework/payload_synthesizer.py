@@ -141,6 +141,35 @@ application or company name."""
                 continue
         return out
 
+    def synthesize(
+        self,
+        attack_class: str,
+        endpoint: EndpointSpec,
+        tech_stack: dict,
+        prior_observations: dict,
+        n: int = 10,
+    ) -> list[Payload]:
+        """Generic payload synthesis: cache -> LLM -> wordlist -> empty.
+
+        Never raises. Returns at most `n` payloads.
+        """
+        if not self.enabled:
+            return []
+        cached = self._cache_read(attack_class, tech_stack)
+        if cached:
+            return cached[:n]
+        llm_payloads = self._llm_synthesize(attack_class, tech_stack, n)
+        if llm_payloads:
+            self._cache_write(attack_class, tech_stack, llm_payloads)
+            return llm_payloads
+        # Wordlist fallback path (caller decides wordlist location via env)
+        import os
+        wl_env = f"PAYLOAD_WORDLIST_{attack_class.upper()}"
+        wl_path = os.environ.get(wl_env)
+        if wl_path:
+            return self._wordlist_fallback(attack_class, wl_path, n)
+        return []
+
     def _wordlist_fallback(self, attack_class: str, wordlist_path, n: int) -> list[Payload]:
         from pathlib import Path as _P
         wl = _P(wordlist_path)

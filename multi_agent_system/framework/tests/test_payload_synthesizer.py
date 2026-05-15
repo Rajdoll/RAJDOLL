@@ -96,3 +96,36 @@ def test_wordlist_fallback_missing_file_returns_empty(tmp_db):
     synth = PayloadSynthesizer(llm_client=None, pattern_db_path=tmp_db, enabled=True)
     payloads = synth._wordlist_fallback("ssti", wordlist_path="/nonexistent", n=3)
     assert payloads == []
+
+
+def test_synthesize_uses_cache_first(tmp_db, tmp_path):
+    fake = _FakeLLM({"payloads": [{"value": "from_llm", "encoding": "raw",
+                                    "expected_signal": "x", "category": "ssti"}]})
+    synth = PayloadSynthesizer(llm_client=fake, pattern_db_path=tmp_db, enabled=True)
+    cached = [Payload(value="from_cache", encoding="raw", expected_signal="49",
+                       category="ssti")]
+    synth._cache_write("ssti", {"framework": "express"}, cached)
+    ep = EndpointSpec(url="http://x/api", method="POST")
+    result = synth.synthesize("ssti", ep, tech_stack={"framework": "express"},
+                              prior_observations={}, n=2)
+    assert result[0].value == "from_cache"
+    assert fake.calls == []   # LLM never called
+
+
+def test_synthesize_falls_back_to_llm_on_cache_miss(tmp_db):
+    fake = _FakeLLM({"payloads": [{"value": "from_llm", "encoding": "raw",
+                                    "expected_signal": "49", "category": "ssti"}]})
+    synth = PayloadSynthesizer(llm_client=fake, pattern_db_path=tmp_db, enabled=True)
+    ep = EndpointSpec(url="http://x/api", method="POST")
+    result = synth.synthesize("ssti", ep, tech_stack={"framework": "express"},
+                              prior_observations={}, n=1)
+    assert result[0].value == "from_llm"
+    # Result should now be cached
+    assert synth._cache_read("ssti", {"framework": "express"})[0].value == "from_llm"
+
+
+def test_synthesize_disabled_returns_empty(tmp_db):
+    synth = PayloadSynthesizer(llm_client=None, pattern_db_path=tmp_db, enabled=False)
+    ep = EndpointSpec(url="http://x/api", method="POST")
+    result = synth.synthesize("ssti", ep, tech_stack={}, prior_observations={}, n=1)
+    assert result == []
