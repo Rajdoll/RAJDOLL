@@ -190,9 +190,29 @@ Write to shared_context:
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
-                    accessible = data.get("accessible_urls", [])
+                    validated = data.get("validated_findings", [])
+                    accessible = [
+                        item for item in validated
+                        if isinstance(item, dict)
+                        and int(item.get("status_code") or 0) == 200
+                        and item.get("url")
+                        and item.get("evidence")
+                    ]
                     if accessible:
-                        self.add_finding("WSTG-CONF", "Sensitive files/directories accessible", severity="high", evidence={"accessible": accessible[:10]})
+                        self.add_finding(
+                            "WSTG-CONF",
+                            "Sensitive files/directories accessible",
+                            severity="high",
+                            evidence={
+                                "endpoint": accessible[0].get("url"),
+                                "proof_type": "validated_file_disclosure",
+                                "impact": "Sensitive file path returned HTTP 200 with validation evidence",
+                                "findings": accessible[:10],
+                            },
+                            details="Only validated HTTP 200 file disclosure candidates are included.",
+                        )
+                    elif validated:
+                        self.log("info", "sensitive file discovery produced no reportable disclosures after validation")
             except Exception as e:
                 self.log("warning", f"find_sensitive_files_and_dirs failed: {e}")
 
@@ -380,8 +400,19 @@ Write to shared_context:
                         if other_findings:
                             self.add_finding("WSTG-CONF-04",
                                 f"Hidden endpoints discovered: {len(other_findings)} path(s)",
-                                severity="medium",
-                                evidence={"findings": other_findings[:5]})
+                                severity="low",
+                                evidence={
+                                    "findings": other_findings[:5],
+                                    "proof_type": "inventory_only",
+                                    "impact": "Hidden path discovery is supporting context until sensitive data or privileged functionality is confirmed",
+                                    "_meta": {
+                                        "finding_state": "lead",
+                                        "reportability_status": "needs_validation",
+                                        "evidence_quality": "weak",
+                                        "proof_type": "inventory_only",
+                                        "impact_class": "supporting_context",
+                                    },
+                                })
             except Exception as e:
                 self.log("warning", f"test_hidden_endpoints failed: {e}")
 
@@ -406,6 +437,40 @@ Write to shared_context:
                             )
             except Exception as e:
                 self.log("warning", f"test_npm_vulnerabilities failed: {e}")
+
+        # Vulnerable Library findings from JS Bundle Analysis (Component B)
+        js_analysis = self.shared_context.get("js_bundle_analysis", {})
+        for dep in js_analysis.get("dependencies", []):
+            advisories = dep.get("advisories", []) or []
+            if not advisories:
+                continue
+            # Pick highest severity advisory for severity mapping
+            severity = "medium"   # default
+            for adv in advisories:
+                for sev in adv.get("severity", []) or []:
+                    score_str = sev.get("score") or sev.get("severity") or "0"
+                    try:
+                        score_val = float(str(score_str).split(":")[0])
+                    except (ValueError, TypeError):
+                        score_val = 0.0
+                    if score_val >= 9.0:
+                        severity = "critical"
+                    elif score_val >= 7.0 and severity != "critical":
+                        severity = "high"
+            self.add_finding(
+                category="WSTG-CONF-01",
+                title=f"Vulnerable library: {dep['name']} {dep.get('version') or 'unknown'}",
+                severity=severity,
+                evidence={
+                    "package": dep["name"],
+                    "version": dep.get("version"),
+                    "advisory_ids": [a.get("id") for a in advisories if a.get("id")],
+                    "proof_type": "data_exposure",   # SCA confirmed exposure
+                    "impact": f"Loaded JS dependency has {len(advisories)} known advisory/ies",
+                    "source": "js_bundle_analyzer",
+                },
+                details="Dependency identified by OSV.dev cross-check. Update or replace.",
+            )
 
         self.log("info", "Configuration & Deployment checks complete")
 
