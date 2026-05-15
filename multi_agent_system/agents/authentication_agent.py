@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
+from urllib.parse import urljoin
 from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
+from ..core.config import settings as _settings
 
 
 @AgentRegistry.register("AuthenticationAgent")
@@ -164,23 +166,44 @@ Write to shared_context:
 		recovery_eps = read_tag(inventory, "password_recovery")
 		token_eps = read_tag(inventory, "auth_token_endpoint")
 		if not (login_eps or recovery_eps or token_eps):
-			self.log("info", "no auth-relevant tags found, skipping")
+			self.log("info", "no auth-relevant tags found, emitting inventory-gap lead")
+			self.add_finding(
+				"WSTG-ATHN",
+				"AuthenticationAgent skipped: no login/recovery/token endpoints in inventory",
+				severity="info",
+				evidence={
+					"target": target,
+					"missing_tags": ["user_login", "password_recovery", "auth_token_endpoint"],
+					"proof_type": "inventory_only",
+				},
+				details="Recon did not classify any endpoint with auth-relevant tags. Rerun with broader discovery or extend the endpoint tagger.",
+			)
 			return
 
 		reset_eps = recovery_eps
 		register_eps = read_tag(inventory, "user_registration")
 
 		def _pick_urls(eps, fallback=target):
-			"""Extract URL strings from endpoint entries; fall back to target if empty."""
-			urls = [ep["path"] if isinstance(ep, dict) else ep for ep in eps]
+			"""Extract absolute URL strings from endpoint entries; fall back to target if empty."""
+			urls = []
+			for ep in eps:
+				value = (ep.get("url") or ep.get("path")) if isinstance(ep, dict) else ep
+				if value:
+					urls.append(urljoin(target.rstrip("/") + "/", str(value).lstrip("/")))
 			return urls if urls else [fallback]
 
 		# Quick passive checks on the login form HTML (CSRF, method, autocomplete)
 		try:
 			import httpx, re
+			login_url = _pick_urls(login_eps, fallback=target)[0]
 			async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=12) as http:
-				resp = await http.get(target)
+				resp = await http.get(login_url)
 				html = resp.text if resp is not None else ""
+				has_password_field = bool(re.search(r'<input[^>]+type=["\']password["\']', html, re.I))
+				has_login_form = has_password_field and bool(re.search(r'<form\b', html, re.I))
+				if not has_login_form:
+					self.log("info", "login passive checks skipped: discovered URL did not render a login form", {"url": login_url})
+					raise StopIteration
 				# CSRF token presence (heuristic)
 				csrf_present = bool(re.search(r'<input[^>]+name=["\'](?:csrf|_token|authenticity_token)["\']', html, re.I))
 				# Method POST on the login form
@@ -188,11 +211,31 @@ Write to shared_context:
 				# Password field autocomplete
 				autocomplete_weak = bool(re.search(r'<input[^>]+type=["\']password["\'][^>]*autocomplete=["\']?on', html, re.I))
 				if not csrf_present:
-					self.add_finding("WSTG-ATHN", "Possible missing CSRF token on login form", severity="medium")
+					self.add_finding(
+						"WSTG-ATHN",
+						"Possible missing CSRF token on login form",
+						severity="medium",
+						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Login form did not expose a recognizable CSRF token in static HTML"},
+						details="Heuristic only; confirm whether framework injects CSRF through headers or JavaScript before submission.",
+					)
 				if not form_method_post:
-					self.add_finding("WSTG-ATHN", "Login form may not use POST method", severity="high")
+					self.add_finding(
+						"WSTG-ATHN",
+						"Login form may not use POST method",
+						severity="medium",
+						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Static login form did not declare method=POST"},
+						details="Heuristic only; validate the actual browser request before reporting.",
+					)
 				if autocomplete_weak:
-					self.add_finding("WSTG-ATHN", "Password field allows autocomplete", severity="low")
+					self.add_finding(
+						"WSTG-ATHN",
+						"Password field allows autocomplete",
+						severity="low",
+						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Password input allows autocomplete"},
+						details="Low-impact browser behavior finding.",
+					)
+		except StopIteration:
+			pass
 		except Exception as e:
 			self.log("warning", f"passive login form checks failed: {e}")
 		
@@ -210,6 +253,9 @@ Write to shared_context:
 					data = res.get("data", {})
 					# Sanitize evidence - extract safe fields only
 					safe_evidence = {
+						"endpoint": target,
+						"proof_type": "transport_configuration_check",
+						"impact": "Login page or form action was not fully protected by HTTPS",
 						"page_served_over_https": bool(data.get("page_served_over_https")),
 						"form_action_is_https": bool(data.get("form_action_is_https"))
 					}
@@ -234,7 +280,12 @@ Write to shared_context:
 					data = res.get("data", {})
 					if not data.get("is_caching_disabled"):
 						# Sanitize cache evidence
-						safe_evidence = {"is_caching_disabled": bool(data.get("is_caching_disabled"))}
+						safe_evidence = {
+							"endpoint": target,
+							"proof_type": "cache_header_check",
+							"impact": "Sensitive auth page may be stored by browser or intermediary cache",
+							"is_caching_disabled": bool(data.get("is_caching_disabled")),
+						}
 						self.add_finding("WSTG-ATHN", "Sensitive pages may be cacheable", severity="low", evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_cache_headers failed: {e}")
@@ -254,11 +305,7 @@ Write to shared_context:
 					if isinstance(res, dict) and res.get("status") == "success":
 						data = res.get("data", {})
 						if not data.get("lockout_detected") and not data.get("rate_limiting_suspected"):
-							# Sanitize lockout evidence - ensure serializable
-							attempts = data.get("total_attempts")
-							safe_attempts = int(attempts) if isinstance(attempts, (int, float)) else str(attempts) if attempts is not None else "unknown"
-							self.add_finding("WSTG-ATHN", "No account lockout or rate limiting detected", severity="high",
-										   evidence={"attempts_allowed": safe_attempts})
+							self.log("info", "account lockout/rate-limit absence recorded as non-reportable signal", {"login_url": login_url})
 						elif data.get("rate_limiting_suspected"):
 							self.add_finding("WSTG-ATHN", "Rate limiting detected (good security)", severity="info",
 										   evidence={"mechanism": "rate_limiting"})
@@ -313,6 +360,26 @@ Write to shared_context:
 											   evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_password_reset failed: {e}")
+
+		# Active password reset test (Component C)
+		if _settings.use_framework and getattr(self, "active_flow", None) and recovery_eps:
+			from multi_agent_system.framework.types import EndpointSpec
+			recovery_ep_url = (recovery_eps[0].get("url") if isinstance(recovery_eps[0], dict)
+							   else recovery_eps[0])
+			ep_spec = EndpointSpec(url=recovery_ep_url, method="POST", params=["email"])
+			try:
+				reset_result = await self.active_flow.test_password_reset(ep_spec)
+			except Exception as exc:
+				self.log("warning", f"password reset test errored: {exc}")
+			else:
+				if reset_result.success:
+					self.add_finding(
+						category="WSTG-ATHN-09",
+						title=f"Password reset response leaks account existence at {recovery_ep_url}",
+						severity=reset_result.severity,
+						evidence=reset_result.evidence,
+						details="User enumeration via password recovery flow diff.",
+					)
 
 		# WSTG-ATHN-07: Test password policy strength
 		if self.should_run_tool("test_password_policy"):
