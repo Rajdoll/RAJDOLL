@@ -426,14 +426,16 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             reason = url_info.get('reason', 'LLM selected')
 
             # ── HITL: broadcast current execution state to dashboard ──
+            # Note: findings_so_far reflects results from PREVIOUS URLs (this URL not tested yet)
             self.broadcast_execution_status({
                 "phase": "url_testing",
+                "agent": self.agent_name,
                 "current_url": url,
                 "current_url_index": idx,
                 "total_urls": len(capped_urls),
                 "tests_for_url": tests[:MAX_TESTS_PER_URL],
                 "priority_score": priority_score,
-                "findings_so_far": sum(len(v) for v in all_findings.values()),
+                "findings_so_far": len(self._findings),  # DB findings from all agents so far
             })
 
             self.log("info", f"\n{'='*60}")

@@ -583,18 +583,27 @@ function _notifyHITL(title, body, elementId) {
 function updateExecutionMonitor(data) {
     if (data.agent) document.getElementById('monAgent').textContent = formatAgentName(data.agent);
 
-    if (data.phase === 'url_testing') {
+    // Always update findings counter if present
+    if (data.findings_so_far !== undefined) {
+        document.getElementById('monFindings').textContent = data.findings_so_far;
+    }
+
+    if (data.phase === 'agent_running') {
+        document.getElementById('monUrl').textContent = '-';
+        document.getElementById('monTestType').textContent = 'Running...';
+        document.getElementById('monProgress').textContent = '-';
+        document.getElementById('monProgressBar').style.width = '0%';
+    } else if (data.phase === 'url_testing') {
         document.getElementById('monUrl').textContent = data.current_url || '-';
         document.getElementById('monTestType').textContent = (data.tests_for_url || []).join(', ').toUpperCase() || '-';
         document.getElementById('monProgress').textContent = `URL ${data.current_url_index || 0} / ${data.total_urls || 0}`;
-        document.getElementById('monFindings').textContent = data.findings_so_far || 0;
         const pct = data.total_urls ? (data.current_url_index / data.total_urls) * 100 : 0;
         document.getElementById('monProgressBar').style.width = `${pct}%`;
     } else if (data.phase === 'react_loop') {
         document.getElementById('monUrl').textContent = data.url || '-';
         document.getElementById('monTestType').textContent = (data.test_type || '-').toUpperCase();
         document.getElementById('monProgress').textContent = `Iteration ${data.iteration || 0} / ${data.max_iterations || 0}`;
-        document.getElementById('monFindings').textContent = data.findings_count || 0;
+        if (data.findings_count !== undefined) document.getElementById('monFindings').textContent = data.findings_count;
         const pct = data.max_iterations ? (data.iteration / data.max_iterations) * 100 : 0;
         document.getElementById('monProgressBar').style.width = `${pct}%`;
     }

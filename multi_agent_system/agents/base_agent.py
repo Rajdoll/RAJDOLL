@@ -447,6 +447,13 @@ class BaseAgent:
 					print(f"❌ {self.agent_name}: Using ALL available tools. Reason: {reason}", file=sys.stderr, flush=True)
 					self.tool_plan = {"tools": available_tools, "reasoning": reason, "priority": "high"}
 
+		# Broadcast agent start to Live Monitor
+		self.broadcast_execution_status({
+			"phase": "agent_running",
+			"agent": self.agent_name,
+			"findings_so_far": len(self._findings),
+		})
+
 		# Run agent logic with exception handling
 		print(f"🚀 {self.agent_name}: About to call run() method", file=sys.stderr, flush=True)
 		token = CURRENT_AGENT.set(self)
