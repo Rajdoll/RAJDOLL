@@ -26,6 +26,16 @@ class PayloadSynthesizer:
     );
     """
 
+    GENERIC_SIGNALS = {
+        "ssti": "49",          # template evaluation of 7*7
+        "sql_injection": "(SQL syntax|ORA-|mysql_|SQLite)",
+        "ssrf": "(127\\.0\\.0\\.1|localhost|metadata)",
+        "xss_dom": "<script",
+        "xss_reflected": "<script",
+        "jwt_manipulation": "(token|jwt)",
+        "command_injection": "(uid=|root:|/bin/)",
+    }
+
     def __init__(self, llm_client: Any, pattern_db_path: Path, enabled: bool = True):
         self.llm_client = llm_client
         self.pattern_db_path = Path(pattern_db_path)
@@ -130,3 +140,13 @@ application or company name."""
             except (KeyError, TypeError):
                 continue
         return out
+
+    def _wordlist_fallback(self, attack_class: str, wordlist_path, n: int) -> list[Payload]:
+        from pathlib import Path as _P
+        wl = _P(wordlist_path)
+        if not wl.exists():
+            return []
+        signal = self.GENERIC_SIGNALS.get(attack_class, "")
+        lines = [ln.strip() for ln in wl.read_text(encoding="utf-8", errors="ignore").splitlines() if ln.strip()]
+        return [Payload(value=ln, encoding="raw", expected_signal=signal, category=attack_class)
+                for ln in lines[:n]]

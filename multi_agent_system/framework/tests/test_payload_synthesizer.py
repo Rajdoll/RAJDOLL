@@ -79,3 +79,20 @@ def test_llm_synthesis_handles_invalid_response(tmp_db):
     synth = PayloadSynthesizer(llm_client=fake, pattern_db_path=tmp_db, enabled=True)
     payloads = synth._llm_synthesize("ssti", {"framework": "flask"}, n=2)
     assert payloads == []
+
+
+def test_wordlist_fallback_returns_generic_payloads(tmp_path, tmp_db):
+    wordlist = tmp_path / "ssti.txt"
+    wordlist.write_text("{{7*7}}\n${7*7}\n<%=7*7%>\n#{7*7}\n")
+    synth = PayloadSynthesizer(llm_client=None, pattern_db_path=tmp_db, enabled=True)
+    payloads = synth._wordlist_fallback("ssti", wordlist_path=wordlist, n=3)
+    assert len(payloads) == 3
+    assert all(p.category == "ssti" for p in payloads)
+    assert all(p.encoding == "raw" for p in payloads)
+    assert all(p.expected_signal == "49" for p in payloads)
+
+
+def test_wordlist_fallback_missing_file_returns_empty(tmp_db):
+    synth = PayloadSynthesizer(llm_client=None, pattern_db_path=tmp_db, enabled=True)
+    payloads = synth._wordlist_fallback("ssti", wordlist_path="/nonexistent", n=3)
+    assert payloads == []
