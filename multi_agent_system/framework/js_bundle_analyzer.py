@@ -79,3 +79,43 @@ class JSBundleAnalyzer:
         for m in self._WEBPACK_PATTERN.findall(js_source):
             names.add(m)
         return [{"name": n, "version": None, "advisories": []} for n in sorted(names)]
+
+    OSV_URL = "https://api.osv.dev/v1/query"
+    OSV_CACHE_TTL_SECONDS = 86400   # 24 hours
+
+    async def _osv_query(
+        self, http_client: httpx.AsyncClient, package: str, version: str
+    ) -> list[dict]:
+        """Query OSV.dev for advisories on (package, version), with local cache."""
+        import json
+        import sqlite3
+        with sqlite3.connect(self.cache_path) as conn:
+            row = conn.execute(
+                "SELECT advisories_json, "
+                "  strftime('%s', 'now') - strftime('%s', fetched_at) AS age "
+                "FROM osv_cache WHERE package = ? AND version = ?",
+                (package, version),
+            ).fetchone()
+        if row is not None:
+            advisories_json, age = row
+            if age is None or age < self.OSV_CACHE_TTL_SECONDS:
+                return json.loads(advisories_json)
+        try:
+            resp = await http_client.post(
+                self.OSV_URL,
+                json={"package": {"name": package, "ecosystem": "npm"},
+                      "version": version},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
+            return [] if row is None else json.loads(row[0])
+        advisories = data.get("vulns", []) or []
+        with sqlite3.connect(self.cache_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO osv_cache (package, version, advisories_json) "
+                "VALUES (?, ?, ?)",
+                (package, version, json.dumps(advisories)),
+            )
+        return advisories
