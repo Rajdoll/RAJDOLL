@@ -50,7 +50,10 @@ class PayloadSynthesizer:
             ).fetchone()
         if row is None:
             return []
-        return [Payload(**p) for p in json.loads(row[0])]
+        try:
+            return [Payload(**p) for p in json.loads(row[0])]
+        except (json.JSONDecodeError, TypeError, KeyError):
+            return []
 
     def _cache_write(self, attack_class: str, tech_stack: dict, payloads: list[Payload]) -> None:
         key = self._cache_key(attack_class, tech_stack)
@@ -62,3 +65,4 @@ class PayloadSynthesizer:
                 "VALUES (?, ?, ?, ?)",
                 (key, attack_class, json.dumps(tech_stack, sort_keys=True), payloads_json),
             )
+            conn.commit()
