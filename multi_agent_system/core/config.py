@@ -71,6 +71,8 @@ class Settings:
     job_total_timeout: int = _get_env_int("JOB_TOTAL_TIMEOUT", 14400)   # 4 hours
     agent_timeout: int = _get_env_int("AGENT_TIMEOUT", 2700)            # 45 min per agent
     tool_timeout: int = _get_env_int("TOOL_TIMEOUT", 420)               # 7 min per tool
+    celery_visibility_timeout: int = _get_env_int("CELERY_VISIBILITY_TIMEOUT", 18000)
+    execution_lease_timeout: int = _get_env_int("EXECUTION_LEASE_TIMEOUT", 21600)
 
     # Recon phase controls
     recon_fuzz_rps: int = _get_env_int("RECON_FUZZ_RPS", 10)
@@ -89,13 +91,19 @@ class Settings:
     hitl_checkpoint_timeout_seconds: int = _get_env_int("HITL_CHECKPOINT_TIMEOUT_SECONDS", 600)
     auto_approve_tool_agents: List[str] = field(default_factory=list)
     scan_profile: str = field(default_factory=lambda: os.getenv("SCAN_PROFILE", "lab"))
+    allow_default_auto_login: bool = field(init=False)
+    use_framework: bool = field(default_factory=lambda: _env_flag("USE_FRAMEWORK", False))
 
     def __post_init__(self):
         base_hitl = _env_flag("HITL_ENABLED", True)
-        self.hitl_enabled = base_hitl and not self.lab_mode
+        self.hitl_enabled = base_hitl and not self.lab_mode and self.hitl_mode != "off"
 
         base_tool_hitl = _env_flag("ENABLE_TOOL_APPROVALS", True)
         self.enable_tool_hitl = base_tool_hitl and self.hitl_enabled and not self.lab_mode
+        self.allow_default_auto_login = _env_flag(
+            "ALLOW_DEFAULT_AUTO_LOGIN",
+            self.lab_mode or self.scan_profile == "lab",
+        )
 
         # Validate hitl_mode
         if self.hitl_mode not in ("off", "agent", "tool"):
@@ -103,7 +111,7 @@ class Settings:
 
         agents_env = os.getenv("AUTO_APPROVE_TOOL_AGENTS")
         if agents_env is None and self.lab_mode:
-            agents_env = "InputValidationAgent,APITestingAgent"
+            agents_env = "InputValidationAgent"
         self.auto_approve_tool_agents = _parse_csv(agents_env)
 
 
@@ -123,6 +131,8 @@ HIGH_RISK_TOOLS: frozenset[str] = frozenset({
 # "vdp"  → HITL=agent, ADAPTIVE=balanced (real target VDP)
 SCAN_PROFILE_DEFAULTS: dict[str, dict[str, str]] = {
     "lab": {"hitl_mode": "off", "adaptive_mode": "aggressive"},
+    "authorized_internal": {"hitl_mode": "off", "adaptive_mode": "balanced"},
+    "bug_bounty": {"hitl_mode": "off", "adaptive_mode": "balanced"},
     "vdp": {"hitl_mode": "agent", "adaptive_mode": "balanced"},
 }
 
