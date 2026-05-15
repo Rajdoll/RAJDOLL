@@ -36,14 +36,28 @@ DEFAULT_PLAN: List[Any] = [
 	"AuthorizationAgent",         #  5. Privilege escalation, IDOR
 	"ConfigDeploymentAgent",      #  6. Misconfigurations, HSTS, headers
 	"ClientSideAgent",            #  7. DOM XSS, CORS, clickjacking
-	"FileUploadAgent",            #  8. File upload vulnerabilities
-	"APITestingAgent",            #  9. API-specific issues
-	"ErrorHandlingAgent",         # 10. Error disclosure, stack traces
-	"WeakCryptographyAgent",      # 11. Weak TLS, crypto flaws
-	"BusinessLogicAgent",         # 12. Business logic bypass
-	"IdentityManagementAgent",    # 13. User enumeration, registration
-	"ReportGenerationAgent",      # 14. Final OWASP WSTG 4.2 report
+	"FileUploadAgent",            #  8. File upload vulnerabilities (WSTG-INPV-08/09)
+	"ErrorHandlingAgent",         #  9. Error disclosure, stack traces
+	"WeakCryptographyAgent",      # 10. Weak TLS, crypto flaws
+	"BusinessLogicAgent",         # 11. Business logic bypass
+	"IdentityManagementAgent",    # 12. User enumeration, registration
+	"ReportGenerationAgent",      # 13. Final OWASP WSTG 4.2 report
 ]
+
+
+def _mask_identity(value: str | None) -> str | None:
+	if not value:
+		return value
+	if "@" in value:
+		name, _, domain = value.partition("@")
+		if len(name) <= 2:
+			masked_name = "*" * len(name)
+		else:
+			masked_name = f"{name[:1]}***{name[-1:]}"
+		return f"{masked_name}@{domain}"
+	if len(value) <= 2:
+		return "*" * len(value)
+	return f"{value[:1]}***{value[-1:]}"
 
 # Mapping agent names to OWASP categories
 AGENT_TO_OWASP_MAP = {
@@ -57,8 +71,7 @@ AGENT_TO_OWASP_MAP = {
 	"ErrorHandlingAgent": "WSTG-ERRH",
 	"WeakCryptographyAgent": "WSTG-CRYP",
 	"BusinessLogicAgent": "WSTG-BUSL",
-	"FileUploadAgent": "WSTG-BUSL",  # 🆕 Phase 4.1: File upload (business logic)
-	"APITestingAgent": "WSTG-APIT",  # 🆕 Phase 4.2: API security testing
+	"FileUploadAgent": "WSTG-BUSL",  # WSTG-BUSL-08/09: upload file tak terduga & berbahaya
 	"ClientSideAgent": "WSTG-CLNT",
 	"ReportGenerationAgent": "WSTG-REPORT",  # 🆕 Final: Generate OWASP WSTG 4.2 report
 }
@@ -76,7 +89,6 @@ AGENT_NAME_CORRECTION_MAP = {
 	"ReconAgent": "ReconnaissanceAgent",
 	"ValidationAgent": "InputValidationAgent",
 	"FileUploadTestAgent": "FileUploadAgent",
-	"APIAgent": "APITestingAgent",
 	"ReportAgent": "ReportGenerationAgent",
 	"AuthAgent": "AuthenticationAgent",
 	"AuthzAgent": "AuthorizationAgent",
@@ -88,9 +100,10 @@ AGENT_NAME_CORRECTION_MAP = {
 
 
 class Orchestrator:
-	def __init__(self, job_id: int, resume_from_step_idx: int | None = None):
+	def __init__(self, job_id: int, resume_from_step_idx: int | None = None, execution_id: str | None = None):
 		self.job_id = job_id
 		self.resume_from_step_idx = resume_from_step_idx
+		self.execution_id = execution_id
 		self.shared_context: Dict[str, Any] = {}  # Cache of aggregated shared context
 		self.context_manager = SharedContextManager(job_id, log_hook=self._log_context_event)
 		self.plan_metadata: Dict[str, Any] = self._load_plan_metadata()
@@ -183,6 +196,24 @@ class Orchestrator:
 			return
 
 		agent = agent_cls(job_id=self.job_id)
+
+		# Inject framework components when USE_FRAMEWORK=true
+		if settings.use_framework:
+			try:
+				from pathlib import Path
+				from .framework.payload_synthesizer import PayloadSynthesizer
+				from .framework.js_bundle_analyzer import JSBundleAnalyzer
+				from .framework.active_flow import ActiveFlowTester
+				_llm = SimpleLLMClient()
+				_db_path = Path("multi_agent_system/data/learned_patterns.db")
+				agent.payload_synth = PayloadSynthesizer(
+					llm_client=_llm, pattern_db_path=_db_path,
+					enabled=settings.use_payload_synth,
+				)
+				agent.js_bundle_analyzer = JSBundleAnalyzer() if settings.use_js_analyzer else None
+				agent.active_flow = ActiveFlowTester() if settings.use_active_flow else None
+			except Exception as _fw_exc:
+				print(f"[Orchestrator] WARNING: framework injection failed: {_fw_exc}")
 
 		# Inject tools from LLM orchestrator directive
 		inject_specs = self._accumulated_directive.inject_tools.get(agent_name, [])
@@ -543,6 +574,8 @@ class Orchestrator:
 		On "proceed", stores directive_commands in self._pending_director_directives[agent_name].
 		"""
 		if getattr(settings, "hitl_mode", "off") != "agent":
+			return "proceed"
+		if not getattr(self.hitl_manager, "hitl_enabled", True):
 			return "proceed"
 		if agent_name in ("ReconnaissanceAgent", "ReportGenerationAgent"):
 			return "proceed"
@@ -1202,6 +1235,8 @@ class Orchestrator:
 					continue
 
 			self._run_step_sync(step, tool_plan)
+			if self.execution_id:
+				self.context_manager.touch_execution_lease(self.execution_id)
 
 			# ── LLM Active Orchestrator: generate directive after agent ──
 			if isinstance(step, str) and step != "ReportGenerationAgent":
@@ -1218,67 +1253,68 @@ class Orchestrator:
 					# Per-agent: tactical directive for next agent
 					self._generate_and_merge_directive(step, remaining_for_directive)
 
-			# ── Agent-Level HITL Checkpoint ──────────────────────────────
-			# After each agent completes + summarization, pause for user review
-			# (skip for ReportGenerationAgent, and if user chose "auto")
-			if (
-				not agent_hitl_auto
-				and isinstance(step, str)
-				and step != "ReportGenerationAgent"
-				and getattr(settings, "hitl_mode", "off") == "agent"
-			):
-				remaining = [s for s in plan[idx + 1:] if isinstance(s, str) and s not in skip_agents_set]
-				next_agent = remaining[0] if remaining else None
-				cp_data = self._gather_agent_checkpoint_data(agent_name)
-				recommendations = self._generate_checkpoint_recommendations(agent_name, remaining, cp_data)
+				# ── Agent-Level HITL Checkpoint ──────────────────────────────
+				# After each agent completes + summarization, pause for user review
+				# (skip for ReportGenerationAgent, and if user chose "auto")
+				if (
+					not agent_hitl_auto
+					and isinstance(step, str)
+					and step != "ReportGenerationAgent"
+					and getattr(self.hitl_manager, "hitl_enabled", True)
+					and getattr(settings, "hitl_mode", "off") == "agent"
+				):
+					remaining = [s for s in plan[idx + 1:] if isinstance(s, str) and s not in skip_agents_set]
+					next_agent = remaining[0] if remaining else None
+					cp_data = self._gather_agent_checkpoint_data(agent_name)
+					recommendations = self._generate_checkpoint_recommendations(agent_name, remaining, cp_data)
 
-				loop = self._ensure_event_loop()
-				try:
-					result = loop.run_until_complete(
-						self.hitl_manager.request_agent_checkpoint(
-							completed_agent=agent_name,
-							agent_index=idx,
-							findings_count=cp_data["findings_count"],
-							findings_by_severity=cp_data["findings_by_severity"],
-							agent_summary=self.cumulative_summary[-1500:] if self.cumulative_summary else "",
-							cumulative_summary=self.cumulative_summary,
-							key_findings=cp_data["key_findings"],
-							next_agent=next_agent,
-							remaining_agents=remaining,
-							recommendations=recommendations,
+					loop = self._ensure_event_loop()
+					try:
+						result = loop.run_until_complete(
+							self.hitl_manager.request_agent_checkpoint(
+								completed_agent=agent_name,
+								agent_index=idx,
+								findings_count=cp_data["findings_count"],
+								findings_by_severity=cp_data["findings_by_severity"],
+								agent_summary=self.cumulative_summary[-1500:] if self.cumulative_summary else "",
+								cumulative_summary=self.cumulative_summary,
+								key_findings=cp_data["key_findings"],
+								next_agent=next_agent,
+								remaining_agents=remaining,
+								recommendations=recommendations,
+							)
 						)
-					)
-				except Exception as e:
-					print(f"[Orchestrator] WARNING: Agent checkpoint failed: {e}, auto-proceeding")
-					result = {"action": "proceed"}
+					except Exception as e:
+						print(f"[Orchestrator] WARNING: Agent checkpoint failed: {e}, auto-proceeding")
+						result = {"action": "proceed"}
 
-				action = result.get("action", "proceed")
+					action = result.get("action", "proceed")
 
-				if action == "auto":
-					agent_hitl_auto = True
-					print("[Orchestrator] User chose AUTO — disabling checkpoints for remaining agents")
-				elif action == "abort":
-					print("[Orchestrator] User ABORTED scan at checkpoint")
-					break
-				elif action == "skip_next":
-					if next_agent:
-						skip_agents_set.add(next_agent)
-						print(f"[Orchestrator] User chose to skip next agent: {next_agent}")
-				elif action == "reorder":
-					override = result.get("next_agent_override")
-					if override and override in remaining and override != next_agent:
-						# Move the overridden agent to front of remaining
-						remaining_copy = list(plan[idx + 1:])
-						if override in remaining_copy:
-							remaining_copy.remove(override)
-							remaining_copy.insert(0, override)
-							plan[idx + 1:] = remaining_copy
-							print(f"[Orchestrator] User reordered: next agent is now {override}")
+					if action == "auto":
+						agent_hitl_auto = True
+						print("[Orchestrator] User chose AUTO — disabling checkpoints for remaining agents")
+					elif action == "abort":
+						print("[Orchestrator] User ABORTED scan at checkpoint")
+						break
+					elif action == "skip_next":
+						if next_agent:
+							skip_agents_set.add(next_agent)
+							print(f"[Orchestrator] User chose to skip next agent: {next_agent}")
+					elif action == "reorder":
+						override = result.get("next_agent_override")
+						if override and override in remaining and override != next_agent:
+							# Move the overridden agent to front of remaining
+							remaining_copy = list(plan[idx + 1:])
+							if override in remaining_copy:
+								remaining_copy.remove(override)
+								remaining_copy.insert(0, override)
+								plan[idx + 1:] = remaining_copy
+								print(f"[Orchestrator] User reordered: next agent is now {override}")
 
-				# Apply any skip_agents from user
-				user_skips = result.get("skip_agents")
-				if isinstance(user_skips, list):
-					skip_agents_set.update(user_skips)
+					# Apply any skip_agents from user
+					user_skips = result.get("skip_agents")
+					if isinstance(user_skips, list):
+						skip_agents_set.update(user_skips)
 			# ── End checkpoint ───────────────────────────────────────────
 
 		return False
@@ -1318,16 +1354,28 @@ class Orchestrator:
 				scan_creds = self.context_manager.read("scan_credentials")
 				provided_credentials = None
 				if scan_creds and isinstance(scan_creds, dict):
-					provided_credentials = [(scan_creds["username"], scan_creds["password"])]
+					secret = self.context_manager.read_secret(scan_creds.get("credential_ref"))
+					if isinstance(secret, dict) and secret.get("username") and secret.get("password"):
+						provided_credentials = [(secret["username"], secret["password"])]
 
 				success, auth_session = loop.run_until_complete(
-					create_authenticated_session(target_url, credentials=provided_credentials)
+					create_authenticated_session(
+						target_url,
+						credentials=provided_credentials,
+						allow_default_fallback=bool(settings.allow_default_auto_login),
+					)
 				)
 				if success:
-					self.context_manager.write("authenticated_session", auth_session)
+					session_ref = self.context_manager.write_secret("authenticated-session", auth_session)
+					self.context_manager.write("authenticated_session", {
+						"logged_in": True,
+						"username_masked": _mask_identity(auth_session.get("username")),
+						"auth_method": auth_session.get("auth_method"),
+						"login_endpoint": auth_session.get("login_endpoint"),
+						"session_ref": session_ref,
+					})
 					warnings.warn(f"[Orchestrator] ✓ Auto-login successful as: {auth_session.get('username')}")
 					warnings.warn(f"[Orchestrator]   Auth method: {auth_session.get('auth_method')}")
-					warnings.warn(f"[Orchestrator]   JWT token: {'Present' if auth_session.get('jwt_token') else 'None'}")
 					self._timing_autologin_detail = f"Logged in as {auth_session.get('username', 'unknown')}"
 					# Extract links from authenticated home page and seed SharedContext
 					# Helps when Katana fails on target (e.g. old PHP/Apache apps like DVWA)
@@ -1339,6 +1387,9 @@ class Orchestrator:
 							"cookies": auth_session.get("cookies", {}),
 							"headers": auth_session.get("headers", {}),
 							"jwt_token": auth_session.get("jwt_token"),
+							"username": auth_session.get("username"),
+							"auth_method": auth_session.get("auth_method"),
+							"login_endpoint": auth_session.get("login_endpoint"),
 						})
 						auth_links = loop.run_until_complete(_svc.extract_authenticated_links())
 						if auth_links:
@@ -1387,4 +1438,3 @@ class Orchestrator:
 			return  # Paused; Phase 4/5 will run after resume completes Phase 3
 
 		self._run_phases_4_5()
-
