@@ -4,6 +4,7 @@ from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
+from ..core.config import settings as _settings
 
 
 @AgentRegistry.register("SessionManagementAgent")
@@ -174,7 +175,18 @@ Write to shared_context:
         token_eps = read_tag(inventory, "auth_token_endpoint")
         login_eps = read_tag(inventory, "user_login")
         if not (token_eps or login_eps):
-            self.log("info", "no session-relevant tags found, skipping")
+            self.log("info", "no session-relevant tags found, emitting inventory-gap lead")
+            self.add_finding(
+                "WSTG-SESS",
+                "SessionManagementAgent skipped: no login or token endpoints in inventory",
+                severity="info",
+                evidence={
+                    "target": target,
+                    "missing_tags": ["user_login", "auth_token_endpoint"],
+                    "proof_type": "inventory_only",
+                },
+                details="Recon did not classify any endpoint with session-relevant tags. Rerun with broader discovery or extend the endpoint tagger.",
+            )
             return
 
         # Log tool execution plan based on LLM selection
@@ -193,9 +205,24 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     cookies = res.get("data", {}).get("cookies", [])
                     if isinstance(cookies, list):
-                        weak = [c for c in cookies if not c.get("is_secure") or not c.get("is_httponly") or c.get("samesite") in ("Not Set", "none")]
+                        auth_cookie_markers = ("session", "sid", "auth", "token", "jwt", "remember")
+                        weak = [
+                            c for c in cookies
+                            if any(marker in str(c.get("name", "")).lower() for marker in auth_cookie_markers)
+                            and (not c.get("is_secure") or not c.get("is_httponly") or c.get("samesite") in ("Not Set", "none"))
+                        ]
                         if weak:
-                            self.add_finding("WSTG-SESS", "Weak cookie attributes detected", severity="medium", evidence={"sample": weak[:3]})
+                            self.add_finding(
+                                "WSTG-SESS",
+                                "Weak session cookie attributes detected",
+                                severity="medium",
+                                evidence={
+                                    "endpoint": target,
+                                    "proof_type": "session_cookie_attribute_check",
+                                    "impact": "Authentication/session cookies are missing recommended browser protections",
+                                    "sample": weak[:3],
+                                },
+                            )
             except Exception as e:
                 self.log("warning", f"analyze_cookies failed: {e}")
 
@@ -322,7 +349,12 @@ Write to shared_context:
                     weak_samesite = [c for c in data.get("cookies_samesite_check", []) if c.get("samesite") == "Not Set"]
                     if weak_samesite:
                         self.add_finding("WSTG-SESS-05", "Session cookies without SameSite protection", severity="medium",
-                                       evidence={"cookies": weak_samesite})
+                                       evidence={
+                                           "endpoint": target,
+                                           "proof_type": "session_cookie_attribute_check",
+                                           "impact": "Session cookies are missing SameSite protection",
+                                           "cookies": weak_samesite,
+                                       })
             except Exception as e:
                 self.log("warning", f"test_csrf_protection failed: {e}")
 
@@ -379,6 +411,41 @@ Write to shared_context:
                                        evidence={"session_reuse": True})
             except Exception as e:
                 self.log("warning", f"test_session_hijacking failed: {e}")
+
+        # Active CSRF test (Component C) -- opt-in via USE_FRAMEWORK
+        if _settings.use_framework and getattr(self, "active_flow", None):
+            from multi_agent_system.framework.types import EndpointSpec
+            from multi_agent_system.framework.active_flow import SessionRef
+            inventory = self.shared_context.get("endpoint_inventory") or {}
+            _by_tag = inventory.get("by_tag", {})
+            state_changing = (
+                _by_tag.get("state_changing_money", []) +
+                _by_tag.get("state_changing_resource", [])
+            )
+            _auth = (getattr(self, "get_auth_session", None) or (lambda: {}))() or {}
+            session = SessionRef(
+                cookies=_auth.get("cookies", {}) or {},
+                jwt_token=_auth.get("jwt_token"),
+                auth_headers=_auth.get("headers", {}) or {},
+            )
+            for ep in state_changing[:5]:   # cap at 5 to bound runtime
+                ep_url = ep.get("url") if isinstance(ep, dict) else ep
+                if not ep_url:
+                    continue
+                ep_spec = EndpointSpec(url=ep_url, method="POST")
+                try:
+                    csrf_result = await self.active_flow.test_csrf(ep_spec, session)
+                except Exception as exc:
+                    self.log("warning", f"CSRF test errored: {exc}")
+                    continue
+                if csrf_result.success:
+                    self.add_finding(
+                        category="WSTG-SESS-05",
+                        title=f"CSRF: cross-origin POST accepted at {ep_url}",
+                        severity=csrf_result.severity,
+                        evidence=csrf_result.evidence,
+                        details="Cross-origin request succeeded with state change.",
+                    )
 
         self.log("info", "Session management checks complete (OPSI B tools included)")
 

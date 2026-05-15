@@ -94,6 +94,8 @@ class BaseAgent:
 		self.payload_synth = None  # set by orchestrator after construction when framework is enabled
 		# framework component B: JSBundleAnalyzer (optional, None when USE_FRAMEWORK=false)
 		self.js_bundle_analyzer = None  # set by orchestrator after construction when framework is enabled
+		# framework component C: ActiveFlow (optional, None when USE_FRAMEWORK=false)
+		self.active_flow = None  # set by orchestrator after construction when framework is enabled
 
 		# Independent LLM client per agent - using simple HTTP-based client
 		try:
