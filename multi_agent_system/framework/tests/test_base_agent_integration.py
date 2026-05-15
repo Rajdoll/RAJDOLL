@@ -35,3 +35,29 @@ def test_base_agent_generate_payloads_falls_back_when_disabled():
     result = agent.generate_payloads("ssti", ep, n=1)
     # Without synth, returns legacy/empty list — caller must use existing hardcoded path
     assert result == []
+
+
+def test_end_to_end_input_validation_agent_uses_framework(tmp_path):
+    """InputValidationAgent calls PayloadSynthesizer when USE_FRAMEWORK=true."""
+    from multi_agent_system.framework.payload_synthesizer import PayloadSynthesizer
+    from multi_agent_system.agents.base_agent import BaseAgent
+
+    class _FakeLLM:
+        def chat_with_schema(self, prompt, schema, timeout=60):
+            return {"payloads": [
+                {"value": "FRAMEWORK_PAYLOAD", "encoding": "raw",
+                 "expected_signal": "x", "category": "ssti"}
+            ]}
+
+    synth = PayloadSynthesizer(
+        llm_client=_FakeLLM(),
+        pattern_db_path=tmp_path / "patterns.db",
+        enabled=True,
+    )
+
+    agent = BaseAgent.__new__(BaseAgent)
+    agent.payload_synth = synth
+    agent._shared_context_snapshot = {"tech_stack": {"framework": "express"}, "recon_summary": {}}
+
+    payloads = agent.generate_payloads("ssti", EndpointSpec("http://x/api", "POST"), n=1)
+    assert payloads[0].value == "FRAMEWORK_PAYLOAD"
