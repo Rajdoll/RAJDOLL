@@ -325,8 +325,8 @@ WSTG_TEST_CASES = {
 }
 
 
-def match_finding_to_challenges(finding_title: str, finding_details: str = "") -> List[str]:
-    """Match a scan finding to Juice Shop challenges by keyword matching."""
+def _legacy_match(finding_title: str, finding_details: str = "") -> List[str]:
+    """Legacy keyword-based matcher for Juice Shop challenges."""
     text = (finding_title + " " + finding_details).lower()
     matched = []
 
@@ -336,13 +336,31 @@ def match_finding_to_challenges(finding_title: str, finding_details: str = "") -
         keywords = info["keywords"]
         if not keywords:
             continue
-        # Match if at least one keyword found
         for kw in keywords:
             if kw.lower() in text:
                 matched.append(challenge_name)
                 break
 
     return matched
+
+
+def match_finding_to_challenges(
+    finding_title: str,
+    finding_details: str = "",
+    *,
+    finding: Optional[Dict] = None,
+    ground_truth: Optional[List[Dict]] = None,
+    classifier=None,
+) -> List[str]:
+    """Match a scan finding to Juice Shop challenges.
+
+    Uses SemanticClassifier when --use-classifier is set, otherwise falls back
+    to legacy keyword matching.
+    """
+    if classifier is not None and getattr(classifier, "enabled", False) and finding and ground_truth:
+        matches = classifier.classify(finding, ground_truth)
+        return [m.challenge_id for m in matches]
+    return _legacy_match(finding_title, finding_details)
 
 
 def _finding_agent(finding: Dict) -> str:
@@ -353,16 +371,23 @@ def _finding_category(finding: Dict) -> str:
     return str(finding.get("category") or finding.get("wstg") or finding.get("wstg_id") or "")
 
 
-def analyze_scan_findings(findings: List[Dict]) -> Dict:
+def analyze_scan_findings(findings: List[Dict], *, classifier=None) -> Dict:
     """
     Analyze scan findings and produce complete coverage matrix.
 
     Args:
         findings: List of finding dicts from API (title, severity, agent_name, etc.)
+        classifier: Optional SemanticClassifier instance (framework Component D).
 
     Returns:
         Dict with coverage matrix, metrics, and analysis
     """
+    # Build ground_truth list from JUICE_SHOP_CHALLENGES for classifier use
+    ground_truth = [
+        {"challenge_id": name, **info}
+        for name, info in JUICE_SHOP_CHALLENGES.items()
+    ]
+
     # Track which challenges are detected
     detected_challenges: Dict[str, List[Dict]] = {}  # challenge -> [findings that match]
     unmatched_findings: List[Dict] = []
@@ -371,9 +396,14 @@ def analyze_scan_findings(findings: List[Dict]) -> Dict:
         title = f.get("title", "")
         details = f.get("details", "") or ""
         evidence = json.dumps(f.get("evidence", {})) if f.get("evidence") else ""
-        combined = title + " " + details + " " + evidence
 
-        matches = match_finding_to_challenges(title, details + " " + evidence)
+        matches = match_finding_to_challenges(
+            title,
+            details + " " + evidence,
+            finding=f,
+            ground_truth=ground_truth,
+            classifier=classifier,
+        )
 
         if matches:
             for challenge in matches:
@@ -533,9 +563,10 @@ def print_coverage_report(
     source_label: str = "",
     mode: str = "raw",
     target_pct: float = 95.0,
+    classifier=None,
 ):
     """Print formatted coverage report for thesis."""
-    result = analyze_scan_findings(findings)
+    result = analyze_scan_findings(findings, classifier=classifier)
     metrics = calculate_thesis_metrics(findings, result)
 
     star_labels = {1: "Trivial", 2: "Easy", 3: "Medium", 4: "Hard", 5: "Challenging", 6: "Expert"}
@@ -762,10 +793,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write machine-readable JSON coverage report to this path.",
     )
     parser.add_argument(
-        "--target",
+        "--target-pct",
         type=float,
         default=95.0,
-        help="Research target coverage percentage.",
+        dest="target_pct",
+        help="Research target coverage percentage (default: 95.0).",
+    )
+    parser.add_argument(
+        "--target",
+        choices=["juiceshop", "dvwa", "bwapp", "webgoat", "ctf"],
+        default="juiceshop",
+        help="Target application; used to select ground truth (default: juiceshop).",
+    )
+    parser.add_argument(
+        "--use-classifier",
+        action="store_true",
+        help="Use SemanticClassifier (framework Component D) instead of legacy regex matcher.",
     )
     return parser
 
@@ -773,6 +816,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # --target currently only juiceshop has ground truth; others accepted for future use
+    app_target = getattr(args, "target", "juiceshop")
+    if app_target != "juiceshop":
+        print(f"Warning: ground truth for '{app_target}' not yet available; falling back to juiceshop challenges.")
+
+    classifier = None
+    if getattr(args, "use_classifier", False):
+        try:
+            from multi_agent_system.framework.semantic_classifier import SemanticClassifier
+            classifier = SemanticClassifier(
+                llm_client=None,
+                similarity_threshold=0.6,
+                enabled=True,
+            )
+        except ImportError as e:
+            print(f"Warning: SemanticClassifier not available ({e}); using legacy matcher.")
 
     source = ""
     scan_time_str = ""
@@ -793,11 +853,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         scan_time_str,
         source_label=source if args.input else "",
         mode=args.mode,
-        target_pct=args.target,
+        target_pct=args.target_pct,
+        classifier=classifier,
     )
 
     if args.output:
-        write_json_report(args.output, findings, result, metrics, mode=args.mode, source=source, target_pct=args.target)
+        write_json_report(args.output, findings, result, metrics, mode=args.mode, source=source, target_pct=args.target_pct)
         print(f"\n  JSON report written: {args.output}")
 
     return 0
