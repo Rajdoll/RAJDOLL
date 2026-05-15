@@ -8,7 +8,7 @@ from multi_agent_system.framework.js_bundle_analyzer import JSBundleAnalyzer
 
 def test_analyzer_constructs():
     analyzer = JSBundleAnalyzer()
-    assert analyzer.cache_path.parent.exists() or analyzer.cache_path.parent.name == "data"
+    assert analyzer is not None
 
 
 def test_extract_routes_angular():
@@ -38,102 +38,19 @@ def test_extract_routes_empty_on_garbage():
     assert routes == []
 
 
-def test_extract_dependencies_from_es_imports():
-    js = """
-    import lodash from 'lodash';
-    import { useState } from 'react';
-    import * as moment from 'moment';
-    """
-    analyzer = JSBundleAnalyzer()
-    deps = analyzer._extract_dependencies(js)
-    names = {d["name"] for d in deps}
-    assert "lodash" in names
-    assert "react" in names
-    assert "moment" in names
-
-
-def test_extract_dependencies_from_webpack_chunks():
-    js = """
-    /***/ "./node_modules/jquery/dist/jquery.min.js":
-    /*!*****************************************!*\\
-      !*** ./node_modules/jquery/dist/jquery.min.js ***!
-      \\*****************************************/
-    /***/ "./node_modules/axios/lib/axios.js":
-    """
-    analyzer = JSBundleAnalyzer()
-    deps = analyzer._extract_dependencies(js)
-    names = {d["name"] for d in deps}
-    assert "jquery" in names
-    assert "axios" in names
-
-
-def test_extract_dependencies_empty_on_no_match():
-    analyzer = JSBundleAnalyzer()
-    assert analyzer._extract_dependencies("var x = 1;") == []
-
-
-from unittest.mock import AsyncMock, patch
-
-
 @pytest.mark.asyncio
-async def test_osv_query_returns_advisories():
+async def test_analyze_end_to_end():
     analyzer = JSBundleAnalyzer()
-    mock_response = httpx.Response(
-        200,
-        json={"vulns": [{"id": "GHSA-xxx", "summary": "RCE", "severity": [{"score": "9.0"}]}]},
-    )
-    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: mock_response)) as client:
-        advisories = await analyzer._osv_query(client, "lodash", "4.17.15")
-    assert len(advisories) == 1
-    assert advisories[0]["id"] == "GHSA-xxx"
-
-
-@pytest.mark.asyncio
-async def test_osv_query_uses_cache(tmp_path):
-    analyzer = JSBundleAnalyzer(cache_path=tmp_path / "osv.db")
-    # Pre-populate cache
-    import json
-    import sqlite3
-    with sqlite3.connect(analyzer.cache_path) as conn:
-        conn.execute(
-            "INSERT INTO osv_cache (package, version, advisories_json) VALUES (?, ?, ?)",
-            ("lodash", "4.17.15", json.dumps([{"id": "CACHED-1"}])),
-        )
-
-    # If httpx raises, we still get cached result
-    async def boom(req):
-        raise httpx.RequestError("network down")
-    async with httpx.AsyncClient(transport=httpx.MockTransport(boom)) as client:
-        advisories = await analyzer._osv_query(client, "lodash", "4.17.15")
-    assert advisories[0]["id"] == "CACHED-1"
-
-
-@pytest.mark.asyncio
-async def test_osv_query_returns_empty_on_network_failure_uncached(tmp_path):
-    analyzer = JSBundleAnalyzer(cache_path=tmp_path / "osv.db")
-    async def boom(req):
-        raise httpx.RequestError("down")
-    async with httpx.AsyncClient(transport=httpx.MockTransport(boom)) as client:
-        advisories = await analyzer._osv_query(client, "unknown-pkg", "1.0.0")
-    assert advisories == []
-
-
-@pytest.mark.asyncio
-async def test_analyze_end_to_end(tmp_path):
-    analyzer = JSBundleAnalyzer(cache_path=tmp_path / "osv.db")
     homepage_html = """
     <html><body>
       <script src="/static/js/main.bundle.js"></script>
-      <script src="/static/js/vendor.bundle.js"></script>
     </body></html>
     """
     main_js = "RouterModule.forRoot([{path:'admin',component:X}]);"
-    vendor_js = "/***/ \"./node_modules/lodash/index.js\""
 
     responses = {
         "http://target.test/": httpx.Response(200, text=homepage_html),
         "http://target.test/static/js/main.bundle.js": httpx.Response(200, text=main_js),
-        "http://target.test/static/js/vendor.bundle.js": httpx.Response(200, text=vendor_js),
     }
     def handler(req):
         return responses.get(str(req.url), httpx.Response(404))
@@ -142,17 +59,13 @@ async def test_analyze_end_to_end(tmp_path):
 
     paths = {r["path"] for r in result["routes"]}
     assert "/admin" in paths
-    dep_names = {d["name"] for d in result["dependencies"]}
-    assert "lodash" in dep_names
 
 
 @pytest.mark.asyncio
-async def test_analyze_returns_empty_for_non_spa(tmp_path):
-    analyzer = JSBundleAnalyzer(cache_path=tmp_path / "osv.db")
-    homepage_html = "<html><body>no scripts here</body></html>"
+async def test_analyze_returns_empty_for_non_spa():
+    analyzer = JSBundleAnalyzer()
     def handler(req):
-        return httpx.Response(200, text=homepage_html)
+        return httpx.Response(200, text="<html><body>no scripts here</body></html>")
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await analyzer.analyze("http://target.test/", client)
     assert result["routes"] == []
-    assert result["dependencies"] == []

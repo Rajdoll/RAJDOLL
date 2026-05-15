@@ -438,41 +438,6 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_npm_vulnerabilities failed: {e}")
 
-        # Vulnerable Library findings from JS Bundle Analysis (Component B)
-        # compact summary key has vulnerable_deps with full advisory data (top 10)
-        js_analysis = self.shared_context.get("js_bundle_analysis", {})
-        for dep in js_analysis.get("vulnerable_deps", []):
-            advisories = dep.get("advisories", []) or []
-            if not advisories:
-                continue
-            # Pick highest severity advisory for severity mapping
-            severity = "medium"   # default
-            for adv in advisories:
-                for sev in adv.get("severity", []) or []:
-                    score_str = sev.get("score") or sev.get("severity") or "0"
-                    try:
-                        score_val = float(str(score_str).split(":")[0])
-                    except (ValueError, TypeError):
-                        score_val = 0.0
-                    if score_val >= 9.0:
-                        severity = "critical"
-                    elif score_val >= 7.0 and severity != "critical":
-                        severity = "high"
-            self.add_finding(
-                category="WSTG-CONF-01",
-                title=f"Vulnerable library: {dep['name']} {dep.get('version') or 'unknown'}",
-                severity=severity,
-                evidence={
-                    "package": dep["name"],
-                    "version": dep.get("version"),
-                    "advisory_ids": [a.get("id") for a in advisories if a.get("id")],
-                    "proof_type": "data_exposure",   # SCA confirmed exposure
-                    "impact": f"Loaded JS dependency has {len(advisories)} known advisory/ies",
-                    "source": "js_bundle_analyzer",
-                },
-                details="Dependency identified by OSV.dev cross-check. Update or replace.",
-            )
-
         self.log("info", "Configuration & Deployment checks complete")
 
     def _get_target(self) -> str | None:
