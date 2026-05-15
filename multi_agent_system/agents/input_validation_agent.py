@@ -1073,7 +1073,13 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         self.log("info", f"   🔍 NoSQL Injection testing: {url}")
 
         if not isinstance(parameters, list) or not parameters:
-            parameters = ['q', 'search', 'id']
+            from multi_agent_system.framework.types import EndpointSpec
+            ep_spec = EndpointSpec(url=url, method="GET", params=[])
+            framework_payloads = self.generate_payloads("nosql_injection", ep_spec, n=10)
+            if framework_payloads:
+                parameters = [p.value for p in framework_payloads]
+            else:
+                parameters = ['q', 'search', 'id']  # legacy fallback
 
         for param in parameters[:2]:
             test_url = url if '?' in url else f"{url}?{param}=test"
@@ -1517,7 +1523,7 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         try:
             # Call LLM for planning (with longer timeout for comprehensive analysis)
             print(f"🔍 LLM-PLAN-DEBUG-7: About to call _query_llm()", file=sys.stderr, flush=True)
-            llm_response = await self._query_llm(planning_prompt, max_tokens=4000)
+            llm_response = await self._query_llm(planning_prompt, max_tokens=1024)
             print(f"🔍 LLM-PLAN-DEBUG-8: _query_llm() returned, response length: {len(llm_response)}", file=sys.stderr, flush=True)
 
             # Parse JSON response
