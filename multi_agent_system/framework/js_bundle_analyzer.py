@@ -34,6 +34,12 @@ class JSBundleAnalyzer:
         r"""['"]?path['"]?\s*:\s*['"]([^'"]+)['"]""",
         re.IGNORECASE,
     )
+    # ES module imports: import X from 'lib'; import { Y } from 'lib';
+    _IMPORT_PATTERN = re.compile(
+        r"""import\s+(?:[\w*${}\s,]+\s+from\s+)?['"]([@\w/-]+)['"]""",
+    )
+    # Webpack chunk paths: ./node_modules/<lib>/...
+    _WEBPACK_PATTERN = re.compile(r"node_modules/([@\w-]+)(?:/|/[\w-]+/)")
 
     def _init_db(self) -> None:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -63,3 +69,13 @@ class JSBundleAnalyzer:
             seen.add(r["path"])
             unique.append(r)
         return unique
+
+    def _extract_dependencies(self, js_source: str) -> list[dict]:
+        names: set[str] = set()
+        for m in self._IMPORT_PATTERN.findall(js_source):
+            if m.startswith("."):
+                continue   # relative import, not a dep
+            names.add(m.split("/")[0] if not m.startswith("@") else "/".join(m.split("/")[:2]))
+        for m in self._WEBPACK_PATTERN.findall(js_source):
+            names.add(m)
+        return [{"name": n, "version": None, "advisories": []} for n in sorted(names)]

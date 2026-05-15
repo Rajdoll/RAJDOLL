@@ -36,3 +36,37 @@ def test_extract_routes_empty_on_garbage():
     analyzer = JSBundleAnalyzer()
     routes = analyzer._extract_routes("alert(1);", source_file="x.js")
     assert routes == []
+
+
+def test_extract_dependencies_from_es_imports():
+    js = """
+    import lodash from 'lodash';
+    import { useState } from 'react';
+    import * as moment from 'moment';
+    """
+    analyzer = JSBundleAnalyzer()
+    deps = analyzer._extract_dependencies(js)
+    names = {d["name"] for d in deps}
+    assert "lodash" in names
+    assert "react" in names
+    assert "moment" in names
+
+
+def test_extract_dependencies_from_webpack_chunks():
+    js = """
+    /***/ "./node_modules/jquery/dist/jquery.min.js":
+    /*!*****************************************!*\\
+      !*** ./node_modules/jquery/dist/jquery.min.js ***!
+      \\*****************************************/
+    /***/ "./node_modules/axios/lib/axios.js":
+    """
+    analyzer = JSBundleAnalyzer()
+    deps = analyzer._extract_dependencies(js)
+    names = {d["name"] for d in deps}
+    assert "jquery" in names
+    assert "axios" in names
+
+
+def test_extract_dependencies_empty_on_no_match():
+    analyzer = JSBundleAnalyzer()
+    assert analyzer._extract_dependencies("var x = 1;") == []
