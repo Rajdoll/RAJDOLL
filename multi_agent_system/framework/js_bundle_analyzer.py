@@ -80,6 +80,54 @@ class JSBundleAnalyzer:
             names.add(m)
         return [{"name": n, "version": None, "advisories": []} for n in sorted(names)]
 
+    _SCRIPT_SRC_PATTERN = re.compile(
+        r"""<script[^>]+src=['"]([^'"]+\.js)['"]""", re.IGNORECASE,
+    )
+
+    async def analyze(self, target: str, http_client: httpx.AsyncClient) -> dict:
+        """Fetch homepage, extract JS bundles, find routes + dependencies.
+
+        Returns {"routes": [...], "dependencies": [...], "endpoints": []}.
+        Empty result for non-SPA targets is normal (graceful no-op).
+        """
+        from urllib.parse import urljoin
+        try:
+            resp = await http_client.get(target, timeout=10)
+            html = resp.text
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            return {"routes": [], "dependencies": [], "endpoints": []}
+
+        script_urls = []
+        for raw in self._SCRIPT_SRC_PATTERN.findall(html):
+            script_urls.append(urljoin(target, raw))
+
+        all_routes: list[dict] = []
+        all_deps: dict[str, dict] = {}
+        for src_url in script_urls:
+            try:
+                js_resp = await http_client.get(src_url, timeout=15)
+                js_text = js_resp.text
+            except (httpx.RequestError, httpx.HTTPStatusError):
+                continue
+            all_routes.extend(self._extract_routes(js_text, source_file=src_url))
+            for dep in self._extract_dependencies(js_text):
+                all_deps.setdefault(dep["name"], dep)
+
+        # Query advisories for each unique dep (graceful skip on failures)
+        for name, dep in list(all_deps.items()):
+            version = dep.get("version") or "0.0.0"
+            try:
+                advisories = await self._osv_query(http_client, name, version)
+                dep["advisories"] = advisories
+            except Exception:
+                dep["advisories"] = []
+
+        return {
+            "routes": all_routes,
+            "dependencies": list(all_deps.values()),
+            "endpoints": [],
+        }
+
     OSV_URL = "https://api.osv.dev/v1/query"
     OSV_CACHE_TTL_SECONDS = 86400   # 24 hours
 

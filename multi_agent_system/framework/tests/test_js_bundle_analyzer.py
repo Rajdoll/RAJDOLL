@@ -116,3 +116,43 @@ async def test_osv_query_returns_empty_on_network_failure_uncached(tmp_path):
     async with httpx.AsyncClient(transport=httpx.MockTransport(boom)) as client:
         advisories = await analyzer._osv_query(client, "unknown-pkg", "1.0.0")
     assert advisories == []
+
+
+@pytest.mark.asyncio
+async def test_analyze_end_to_end(tmp_path):
+    analyzer = JSBundleAnalyzer(cache_path=tmp_path / "osv.db")
+    homepage_html = """
+    <html><body>
+      <script src="/static/js/main.bundle.js"></script>
+      <script src="/static/js/vendor.bundle.js"></script>
+    </body></html>
+    """
+    main_js = "RouterModule.forRoot([{path:'admin',component:X}]);"
+    vendor_js = "/***/ \"./node_modules/lodash/index.js\""
+
+    responses = {
+        "http://target.test/": httpx.Response(200, text=homepage_html),
+        "http://target.test/static/js/main.bundle.js": httpx.Response(200, text=main_js),
+        "http://target.test/static/js/vendor.bundle.js": httpx.Response(200, text=vendor_js),
+    }
+    def handler(req):
+        return responses.get(str(req.url), httpx.Response(404))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await analyzer.analyze("http://target.test/", client)
+
+    paths = {r["path"] for r in result["routes"]}
+    assert "/admin" in paths
+    dep_names = {d["name"] for d in result["dependencies"]}
+    assert "lodash" in dep_names
+
+
+@pytest.mark.asyncio
+async def test_analyze_returns_empty_for_non_spa(tmp_path):
+    analyzer = JSBundleAnalyzer(cache_path=tmp_path / "osv.db")
+    homepage_html = "<html><body>no scripts here</body></html>"
+    def handler(req):
+        return httpx.Response(200, text=homepage_html)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await analyzer.analyze("http://target.test/", client)
+    assert result["routes"] == []
+    assert result["dependencies"] == []
