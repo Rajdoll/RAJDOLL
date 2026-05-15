@@ -1653,25 +1653,28 @@ Operate autonomously without human guidance.
                 import httpx as _httpx
                 async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15) as _client:
                     _js_result = await self.js_bundle_analyzer.analyze(_target_url, _client)
-                # Write compact summary to shared context (avoids bloating LLM planner context)
-                # Full data stored under _raw_ key; ConfigDeploymentAgent reads that.
+                # Write ONLY compact summary to shared context.
+                # Keeping the full deps array out of shared context prevents
+                # the LLM planner for downstream agents from seeing a huge
+                # package list and incorrectly concluding "analysis is complete."
+                # ConfigDeploymentAgent uses vulnerable_deps (full advisory data included).
                 _all_deps = _js_result.get("dependencies", [])
                 _vulns = [d for d in _all_deps if d.get("advisories")]
                 _n_routes = len(_js_result.get("routes", []))
-                # Only store vulnerable deps in the main key — keeps context small
                 _js_summary = {
                     "route_count": _n_routes,
                     "dependency_count": len(_all_deps),
                     "vulnerable_count": len(_vulns),
+                    # Full advisory data for top 10 vulnerable deps (ConfigDeploymentAgent needs this)
                     "vulnerable_deps": [
                         {"name": d["name"], "version": d.get("version"),
-                         "advisory_count": len(d.get("advisories", []))}
+                         "advisories": d.get("advisories", [])}
                         for d in _vulns[:10]
                     ],
                 }
                 self.write_context("js_bundle_analysis", _js_summary)
-                # Full dependency list for ConfigDeploymentAgent (not in LLM planner path)
-                self.write_context("js_bundle_analysis_raw", _js_result)
+                # NOTE: do NOT write js_bundle_analysis_raw to shared_context —
+                # it would bloat the LLM planner context for all subsequent agents.
                 self.log("info", f"[Recon] js_bundle_analysis: "
                                   f"{_n_routes} routes, "
                                   f"{len(_all_deps)} deps, "
