@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..core.config import settings
 from ..core.db import get_db
-from ..models.models import JobAgent, AgentEvent, Finding, Job
+from ..models.models import JobAgent, AgentEvent, Finding, Job, ConfidenceLevel as DBConfidenceLevel
 from ..utils.simple_llm_client import SimpleLLMClient
 from ..utils.hitl_manager import HITLManager
 from ..utils.agent_runtime import CURRENT_AGENT
@@ -21,6 +21,7 @@ from ..utils.shared_context_manager import SharedContextManager
 from ..utils.knowledge_graph import KnowledgeGraph, Entity, EntityType, RelationType
 from ..utils.confidence_scorer import ConfidenceScorer, ConfidenceScore, Evidence, EvidenceType
 from ..utils.enrichment_service import EnrichmentService
+from ..utils.finding_policy import build_finding_meta
 
 # Timeouts aligned with job_total_timeout (3600s) to prevent cascading delays
 AGENT_EXECUTION_TIMEOUT = 2700  # 45 minutes per agent (leaves room for other phases within 1hr job timeout)
@@ -89,6 +90,9 @@ class BaseAgent:
 		self._confidence_scorer = ConfidenceScorer()
 		self._current_tool_evidences: List[Evidence] = []  # Track evidence during tool execution
 		
+		# framework component A: PayloadSynthesizer (optional, None when USE_FRAMEWORK=false)
+		self.payload_synth = None  # set by orchestrator after construction when framework is enabled
+
 		# Independent LLM client per agent - using simple HTTP-based client
 		try:
 			self._llm_client = SimpleLLMClient()
@@ -96,11 +100,39 @@ class BaseAgent:
 		except Exception as e:
 			self._llm_client = None
 			print(f"⚠️  [{self.agent_name}] SimpleLLMClient initialization failed: {e}")
+
+	def _confidence_factors(self, confidence: ConfidenceScore) -> list[str]:
+		"""Summarize confidence inputs for logging and evidence metadata."""
+		factors = [
+			f"tool_verification:{confidence.tool_verification.value}",
+			f"evidence_count:{len(confidence.evidences)}",
+		]
+		factors.extend(f"fp_indicator:{item}" for item in confidence.false_positive_indicators)
+		factors.extend(f"confirmed_by:{item}" for item in sorted(confidence.confirmed_by_agents))
+		return factors
 	
 	@property
 	def shared_context(self) -> Dict[str, Any]:
 		"""Access shared context snapshot for this agent"""
 		return self._shared_context_snapshot
+
+	def generate_payloads(self, attack_class: str, endpoint, n: int = 10) -> list:
+		"""Delegate payload synthesis to framework PayloadSynthesizer.
+
+		Returns empty list when synthesizer is unavailable or disabled.
+		Caller is responsible for falling back to legacy hardcoded payloads
+		when this returns empty.
+		"""
+		if self.payload_synth is None or not getattr(self.payload_synth, "enabled", False):
+			return []
+		ctx = self._shared_context_snapshot
+		return self.payload_synth.synthesize(
+			attack_class=attack_class,
+			endpoint=endpoint,
+			tech_stack=ctx.get("tech_stack", {}) if ctx else {},
+			prior_observations=ctx.get("recon_summary", {}) if ctx else {},
+			n=n,
+		)
 
 	# ====================================================================
 	# HITL Live Execution Monitor — broadcast status & check signals
@@ -146,12 +178,28 @@ class BaseAgent:
 		auth_data = self._shared_context_snapshot.get("authenticated_session")
 		if not auth_data or not auth_data.get("logged_in"):
 			return None
-		
+
+		if auth_data.get("session_ref"):
+			try:
+				secret = self.context_manager.read_secret(auth_data["session_ref"]) or {}
+			except Exception:
+				secret = {}
+			return {
+				"cookies": secret.get("cookies", {}),
+				"headers": secret.get("headers", {}),
+				"token": secret.get("jwt_token"),
+				"username": secret.get("username"),
+				"auth_method": auth_data.get("auth_method") or secret.get("auth_method"),
+				"login_endpoint": auth_data.get("login_endpoint") or secret.get("login_endpoint"),
+			}
+
 		return {
 			"cookies": auth_data.get("cookies", {}),
 			"headers": auth_data.get("headers", {}),
 			"token": auth_data.get("jwt_token"),
-			"username": auth_data.get("username"),
+			"username": auth_data.get("username") or auth_data.get("username_masked"),
+			"auth_method": auth_data.get("auth_method"),
+			"login_endpoint": auth_data.get("login_endpoint"),
 		}
 	
 	def set_tool_plan(self, plan: Dict[str, Any]) -> None:
@@ -570,7 +618,15 @@ class BaseAgent:
 	def write_context(self, key: str, value: dict) -> None:
 		self.context_manager.write(key, value)
 
-	def add_finding(self, category: str, title: str, severity: str = "info", evidence: dict | None = None, details: str | None = None) -> None:
+	def add_finding(
+		self,
+		category: str,
+		title: str,
+		severity: str = "info",
+		evidence: dict | None = None,
+		details: str | None = None,
+		confidence: ConfidenceScore | None = None,
+	) -> None:
 		import json, sys
 		# Sanitize evidence to prevent unhashable type errors
 		if evidence is not None:
@@ -580,8 +636,43 @@ class BaseAgent:
 			except (TypeError, ValueError) as e:
 				# If not serializable, convert to string representation
 				evidence = {"raw": str(evidence), "error": f"Evidence not JSON-serializable: {e}"}
+		confidence_score = confidence.final_score if confidence else None
+		confidence_level = confidence.confidence_level.value if confidence else None
+		if isinstance(evidence, dict):
+			enhanced_evidence = dict(evidence)
+			if confidence:
+				enhanced_evidence.setdefault("_confidence", {
+					"score": confidence_score,
+					"level": confidence_level,
+					"factors": self._confidence_factors(confidence),
+					"evidence_count": len(confidence.evidences),
+				})
+			existing_confidence = enhanced_evidence.get("_confidence") or {}
+			confidence_score = confidence_score if confidence_score is not None else existing_confidence.get("score") or existing_confidence.get("final_score")
+			confidence_level = confidence_level or existing_confidence.get("level") or existing_confidence.get("confidence_level")
+			enhanced_evidence["_meta"] = build_finding_meta(
+				severity=severity,
+				confidence_score=confidence_score,
+				confidence_level=confidence_level,
+				existing_meta=enhanced_evidence.get("_meta"),
+				evidence=enhanced_evidence,
+				details=details,
+				title=title,
+				category=category,
+			)
+			evidence = enhanced_evidence
 		with get_db() as db:
-			finding = Finding(job_id=self.job_id, agent_name=self.agent_name, category=category, title=title, severity=severity, evidence=evidence, details=details)
+			finding = Finding(
+				job_id=self.job_id,
+				agent_name=self.agent_name,
+				category=category,
+				title=title,
+				severity=severity,
+				evidence=evidence,
+				details=details,
+				confidence_score=confidence_score,
+				confidence_level=DBConfidenceLevel(confidence_level) if confidence_level else None,
+			)
 			db.add(finding)
 			try:
 				db.commit()
@@ -649,26 +740,25 @@ class BaseAgent:
 			if tool_evidence:
 				evidence_list.append(tool_evidence)
 		
-		# Calculate confidence
-		confidence = self._confidence_scorer.calculate_confidence(vuln_type, evidence_list)
-		
-		# Enhance evidence dict with confidence metadata
-		enhanced_evidence = evidence.copy() if evidence else {}
-		enhanced_evidence["_confidence"] = {
-			"score": confidence.score,
-			"level": confidence.level.value,
-			"factors": confidence.contributing_factors,
-			"evidence_count": len(confidence.evidences)
-		}
+		# Calculate confidence using the scorer's persisted score object API.
+		confidence = self._confidence_scorer.score_finding(
+			finding_id=f"{self.job_id}:{self.agent_name}:{category}:{title}",
+			vulnerability_type=vuln_type,
+			tool_used=tool_name,
+			tool_output=None if evidence_list else (evidence or {}),
+			agent_name=self.agent_name,
+		)
+		for item in evidence_list:
+			confidence.add_evidence(item)
 		
 		# Log confidence calculation
-		self.log("info", f"📊 Confidence calculated: {confidence.level.value} ({confidence.score:.2f})", {
+		self.log("info", f"📊 Confidence calculated: {confidence.confidence_level.value} ({confidence.final_score:.2f})", {
 			"vuln_type": vuln_type,
-			"factors": confidence.contributing_factors[:3]  # Top 3 factors
+			"factors": self._confidence_factors(confidence)[:3]
 		})
 		
-		# Add finding with enhanced evidence
-		self.add_finding(category, title, severity, enhanced_evidence, details)
+		# Add finding with persisted confidence metadata
+		self.add_finding(category, title, severity, evidence, details, confidence=confidence)
 		
 		# Clear current tool evidences after use
 		self._current_tool_evidences.clear()
@@ -743,8 +833,8 @@ class BaseAgent:
 			properties={
 				"category": category,
 				"severity": severity,
-				"confidence_score": confidence.score,
-				"confidence_level": confidence.level.value,
+				"confidence_score": confidence.final_score,
+				"confidence_level": confidence.confidence_level.value,
 				"agent": self.agent_name,
 				"job_id": self.job_id
 			}
@@ -757,7 +847,7 @@ class BaseAgent:
 			name=f"{self.agent_name}:{title}",
 			properties={
 				"evidence_count": len(confidence.evidences),
-				"contributing_factors": confidence.contributing_factors,
+				"contributing_factors": self._confidence_factors(confidence),
 				"timestamp": time.time()
 			}
 		)
