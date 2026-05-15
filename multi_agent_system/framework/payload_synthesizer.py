@@ -66,3 +66,67 @@ class PayloadSynthesizer:
                 (key, attack_class, json.dumps(tech_stack, sort_keys=True), payloads_json),
             )
             conn.commit()
+
+    PROMPT_TEMPLATE = """You are a generic web security payload generator. Generate {n}
+payloads for attack class "{attack_class}". The target uses these characteristics:
+{tech_stack_summary}
+
+Output strict JSON only, no commentary. Schema:
+{{"payloads": [{{"value": "...", "encoding": "raw|url|base64|json|xml",
+                 "expected_signal": "string or regex to look for in response body",
+                 "category": "{attack_class}",
+                 "engine_hypothesis": "framework/engine name or null"}}, ...]}}
+
+Make payloads diverse (different engines/encodings). Do NOT reference any specific
+application or company name."""
+
+    OUTPUT_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "payloads": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": "string"},
+                        "encoding": {"type": "string"},
+                        "expected_signal": {"type": "string"},
+                        "category": {"type": "string"},
+                        "engine_hypothesis": {"type": ["string", "null"]},
+                    },
+                    "required": ["value", "encoding", "expected_signal", "category"],
+                },
+            }
+        },
+        "required": ["payloads"],
+    }
+
+    def _llm_synthesize(self, attack_class: str, tech_stack: dict, n: int) -> list[Payload]:
+        if self.llm_client is None:
+            return []
+        tech_summary = ", ".join(f"{k}={v}" for k, v in sorted(tech_stack.items()))
+        prompt = self.PROMPT_TEMPLATE.format(
+            n=n, attack_class=attack_class, tech_stack_summary=tech_summary or "unknown"
+        )
+        try:
+            response = self.llm_client.chat_with_schema(
+                prompt=prompt, schema=self.OUTPUT_SCHEMA, timeout=60
+            )
+        except Exception:
+            return []
+        items = response.get("payloads") if isinstance(response, dict) else None
+        if not isinstance(items, list):
+            return []
+        out: list[Payload] = []
+        for item in items:
+            try:
+                out.append(Payload(
+                    value=item["value"],
+                    encoding=item["encoding"],
+                    expected_signal=item["expected_signal"],
+                    category=item.get("category", attack_class),
+                    engine_hypothesis=item.get("engine_hypothesis"),
+                ))
+            except (KeyError, TypeError):
+                continue
+        return out

@@ -39,3 +39,43 @@ def test_cache_miss_returns_empty(tmp_db):
     synth = PayloadSynthesizer(llm_client=None, pattern_db_path=tmp_db, enabled=True)
     cached = synth._cache_read("ssti", {"framework": "express"})
     assert cached == []
+
+
+class _FakeLLM:
+    """Mock LLM that returns canned JSON."""
+    def __init__(self, response_json: dict):
+        self.response = response_json
+        self.calls = []
+
+    def chat_with_schema(self, prompt: str, schema: dict, timeout: int = 60) -> dict:
+        self.calls.append({"prompt": prompt, "schema": schema})
+        return self.response
+
+
+def test_llm_synthesis_parses_payloads(tmp_db):
+    fake = _FakeLLM({
+        "payloads": [
+            {"value": "{{7*7}}", "encoding": "raw",
+             "expected_signal": "49", "category": "ssti",
+             "engine_hypothesis": "jinja2"},
+            {"value": "${7*7}", "encoding": "raw",
+             "expected_signal": "49", "category": "ssti",
+             "engine_hypothesis": "freemarker"},
+        ]
+    })
+    synth = PayloadSynthesizer(llm_client=fake, pattern_db_path=tmp_db, enabled=True)
+    payloads = synth._llm_synthesize("ssti", {"framework": "flask"}, n=2)
+    assert len(payloads) == 2
+    assert payloads[0].value == "{{7*7}}"
+    assert payloads[0].engine_hypothesis == "jinja2"
+    assert len(fake.calls) == 1
+    # Prompt must mention attack class and framework hint, but not target name
+    assert "ssti" in fake.calls[0]["prompt"].lower()
+    assert "flask" in fake.calls[0]["prompt"].lower()
+
+
+def test_llm_synthesis_handles_invalid_response(tmp_db):
+    fake = _FakeLLM({"not_payloads": []})
+    synth = PayloadSynthesizer(llm_client=fake, pattern_db_path=tmp_db, enabled=True)
+    payloads = synth._llm_synthesize("ssti", {"framework": "flask"}, n=2)
+    assert payloads == []
