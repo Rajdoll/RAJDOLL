@@ -96,6 +96,27 @@ Operate autonomously without human guidance.
             return f"type=list len={len(result)}"
         return f"type={type(result).__name__}"
 
+    @staticmethod
+    def _is_http_200(item: Dict[str, Any]) -> bool:
+        try:
+            return int(item.get("status_code", 0)) == 200
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _recon_noise_meta(proof_type: str = "heuristic") -> Dict[str, Any]:
+        return {
+            "proof_type": proof_type,
+            "impact_class": "supporting_context",
+            "_meta": {
+                "finding_state": "lead",
+                "reportability_status": "needs_validation",
+                "evidence_quality": "weak",
+                "proof_type": proof_type,
+                "impact_class": "supporting_context",
+            },
+        }
+
     BASELINE_TOOL_MATRIX: ClassVar[Dict[str, Dict[str, Any]]] = {
         "advanced_technology_fingerprinting": {
             "server": "information-gathering",
@@ -338,7 +359,12 @@ Operate autonomously without human guidance.
             target = args.get("target") or args.get("target_url") or args.get("url")
             if not target:
                 return {"status": "error", "error": "Missing target for endpoint discovery"}
-            await self._perform_endpoint_discovery(target, baseline_snapshot)
+            timeout = int(config.get("timeout") or 180)
+            try:
+                await asyncio.wait_for(self._perform_endpoint_discovery(target, baseline_snapshot), timeout=timeout)
+            except asyncio.TimeoutError:
+                self.log("warning", f"discover_endpoints timed out after {timeout}s; continuing with partial endpoint inventory")
+                self.record_tool_failure("discover_endpoints", f"timeout after {timeout}s")
             inventory = self.shared_context.get("endpoint_inventory") or self.shared_context.get("discovered_endpoints")
             return {"status": "success", "data": inventory or {"endpoints": [], "count": 0}}
         else:
@@ -382,7 +408,11 @@ Operate autonomously without human guidance.
         await self._fallback_js_api_extraction(target, baseline_snapshot)
 
         print("🔴 [STDERR TRACE] About to call _perform_endpoint_discovery()", file=sys.stderr, flush=True)
-        await self._perform_endpoint_discovery(target, baseline_snapshot)
+        try:
+            await asyncio.wait_for(self._perform_endpoint_discovery(target, baseline_snapshot), timeout=600)
+        except asyncio.TimeoutError:
+            self.log("warning", "Endpoint discovery timed out after 600s; continuing with partial endpoint inventory")
+            self.record_tool_failure("perform_endpoint_discovery", "timeout after 600s")
         self.log("warning", "🔐 [PHASE 4 DEBUG] Endpoint discovery COMPLETE")
         print("🔴 [STDERR TRACE] _perform_endpoint_discovery() COMPLETED", file=sys.stderr, flush=True)
 
@@ -467,8 +497,8 @@ Operate autonomously without human guidance.
 
             # Inject auth cookies into Katana so it crawls authenticated paths
             if tool_name == "katana_js_crawl":
-                auth = self._shared_context_snapshot.get("authenticated_session", {})
-                if auth.get("logged_in") and auth.get("cookies"):
+                auth = self.get_auth_session() or {}
+                if auth.get("cookies"):
                     cookies_str = "; ".join(f"{k}={v}" for k, v in auth["cookies"].items())
                     args["cookies"] = cookies_str
                     self.log("info", f"[Recon] Injecting auth cookies into Katana: {list(auth['cookies'].keys())}")
@@ -676,8 +706,11 @@ Operate autonomously without human guidance.
             self.add_finding(
                 "WSTG-INFO",
                 f"Missing security headers: {', '.join(missing[:5])}",
-                severity="medium",
-                evidence={"missing": missing[:10]}
+                severity="low",
+                evidence={
+                    "missing": missing[:10],
+                    **self._recon_noise_meta("heuristic"),
+                }
             )
 
     def _handle_content_leaks(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
@@ -693,6 +726,10 @@ Operate autonomously without human guidance.
                 "WSTG-INFO",
                 f"{comment_count} HTML comments exposed in main page",
                 severity="low",
+                evidence={
+                    "comment_count": comment_count,
+                    **self._recon_noise_meta("source_observation"),
+                },
             )
         if payload.get("emails_found"):
             self.add_finding(
@@ -790,7 +827,10 @@ Operate autonomously without human guidance.
                 "WSTG-INFO",
                 "Robots.txt discloses potentially sensitive paths",
                 severity="low",
-                evidence={"paths": robots[:5]}
+                evidence={
+                    "paths": robots[:5],
+                    **self._recon_noise_meta("source_observation"),
+                }
             )
 
     def _handle_entry_points(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
@@ -813,7 +853,10 @@ Operate autonomously without human guidance.
                 "WSTG-INFO",
                 "Hidden workflow paths identified",
                 severity="low",
-                evidence={"sample": data["hidden_paths"][:5]}
+                evidence={
+                    "sample": data["hidden_paths"][:5],
+                    **self._recon_noise_meta("inventory_only"),
+                }
             )
 
     def _handle_architecture(self, data: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
@@ -840,15 +883,48 @@ Operate autonomously without human guidance.
         """Process directory bruteforcing results and extract hidden paths"""
         if not isinstance(data, dict):
             return
-        
+
         snapshot["directory_scan"] = data
         self.write_context("directory_scan", data)
-        
+
+        # Well-known disclosure files that are intentionally public — never a backup or
+        # sensitive disclosure on their own. Promotions of these to high/medium produce
+        # noise (e.g. `/robots.txt` flagged as "Backup file") and pollute auto-validation.
+        well_known_public_paths = {
+            "/robots.txt",
+            "/sitemap.xml",
+            "/humans.txt",
+            "/security.txt",
+            "/.well-known/security.txt",
+            "/.well-known/change-password",
+            "/favicon.ico",
+            "/ads.txt",
+        }
+
+        def _is_well_known_public(entry: Dict[str, Any]) -> bool:
+            path = str(entry.get("path", "")).lower()
+            return path in well_known_public_paths
+
         # Extract high-value findings
         sensitive_findings = []
-        
+
         # Report sensitive files
         for sensitive_file in data.get('sensitive_files', []):
+            if not self._is_http_200(sensitive_file):
+                continue
+            if _is_well_known_public(sensitive_file):
+                self.add_finding(
+                    "WSTG-INFO-02",
+                    f"Well-known public file present: {sensitive_file['path']}",
+                    severity="info",
+                    evidence={
+                        "path": sensitive_file['path'],
+                        "status_code": sensitive_file['status_code'],
+                        "proof_type": "inventory_only",
+                        "impact": "Standard disclosure file — informational only",
+                    },
+                )
+                continue
             self.add_finding(
                 "WSTG-INFO-02",
                 f"Sensitive file discovered: {sensitive_file['path']}",
@@ -857,13 +933,30 @@ Operate autonomously without human guidance.
                     "path": sensitive_file['path'],
                     "status_code": sensitive_file['status_code'],
                     "content_type": sensitive_file.get('content_type', ''),
-                    "size": sensitive_file.get('size', 0)
+                    "size": sensitive_file.get('size', 0),
+                    "proof_type": "accessible_file",
+                    "impact": "Sensitive file returned HTTP 200 and may disclose internal metadata"
                 }
             )
             sensitive_findings.append(sensitive_file['path'])
-        
+
         # Report backup files
         for backup_file in data.get('backup_files', []):
+            if not self._is_http_200(backup_file):
+                continue
+            if _is_well_known_public(backup_file):
+                self.add_finding(
+                    "WSTG-CONF-04",
+                    f"Well-known public file present: {backup_file['path']}",
+                    severity="info",
+                    evidence={
+                        "path": backup_file['path'],
+                        "status_code": backup_file['status_code'],
+                        "proof_type": "inventory_only",
+                        "impact": "Standard disclosure file — not a backup",
+                    },
+                )
+                continue
             self.add_finding(
                 "WSTG-CONF-04",
                 f"Backup file found: {backup_file['path']}",
@@ -871,13 +964,17 @@ Operate autonomously without human guidance.
                 evidence={
                     "path": backup_file['path'],
                     "status_code": backup_file['status_code'],
-                    "risk": "Backup files may contain sensitive information or source code"
+                    "risk": "Backup files may contain sensitive information or source code",
+                    "proof_type": "accessible_file",
+                    "impact": "Backup file returned HTTP 200 and may disclose source or configuration data"
                 }
             )
             sensitive_findings.append(backup_file['path'])
         
         # Report directory listings
         for dir_listing in data.get('directory_listings', []):
+            if not self._is_http_200(dir_listing):
+                continue
             self.add_finding(
                 "WSTG-CONF-04",
                 f"Directory listing enabled: {dir_listing['path']}",
@@ -885,12 +982,16 @@ Operate autonomously without human guidance.
                 evidence={
                     "path": dir_listing['path'],
                     "status_code": dir_listing['status_code'],
-                    "risk": "Directory listing exposes internal structure"
+                    "risk": "Directory listing exposes internal structure",
+                    "proof_type": "directory_listing",
+                    "impact": "Directory index returned HTTP 200 and exposes file names"
                 }
             )
         
         # Report config files
         for config_file in data.get('config_files', []):
+            if not self._is_http_200(config_file):
+                continue
             self.add_finding(
                 "WSTG-CONF-04",
                 f"Configuration file accessible: {config_file['path']}",
@@ -898,7 +999,9 @@ Operate autonomously without human guidance.
                 evidence={
                     "path": config_file['path'],
                     "status_code": config_file['status_code'],
-                    "risk": "Configuration files may expose credentials or internal settings"
+                    "risk": "Configuration files may expose credentials or internal settings",
+                    "proof_type": "accessible_file",
+                    "impact": "Configuration file returned HTTP 200 and may disclose internal settings"
                 }
             )
             sensitive_findings.append(config_file['path'])
@@ -1445,19 +1548,17 @@ Operate autonomously without human guidance.
         try:
             endpoints = await self._discover_endpoints(target)
         except Exception as exc:
-            self.log("warning", f"Endpoint discovery failed: {exc}")
-            return
-
-        if not endpoints:
-            self.log("info", "Endpoint discovery produced no additional targets")
-            return
+            self.log("warning", f"Endpoint discovery failed: {exc}; continuing with existing inventory sources")
+            endpoints = []
 
         # Merge with existing discovered_endpoints — do NOT overwrite; other handlers
-        # (katana, js_routes_analysis) may have already written valuable API paths.
+        # (katana, js_routes_analysis, ffuf, dirsearch) may have already written valuable API paths.
+        # Even when the HTML crawler returns nothing (typical for SPAs), R5 tagging must still
+        # run on the data produced by other recon tools.
         existing = self.context_manager.read("discovered_endpoints") or {}
         existing_eps = existing.get("endpoints", []) if isinstance(existing, dict) else []
         existing_urls = {ep.get("url", "") for ep in existing_eps}
-        new_eps = [ep for ep in endpoints if ep.get("url", "") not in existing_urls]
+        new_eps = [ep for ep in (endpoints or []) if ep.get("url", "") not in existing_urls]
         all_eps = existing_eps + new_eps
 
         self.write_context("discovered_endpoints", {"endpoints": all_eps, "count": len(all_eps)})
@@ -1488,25 +1589,34 @@ Operate autonomously without human guidance.
         except Exception as _exc:
             self.log("warning", f"[Recon] R1 extra probes failed: {_exc}")
 
-        # R3+R4 (aggressive mode only)
+        # R3+R4 (aggressive mode only) — each wrapped in its own sub-timeout
+        # so R5 inventory build is always reached even when ffuf or param miner is slow.
         _extra_r3: list[dict] = []
         _extra_r4: list[dict] = []
         if _settings.recon_mode == "aggressive":
             _wordlist = _Path(_os.getenv("RECON_WORDLIST", "/usr/share/seclists/Discovery/Web-Content/quickhits.txt"))
             if _wordlist.exists():
-                try:
+                async def _run_ffuf():
                     _runner = FfufRunner(rate_per_sec=_settings.recon_fuzz_rps)
                     _extra_r3.extend(await _runner.run(_target_url, _wordlist))
                     _extra_r3.extend(await _runner.run_per_segment(_target_url, _wordlist, seed_endpoints=all_eps + _extra_r1))
+                try:
+                    await asyncio.wait_for(_run_ffuf(), timeout=120)
+                except asyncio.TimeoutError:
+                    self.log("warning", "[Recon] R3 ffuf timed out after 120s; using partial results")
                 except Exception as _exc:
                     self.log("warning", f"[Recon] R3 ffuf failed: {_exc}")
             _param_wl = _Path(_os.getenv("RECON_PARAM_WORDLIST", "/usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt"))
             if _param_wl.exists():
-                try:
+                async def _run_param_miner():
                     import httpx as _httpx
                     async with _httpx.AsyncClient(timeout=10) as _client:
                         await mine_params(_client, all_eps + _extra_r1 + _extra_r3, wordlist=_param_wl, top_n=20, rate_per_sec=5)
+                try:
+                    await asyncio.wait_for(_run_param_miner(), timeout=90)
                     _extra_r4 = [ep for ep in all_eps + _extra_r1 + _extra_r3 if ep.get("discovered_params")]
+                except asyncio.TimeoutError:
+                    self.log("warning", "[Recon] R4 param mining timed out after 90s; skipping")
                 except Exception as _exc:
                     self.log("warning", f"[Recon] R4 param mining failed: {_exc}")
 
@@ -1536,6 +1646,28 @@ Operate autonomously without human guidance.
             self.log("info", f"[Recon] endpoint_inventory: {_phase_stats} -> {_tagged_count} tagged endpoints")
         except Exception as _exc:
             self.log("error", f"[Recon] endpoint_inventory build failed: {_exc}")
+
+        # R6: JS bundle analysis (Component B) — gated by USE_FRAMEWORK
+        if _settings.use_framework and getattr(self, "js_bundle_analyzer", None):
+            try:
+                import httpx as _httpx
+                async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=15) as _client:
+                    _js_result = await self.js_bundle_analyzer.analyze(_target_url, _client)
+                self.write_context("js_bundle_analysis", _js_result)
+                self.log("info", f"[Recon] js_bundle_analysis: "
+                                  f"{len(_js_result['routes'])} routes, "
+                                  f"{len(_js_result['dependencies'])} deps")
+                # Add SPA routes to inventory as additional endpoints
+                if _js_result["routes"]:
+                    _inventory = self.shared_context.get("endpoint_inventory") or {}
+                    for _route in _js_result["routes"]:
+                        _inventory.setdefault("by_tag", {}).setdefault("spa_route", []).append(
+                            {"url": _target_url.rstrip("/") + _route["path"],
+                             "method": "GET", "framework_hint": _route.get("framework")}
+                        )
+                    self.write_context("endpoint_inventory", _inventory)
+            except Exception as _exc:
+                self.log("warning", f"[Recon] JS bundle analysis failed: {_exc}")
 
     async def _discover_endpoints(self, target: str) -> List[Dict[str, Any]]:
         target_url = target if target.startswith(("http://", "https://")) else f"https://{target.lstrip('/')}"
