@@ -30,7 +30,36 @@ class JSBundleAnalyzer:
         self.cache_path = Path(cache_path) if cache_path else default_path
         self._init_db()
 
+    _ROUTE_PATTERN = re.compile(
+        r"""['"]?path['"]?\s*:\s*['"]([^'"]+)['"]""",
+        re.IGNORECASE,
+    )
+
     def _init_db(self) -> None:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.cache_path) as conn:
             conn.executescript(self.CACHE_SCHEMA)
+
+    def _extract_routes(self, js_source: str, source_file: str) -> list[dict]:
+        matches = self._ROUTE_PATTERN.findall(js_source)
+        routes: list[dict] = []
+        for raw_path in matches:
+            normalized = raw_path if raw_path.startswith("/") else "/" + raw_path
+            if "RouterModule.forRoot" in js_source or "provideRouter" in js_source:
+                framework = "angular"
+            elif "createBrowserRouter" in js_source or "<Route " in js_source:
+                framework = "react"
+            elif "createRouter" in js_source and "vue-router" in js_source:
+                framework = "vue"
+            else:
+                framework = "unknown"
+            routes.append({"path": normalized, "framework": framework,
+                           "source_file": source_file})
+        seen = set()
+        unique: list[dict] = []
+        for r in routes:
+            if r["path"] in seen:
+                continue
+            seen.add(r["path"])
+            unique.append(r)
+        return unique
