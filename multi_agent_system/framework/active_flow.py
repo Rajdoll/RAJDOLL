@@ -102,3 +102,59 @@ class ActiveFlowTester:
             severity="info",
             evidence={"a_status": resp_a.status_code, "b_status": resp_b.status_code},
         )
+
+    async def test_password_reset(
+        self,
+        endpoint: EndpointSpec,
+        valid_identity: str = "admin@example.test",
+        invalid_identity: str = "noexist-xxxxx@example.test",
+    ) -> FlowResult:
+        """Probe response diff between valid vs invalid identity.
+
+        Significant diff (status, length, keyword) -> user enumeration finding.
+        Caller passes a hint identity; if unknown, function still runs with
+        common default that should never be a real account.
+        """
+        client = getattr(self, "_http_client", None) or httpx.AsyncClient(
+            timeout=15, verify=False,
+        )
+        param = endpoint.params[0] if endpoint.params else "email"
+        try:
+            resp_valid = await client.request(
+                endpoint.method.upper(), endpoint.url,
+                json={param: valid_identity},
+            )
+            resp_invalid = await client.request(
+                endpoint.method.upper(), endpoint.url,
+                json={param: invalid_identity},
+            )
+        except httpx.RequestError as exc:
+            return FlowResult(success=False, proof_type="error",
+                               evidence={"error": str(exc)}, severity="info")
+
+        diff_status = resp_valid.status_code != resp_invalid.status_code
+        diff_body = abs(len(resp_valid.text) - len(resp_invalid.text)) > 20
+        # Look for revealing keywords
+        valid_text = (resp_valid.text or "").lower()
+        invalid_text = (resp_invalid.text or "").lower()
+        keyword_diff = any(
+            kw in valid_text and kw not in invalid_text
+            for kw in ("sent", "exist", "found", "user", "account")
+        )
+
+        if diff_status or diff_body or keyword_diff:
+            return FlowResult(
+                success=True, proof_type="data_exposure",
+                severity="medium",
+                evidence={
+                    "endpoint": endpoint.url, "method": endpoint.method,
+                    "valid_status": resp_valid.status_code,
+                    "invalid_status": resp_invalid.status_code,
+                    "valid_length": len(resp_valid.text),
+                    "invalid_length": len(resp_invalid.text),
+                    "issue": "User enumeration via password recovery response diff",
+                    "impact": "Attacker can determine which accounts exist",
+                },
+            )
+        return FlowResult(success=False, proof_type="non_exploitable", severity="info",
+                           evidence={"reason": "no significant diff"})

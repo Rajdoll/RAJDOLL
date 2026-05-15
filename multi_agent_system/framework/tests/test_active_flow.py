@@ -53,3 +53,28 @@ async def test_csrf_blocked_when_cross_origin_rejected():
         tester._http_client = client
         result = await tester.test_csrf(ep, session)
     assert result.success is False
+
+
+@pytest.mark.asyncio
+async def test_password_reset_detects_user_enumeration():
+    """Valid email returns different response than invalid -> user enumeration."""
+    def handler(req):
+        import json
+        body_bytes = b""
+        # httpx MockTransport - req.content has the body
+        try:
+            body_str = req.content.decode("utf-8") if req.content else ""
+        except Exception:
+            body_str = ""
+        if "valid@target.test" in body_str or "valid@target.test" in str(req.url):
+            return httpx.Response(200, text="Reset link sent")
+        else:
+            return httpx.Response(200, text="No account found")
+    tester = ActiveFlowTester()
+    ep = EndpointSpec(url="http://target.test/api/reset", method="POST",
+                      params=["email"])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        tester._http_client = client
+        result = await tester.test_password_reset(ep, valid_identity="valid@target.test")
+    assert result.success is True
+    assert "enumeration" in result.evidence.get("issue", "").lower()
