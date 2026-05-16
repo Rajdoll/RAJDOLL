@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from urllib.parse import urlparse
 
 from .base_agent import BaseAgent, AgentRegistry
@@ -208,8 +209,11 @@ Write to shared_context:
         token_eps = read_tag(inventory, "auth_token_endpoint")
         login_eps = read_tag(inventory, "user_login")
         if not token_eps and not login_eps:
-            self.log("info", "no endpoints classified as auth_token_endpoint/user_login, skipping")
-            return
+            # Fallback: still test TLS configuration and any JWT visible in the session.
+            # Skipping entirely would miss WeakCrypto findings on targets with non-standard auth paths.
+            self.log("info", "no auth endpoints tagged — running TLS + JWT-on-session fallback only")
+            token_eps = []
+            login_eps = []
 
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
@@ -327,6 +331,31 @@ Write to shared_context:
                     self.log("info", "No JWT token available for testing (requires authenticated session)")
             except Exception as e:
                 self.log("warning", f"test_jwt_weakness failed: {e}")
+
+        # Aggressive-mode: always probe JWT when auth_session has a token.
+        # Generic OWASP WSTG-CRYP-04 baseline — runs even without USE_FRAMEWORK.
+        if os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
+            _auth_data = (getattr(self, "get_auth_session", None) or (lambda: {}))() or {}
+            _jwt_token = _auth_data.get("token") or _auth_data.get("jwt_token")
+            if _jwt_token and not getattr(self, "active_flow", None):
+                self.log("info", "[Aggressive] forcing JWT manipulation probe on observed token")
+                try:
+                    from ..framework.active_flow import ActiveFlowTester
+                    from ..framework.types import EndpointSpec
+                    _af = ActiveFlowTester()
+                    _whoami_url = (self._get_target() or "").rstrip("/") + "/api/whoami"
+                    _ep = EndpointSpec(url=_whoami_url, method="GET")
+                    _res = await _af.test_jwt_manipulation(_jwt_token, _ep)
+                    if _res.success:
+                        self.add_finding(
+                            "WSTG-CRYP-04",
+                            f"JWT manipulation: {_res.evidence.get('technique', 'forged accepted')}",
+                            severity=_res.severity,
+                            evidence=_res.evidence,
+                            details="Aggressive mode forced JWT probe.",
+                        )
+                except Exception as _exc:
+                    self.log("warning", f"[Aggressive] forced JWT probe failed: {_exc}")
 
         # Active JWT manipulation (Component C)
         if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None):
