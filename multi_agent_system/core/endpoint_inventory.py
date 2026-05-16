@@ -80,6 +80,56 @@ def read_tag(inventory: dict[str, Any], tag: str) -> list[dict[str, Any]]:
 
 _PLACEHOLDER_RE = re.compile(r"\{[^}]+\}|:\w+")
 
+_NUMERIC_ID_RE = re.compile(r"/\{[^}]+\}|/:[a-zA-Z]+|/\d+(/|$)")
+_REGISTRATION_HINT_RE = re.compile(
+    r"(?:^|/)(users?|register|signup|account|registration)(?:/|$)",
+    re.IGNORECASE,
+)
+_LOGIN_HINT_RE = re.compile(r"(?:^|/)(login|signin|authenticate)(?:/|$)", re.IGNORECASE)
+_PASSWORD_RECOVERY_HINT_RE = re.compile(
+    r"(?:^|/)(reset[-_]?password|forgot[-_]?password|password[-_]?recovery)(?:/|$)",
+    re.IGNORECASE,
+)
+_ADMIN_HINT_RE = re.compile(r"(?:^|/)(admin|administrator|console|dashboard)(?:/|$)", re.IGNORECASE)
+_FILE_UPLOAD_HINT_RE = re.compile(r"(?:^|/)(upload|file|attachment|image)(?:/|$)", re.IGNORECASE)
+
+
+def augment_tags_heuristic(endpoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for ep in endpoints:
+        path = ep.get("path") or ep.get("url") or ""
+        method = (ep.get("method") or "GET").upper()
+        params = ep.get("params") or []
+        content_type = (ep.get("content_type") or "").lower()
+        current = set(ep.get("tags") or [])
+
+        if params or "?" in path:
+            current.add("error_prone_param")
+
+        if _NUMERIC_ID_RE.search(path):
+            current.add("idor_candidate")
+
+        if method in {"POST", "PUT", "PATCH", "DELETE"}:
+            current.add("state_changing_resource")
+            if _REGISTRATION_HINT_RE.search(path):
+                current.add("user_registration")
+            if _LOGIN_HINT_RE.search(path):
+                current.add("user_login")
+            if _PASSWORD_RECOVERY_HINT_RE.search(path):
+                current.add("password_recovery")
+            if "multipart" in content_type:
+                current.add("file_upload")
+            if _FILE_UPLOAD_HINT_RE.search(path):
+                current.add("file_upload")
+
+        if path.startswith("/api/") or "/api/" in path or "/rest/" in path:
+            current.add("api_generic")
+
+        if _ADMIN_HINT_RE.search(path):
+            current.add("admin_panel")
+
+        ep["tags"] = sorted(current)
+    return endpoints
+
 
 def resolve_placeholders(
     endpoints: list[dict[str, Any]],
