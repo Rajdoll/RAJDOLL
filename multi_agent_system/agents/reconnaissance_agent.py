@@ -1645,6 +1645,40 @@ Operate autonomously without human guidance.
         except Exception as _exc:
             self.log("error", f"[Recon] endpoint_inventory build failed: {_exc}")
 
+        # R5b: explicit /.well-known/security.txt probe (WSTG-INFO-02 spec RFC 9116).
+        try:
+            import httpx as _httpx_sec
+            async with _httpx_sec.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _sec_client:
+                _sec_url = _target_url.rstrip("/") + "/.well-known/security.txt"
+                _sec_resp = await _sec_client.get(_sec_url)
+                if _sec_resp.status_code == 200 and _sec_resp.text.strip():
+                    self.add_finding(
+                        "WSTG-INFO-02",
+                        "security.txt disclosure file present",
+                        severity="info",
+                        evidence={
+                            "url": _sec_url,
+                            "proof_type": "data_exposure",
+                            "content_preview": _sec_resp.text[:300],
+                            "impact": "Reveals security contact information per RFC 9116.",
+                        },
+                        details="Standard security disclosure file found — informational only.",
+                    )
+                elif _sec_resp.status_code == 404:
+                    self.add_finding(
+                        "WSTG-INFO-02",
+                        "Missing security.txt — no published security disclosure policy",
+                        severity="info",
+                        evidence={
+                            "url": _sec_url,
+                            "proof_type": "inventory_only",
+                            "impact": "No published security contact per RFC 9116.",
+                        },
+                        details="No /.well-known/security.txt found.",
+                    )
+        except Exception as _sec_exc:
+            self.log("warning", f"[Recon] security.txt probe failed: {_sec_exc}")
+
         # R6: JS bundle analysis (Component B) — gated by USE_FRAMEWORK
         if _settings.use_framework and _settings.use_js_analyzer and getattr(self, "js_bundle_analyzer", None):
             try:
@@ -1667,6 +1701,55 @@ Operate autonomously without human guidance.
                              "method": "GET", "framework_hint": _route.get("framework")}
                         )
                     self.write_context("endpoint_inventory", _inventory)
+
+                # WSTG-INFO-06: many client-side routes = hidden route risk.
+                if _n_routes >= 20:
+                    self.add_finding(
+                        "WSTG-INFO-06",
+                        f"SPA exposes {_n_routes} client-side routes including potential admin/debug surfaces",
+                        severity="low",
+                        evidence={
+                            "route_count": _n_routes,
+                            "proof_type": "information_disclosure",
+                            "sample_routes": [r["path"] for r in _js_result.get("routes", [])[:10]],
+                            "impact": "Hidden routes may be reachable without server-side auth checks.",
+                        },
+                        details="Client-side route table extracted from JS bundle — review each route for authorization.",
+                    )
+
+                # WSTG-CONF-01: known-vulnerable JS library detection via regex in bundle source.
+                import re as _re_lib
+                _vuln_patterns = [
+                    (r"/\*!?\s*jQuery v?1\.[0-9]\.", "jQuery 1.x", "Multiple XSS CVEs (e.g. CVE-2020-11022)"),
+                    (r"/\*!?\s*lodash v?[123]\.", "lodash 1-3.x", "Prototype pollution CVE-2018-16487"),
+                    (r"/\*!?\s*moment\.js v?[12]\.", "moment.js 1-2.x", "ReDoS CVE-2017-18214"),
+                    (r"/\*!?\s*AngularJS v?1\.[0-5]\.", "AngularJS 1.0-1.5", "Sandbox escape CVEs"),
+                ]
+                for _src_url in [
+                    _target_url.rstrip("/") + "/main.js",
+                    _target_url.rstrip("/") + "/vendor.js",
+                    _target_url.rstrip("/") + "/runtime.js",
+                ]:
+                    try:
+                        _lib_resp = await _client.get(_src_url, timeout=10)
+                        _lib_text = _lib_resp.text[:200000]
+                        for _pat, _name, _impact in _vuln_patterns:
+                            if _re_lib.search(_pat, _lib_text):
+                                self.add_finding(
+                                    "WSTG-CONF-01",
+                                    f"Outdated JS library detected: {_name}",
+                                    severity="medium",
+                                    evidence={
+                                        "library": _name,
+                                        "source_file": _src_url,
+                                        "proof_type": "data_exposure",
+                                        "impact": _impact,
+                                    },
+                                    details=f"Vendor signature for {_name} found in {_src_url}. Update or replace.",
+                                )
+                                break
+                    except Exception:
+                        continue
             except Exception as _exc:
                 self.log("warning", f"[Recon] JS bundle analysis failed: {_exc}")
 
