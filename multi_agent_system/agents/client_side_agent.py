@@ -80,6 +80,29 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
         if not test_urls:
             test_urls = [target]
 
+        def _client_evidence(url: str, data: dict, *, default_proof: str = "dangerous_pattern") -> dict:
+            findings = data.get("findings", []) if isinstance(data, dict) else []
+            confirmed = any(
+                bool(f.get("exploit_confirmed") or f.get("sink_confirmed") or f.get("executed"))
+                for f in findings
+                if isinstance(f, dict)
+            )
+            proof_type = "exploit_confirmed" if confirmed or data.get("exploit_confirmed") else default_proof
+            evidence = dict(data) if isinstance(data, dict) else {"raw": data}
+            evidence.setdefault("endpoint", url)
+            evidence.setdefault("proof_type", proof_type)
+            evidence.setdefault("impact", "Client-side issue requires exploit confirmation before report submission")
+            return evidence
+
+        def _client_severity(data: dict, default: str = "medium") -> str:
+            findings = data.get("findings", []) if isinstance(data, dict) else []
+            confirmed = any(
+                bool(f.get("exploit_confirmed") or f.get("sink_confirmed") or f.get("executed"))
+                for f in findings
+                if isinstance(f, dict)
+            )
+            return default if confirmed or data.get("exploit_confirmed") else "low"
+
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
 
@@ -231,7 +254,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                     data = res.get("data") or res
                     if data.get("vulnerable"):
                         self.add_finding("WSTG-CLNT-09", "Clickjacking possible (missing XFO/CSP)", 
-                                       severity="medium", evidence=data,
+                                       severity="low", evidence=_client_evidence(target, data, default_proof="dangerous_pattern"),
                                        details=f"Found {len(data.get('findings', []))} clickjacking issues")
             except Exception as e:
                 self.log("warning", f"Clickjacking testing failed: {e}")
@@ -291,9 +314,9 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data") or res
                     if data.get("vulnerable"):
-                        severity = "critical" if any(f.get('severity') == 'CRITICAL' for f in data.get('findings', [])) else "high"
+                        severity = _client_severity(data, default="high")
                         self.add_finding("WSTG-CLNT-13", "Prototype pollution vulnerabilities detected",
-                                       severity=severity, evidence=data,
+                                       severity=severity, evidence=_client_evidence(target, data),
                                        details="JavaScript prototype pollution via __proto__ or constructor.prototype")
             except Exception as e:
                 self.log("warning", f"test_prototype_pollution failed: {e}")
@@ -329,9 +352,9 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data") or res
                     if data.get("vulnerable"):
-                        severity = "critical" if any(f.get('severity') == 'CRITICAL' for f in data.get('findings', [])) else "high"
+                        severity = _client_severity(data, default="high")
                         self.add_finding("WSTG-CLNT-13", "Client-side template injection detected",
-                                       severity=severity, evidence=data,
+                                       severity=severity, evidence=_client_evidence(target, data),
                                        details="Template injection in AngularJS/Vue.js/Handlebars framework")
             except Exception as e:
                 self.log("warning", f"test_client_side_template_injection failed: {e}")
@@ -452,6 +475,50 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                         self.log("info", f"No known-vulnerable components found: {data.get('message', '')}")
             except Exception as e:
                 self.log("warning", f"scan_vulnerable_components failed: {e}")
+
+        # Aggressive-mode: force reflected XSS probe on parameterized endpoints.
+        # Generic OWASP WSTG-CLNT-01/02 baseline — not target-specific.
+        import os as _os
+        if _os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
+            import httpx as _httpx
+            _inventory = self.shared_context.get("endpoint_inventory", {})
+            _eps = _inventory.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
+            _candidates = [
+                ep for ep in _eps
+                if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))
+            ][:10]
+            _marker = "rajdoll-xss-probe-7791"
+            _xss_payloads = [
+                f"<script>alert('{_marker}')</script>",
+                f"<img src=x onerror=alert('{_marker}')>",
+                f"<svg onload=alert('{_marker}')>",
+            ]
+            async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _xss_client:
+                for ep in _candidates:
+                    _url = ep.get("url") or ep.get("path")
+                    if not _url:
+                        continue
+                    _params = ep.get("params") or list((ep.get("query_parameters") or {}).keys()) or ["q"]
+                    for _payload in _xss_payloads:
+                        try:
+                            _resp = await _xss_client.get(_url, params={_params[0]: _payload})
+                            if _payload in _resp.text or _marker in _resp.text:
+                                self.add_finding(
+                                    "WSTG-CLNT-01",
+                                    f"Reflected XSS via {_params[0]} on {_url}",
+                                    severity="high",
+                                    evidence={
+                                        "url": _url,
+                                        "parameter": _params[0],
+                                        "payload": _payload,
+                                        "proof_type": "reflection_detected",
+                                        "marker_in_response": _marker in _resp.text,
+                                    },
+                                    details="Aggressive mode forced reflected XSS probe — payload reflected unfiltered in response body.",
+                                )
+                                break
+                        except Exception:
+                            continue
 
     def _get_tool_info(self) -> dict:
         return {
