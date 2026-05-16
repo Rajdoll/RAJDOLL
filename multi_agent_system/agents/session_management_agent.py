@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from .base_agent import BaseAgent, AgentRegistry
 from typing import ClassVar
 from ..utils.mcp_client import MCPClient
@@ -412,16 +413,28 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_session_hijacking failed: {e}")
 
-        # Active CSRF test (Component C) -- opt-in via USE_FRAMEWORK
-        if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None):
+        # Active CSRF test (Component C) — runs in aggressive mode or with USE_FRAMEWORK
+        _agg = os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive"
+        if (_settings.use_framework and _settings.use_active_flow) or _agg:
             from multi_agent_system.framework.types import EndpointSpec
-            from multi_agent_system.framework.active_flow import SessionRef
+            from multi_agent_system.framework.active_flow import SessionRef, ActiveFlowTester
             inventory = self.shared_context.get("endpoint_inventory") or {}
             _by_tag = inventory.get("by_tag", {})
+            # Primary: explicitly tagged state-changing endpoints
             state_changing = (
                 _by_tag.get("state_changing_money", []) +
                 _by_tag.get("state_changing_resource", [])
             )
+            # Fallback (aggressive): any POST/PUT/PATCH/DELETE endpoint
+            if not state_changing and _agg:
+                _all = inventory.get("endpoints", [])
+                state_changing = [
+                    {"url": ep.get("url") or ep.get("path"), "method": ep.get("method", "POST")}
+                    for ep in _all
+                    if (ep.get("method", "GET").upper() in {"POST", "PUT", "PATCH", "DELETE"})
+                ][:5]
+                self.log("info", f"[Aggressive] CSRF fallback: {len(state_changing)} state-changing endpoints")
+            _flow = getattr(self, "active_flow", None) or ActiveFlowTester()
             _auth = (getattr(self, "get_auth_session", None) or (lambda: {}))() or {}
             session = SessionRef(
                 cookies=_auth.get("cookies", {}) or {},
@@ -434,7 +447,7 @@ Write to shared_context:
                     continue
                 ep_spec = EndpointSpec(url=ep_url, method="POST")
                 try:
-                    csrf_result = await self.active_flow.test_csrf(ep_spec, session)
+                    csrf_result = await _flow.test_csrf(ep_spec, session)
                 except Exception as exc:
                     self.log("warning", f"CSRF test errored: {exc}")
                     continue
