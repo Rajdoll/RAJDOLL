@@ -435,7 +435,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 "total_urls": len(capped_urls),
                 "tests_for_url": tests[:MAX_TESTS_PER_URL],
                 "priority_score": priority_score,
-                "findings_so_far": len(self._findings),  # DB findings from all agents so far
+                "findings_so_far": len(getattr(self, "_findings", [])),
             })
 
             self.log("info", f"\n{'='*60}")

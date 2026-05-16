@@ -451,7 +451,7 @@ class BaseAgent:
 		self.broadcast_execution_status({
 			"phase": "agent_running",
 			"agent": self.agent_name,
-			"findings_so_far": len(self._findings),
+			"findings_so_far": len(getattr(self, "_findings", [])),
 		})
 
 		# Run agent logic with exception handling
