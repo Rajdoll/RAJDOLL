@@ -204,8 +204,23 @@ Write to shared_context:
         inventory = self.shared_context.get("endpoint_inventory", {})
         param_eps = read_tag(inventory, "error_prone_param")
         if not param_eps:
-            self.log("info", "no endpoints classified as error_prone_param, skipping")
-            return
+            # Fallback: any endpoint with query parameters is testable for error disclosure.
+            all_eps = inventory.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
+            param_eps = [
+                ep for ep in all_eps
+                if (ep.get("params") or ep.get("query_parameters")) or "?" in (ep.get("url") or ep.get("path") or "")
+            ][:20]
+            if not param_eps:
+                self.log("info", "no parameterized endpoints found — emitting inventory-gap lead")
+                self.add_finding(
+                    "WSTG-ERRH-01",
+                    "ErrorHandlingAgent skipped: no parameterized endpoints in inventory",
+                    severity="info",
+                    evidence={"proof_type": "inventory_only"},
+                    details="No endpoints with query parameters discovered to probe for error disclosure.",
+                )
+                return
+            self.log("info", f"using fallback: {len(param_eps)} parameterized endpoints from discovered")
 
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
