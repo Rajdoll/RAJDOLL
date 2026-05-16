@@ -1633,6 +1633,12 @@ Operate autonomously without human guidance.
                 captured_ids=self.shared_context.get("captured_ids", {}),
                 phase_stats=_phase_stats,
             )
+            # Heuristic augmentation: fill gaps from LLM classifier with deterministic
+            # OWASP-style rules (path/method/content-type patterns — target-agnostic).
+            from ..core.endpoint_inventory import augment_tags_heuristic as _augment, build_inventory as _rebuild_inv
+            _endpoints = _inventory.get("endpoints", [])
+            _augment(_endpoints)
+            _inventory = _rebuild_inv(_endpoints, stats=_inventory.get("stats", {}))
             self.write_context("endpoint_inventory", _inventory)
             _tagged_count = sum(len(v) for v in _inventory["by_tag"].values())
             self.log("info", f"[Recon] endpoint_inventory: {_phase_stats} -> {_tagged_count} tagged endpoints")
