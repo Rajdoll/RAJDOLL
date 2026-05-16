@@ -487,6 +487,58 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             if _skip_agent:
                 break
 
+        # Aggressive-mode: force SSTi probe on parameterized endpoints.
+        # Generic Tplmap-style detection — {{7*7}} -> 49 means template eval succeeded.
+        import os as _os
+        if _os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
+            import httpx as _httpx
+            _inventory = self.shared_context.get("endpoint_inventory", {})
+            _eps = _inventory.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
+            _candidates = [
+                ep for ep in _eps
+                if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))
+            ][:15]
+            _ssti_payloads = [
+                ("{{7*7}}", "49"),
+                ("${7*7}", "49"),
+                ("<%= 7*7 %>", "49"),
+                ("#{7*7}", "49"),
+                ("{{7*'7'}}", "7777777"),
+            ]
+            async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _ssti_client:
+                for ep in _candidates:
+                    _url = ep.get("url") or ep.get("path")
+                    if not _url:
+                        continue
+                    _params = ep.get("params") or list((ep.get("query_parameters") or {}).keys()) or ["q"]
+                    for _payload, _signal in _ssti_payloads:
+                        try:
+                            _resp = await _ssti_client.get(_url, params={_params[0]: _payload})
+                            if _signal in _resp.text:
+                                all_findings.setdefault("ssti", []).append({
+                                    "url": _url,
+                                    "parameter": _params[0],
+                                    "payload": _payload,
+                                    "signal_detected": _signal,
+                                })
+                                self.add_finding(
+                                    "WSTG-INPV-18",
+                                    f"Server-Side Template Injection via {_params[0]} on {_url}",
+                                    severity="critical",
+                                    evidence={
+                                        "url": _url,
+                                        "parameter": _params[0],
+                                        "payload": _payload,
+                                        "expected_signal": _signal,
+                                        "proof_type": "exploit_success",
+                                        "impact": "Template engine evaluates arbitrary expressions — RCE potential.",
+                                    },
+                                    details=f"Aggressive mode forced SSTi probe. Payload {_payload} produced signal {_signal} in response.",
+                                )
+                                break
+                        except Exception:
+                            continue
+
         # Report all findings
         self._report_all_findings(all_findings)
 
