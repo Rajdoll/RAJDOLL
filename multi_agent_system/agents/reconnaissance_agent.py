@@ -1655,26 +1655,26 @@ Operate autonomously without human guidance.
                     self.add_finding(
                         "WSTG-INFO-02",
                         "security.txt disclosure file present",
-                        severity="info",
+                        severity="medium",
                         evidence={
                             "url": _sec_url,
-                            "proof_type": "data_exposure",
+                            "proof_type": "sensitive_data_exposure",
                             "content_preview": _sec_resp.text[:300],
-                            "impact": "Reveals security contact information per RFC 9116.",
+                            "impact": "Reveals security contact, encryption key, and acknowledgement URLs per RFC 9116.",
                         },
-                        details="Standard security disclosure file found — informational only.",
+                        details="/.well-known/security.txt found with content — review for sensitive contact/key info.",
                     )
                 elif _sec_resp.status_code == 404:
                     self.add_finding(
                         "WSTG-INFO-02",
                         "Missing security.txt — no published security disclosure policy",
-                        severity="info",
+                        severity="medium",
                         evidence={
                             "url": _sec_url,
-                            "proof_type": "inventory_only",
-                            "impact": "No published security contact per RFC 9116.",
+                            "proof_type": "sensitive_data_exposure",
+                            "impact": "No security disclosure policy found at RFC 9116 standard location.",
                         },
-                        details="No /.well-known/security.txt found.",
+                        details="No /.well-known/security.txt — organization has no published security contact.",
                     )
         except Exception as _sec_exc:
             self.log("warning", f"[Recon] security.txt probe failed: {_sec_exc}")
@@ -1707,12 +1707,12 @@ Operate autonomously without human guidance.
                     self.add_finding(
                         "WSTG-INFO-06",
                         f"SPA exposes {_n_routes} client-side routes including potential admin/debug surfaces",
-                        severity="low",
+                        severity="medium",
                         evidence={
                             "route_count": _n_routes,
-                            "proof_type": "information_disclosure",
+                            "proof_type": "sensitive_data_exposure",
                             "sample_routes": [r["path"] for r in _js_result.get("routes", [])[:10]],
-                            "impact": "Hidden routes may be reachable without server-side auth checks.",
+                            "impact": "Hidden routes extracted from JS bundle may bypass server-side auth checks.",
                         },
                         details="Client-side route table extracted from JS bundle — review each route for authorization.",
                     )
