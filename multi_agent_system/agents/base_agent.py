@@ -84,6 +84,7 @@ class BaseAgent:
 		self._mcp_client: Optional[MCPClient] = None
 		self.context_manager = SharedContextManager(self.job_id, log_hook=self._context_log_hook)
 		self._load_hitl_overrides()
+		self._finding_count = 0  # live counter for execution monitor
 		
 		# PHASE 2: Initialize Knowledge Graph and Confidence Scorer
 		self._knowledge_graph: Optional[KnowledgeGraph] = None
@@ -451,7 +452,7 @@ class BaseAgent:
 		self.broadcast_execution_status({
 			"phase": "agent_running",
 			"agent": self.agent_name,
-			"findings_so_far": len(getattr(self, "_findings", [])),
+			"findings_so_far": self._finding_count,
 		})
 
 		# Run agent logic with exception handling
@@ -694,6 +695,13 @@ class BaseAgent:
 				db.rollback()
 				print(f"⚠️  {self.agent_name}: Duplicate finding skipped: {title}", file=sys.stderr, flush=True)
 				return
+			self._finding_count += 1
+			self.broadcast_execution_status({
+				"phase": "finding_added",
+				"agent": self.agent_name,
+				"findings_so_far": self._finding_count,
+				"last_finding": title[:80],
+			})
 			db.refresh(finding)
 			# Enrich finding after successful write — EnrichmentService.enrich() never raises
 			enrichment = EnrichmentService.enrich(category, title, severity, evidence or {})
