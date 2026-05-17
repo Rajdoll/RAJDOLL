@@ -25,6 +25,8 @@ from urllib.parse import urlparse
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"weak-cryptography-testing")
 
 # --- Helpers ---
+import shlex
+import re as re_module
 async def sh(cmd: str, timeout: int = 120) -> str:
     proc = await asyncio.create_subprocess_exec(
         "bash", "-lc", cmd,
@@ -49,9 +51,14 @@ async def test_tls_configuration(host: str, port: int = 443) -> Dict[str, Any]:
     This provides much more reliable and detailed results than text parsing.
     """
     try:
+        if not re_module.match(r'^[a-zA-Z0-9.\-]+$', str(host)):
+            return {"status": "error", "message": "Invalid host"}
+        if not re_module.match(r'^\d{1,5}$', str(port)):
+            return {"status": "error", "message": "Invalid port"}
+
         output_file = f"testssl_output_{host}.json"
         # Menjalankan testssl.sh dengan output JSON
-        cmd = f"testssl.sh --quiet --jsonfile {output_file} https://{host}:{port}"
+        cmd = f"testssl.sh --quiet --jsonfile {shlex.quote(output_file)} https://{host}:{port}"
         await sh(cmd, 180)
 
         if not os.path.exists(output_file):

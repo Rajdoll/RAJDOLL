@@ -25,6 +25,7 @@ from urllib.parse import urlparse, parse_qs, urlunparse
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"business-logic-testing")
 
 # --- Helpers ---
+import shlex
 def build_request_kwargs(auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build request kwargs with authentication if provided."""
     kwargs = {"timeout": 8, "follow_redirects": False, "verify": False}
@@ -59,7 +60,7 @@ async def test_data_validation_extremes(url_with_fuzz: str, auth_session: Option
         # Menggunakan file sementara untuk output JSON ffuf
         output_file = f"/tmp/bl_val_{random.randint(1000, 9999)}.json"
         # Wordlist: 0, 1 (batas bawah), 999999 (angka besar), -1 (negatif), abc (string)
-        cmd = f"ffuf -u '{url_with_fuzz}' -w -:0,1,999999,-1,abc -mc all -of json -o {output_file}"
+        cmd = f"ffuf -u {shlex.quote(url_with_fuzz)} -w -:0,1,999999,-1,abc -mc all -of json -o {shlex.quote(output_file)}"
         proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         await proc.communicate()
 

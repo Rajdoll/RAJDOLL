@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"authentication-testing")
 
 # --- Helpers ---
+import shlex
 # Default to workspace-mounted SecLists inside container; allow override via env
 WORDLIST_DIR = os.environ.get("WORDLIST_DIR", "/app/SecLists")
 
@@ -174,7 +175,7 @@ async def test_auth_bypass(url: str) -> Dict[str, Any]:
             return {"status": "error", "message": f"Wordlist not found: {wordlist_path}"}
         
         # ffuf akan memfilter status code 401/403/404, mencari yang berhasil (e.g., 200)
-        cmd = f"ffuf -u {url}/FUZZ -w {wordlist_path} -mc 200,302 -fs 0"
+        cmd = f"ffuf -u {shlex.quote(url + '/FUZZ')} -w {shlex.quote(wordlist_path)} -mc 200,302 -fs 0"
         output = await run(cmd, timeout=300)
         
         # Parsing sederhana output ffuf
