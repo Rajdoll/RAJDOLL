@@ -167,7 +167,12 @@ async def create_scan(req: CreateScanRequest):
 		db.commit()
 
 	# Enqueue background job via Celery app (ensures correct broker/config)
-	celery_app.send_task("multi_agent_system.tasks.tasks.run_job_task", args=[job.id])
+	result = celery_app.send_task("multi_agent_system.tasks.tasks.run_job_task", args=[job.id])
+	with get_db() as db:
+		j = db.query(Job).get(job.id)
+		if j:
+			j.celery_task_id = result.id
+			db.commit()
 
 	return get_status(job.id)
 
@@ -271,20 +276,17 @@ def cancel_scan(job_id: int):
 			if not agent.finished_at:
 				agent.finished_at = datetime.utcnow()
 		
+		celery_task_id = job.celery_task_id
 		db.commit()
-		
+
 		# Try to revoke Celery task if it's still queued
 		try:
 			from multi_agent_system.tasks.celery_app import celery_app
-			# Revoke all tasks for this job
-			celery_app.control.revoke(
-				f"multi_agent_system.tasks.tasks.run_job_task-{job_id}",
-				terminate=True,
-				signal='SIGKILL'
-			)
+			if celery_task_id:
+				celery_app.control.revoke(celery_task_id, terminate=True, signal='SIGKILL')
 		except Exception as e:
 			print(f"[API] Warning: Could not revoke Celery task: {e}")
-		
+
 	return {"message": "Scan cancelled successfully", "job_id": job_id}
 
 

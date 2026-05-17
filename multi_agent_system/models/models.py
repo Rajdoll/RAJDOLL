@@ -29,6 +29,7 @@ class JobStatus(str, enum.Enum):
     failed = "failed"
     cancelled = "cancelled"
     paused = "paused"
+    waiting_checkpoint = "waiting_checkpoint"
 
 
 class AgentStatus(str, enum.Enum):
@@ -66,6 +67,7 @@ class Job(Base):
     started_at: Mapped[Optional[datetime]] = Column(DateTime, nullable=True)
     status: Mapped[JobStatus] = Column(Enum(JobStatus), default=JobStatus.queued, nullable=False)
     plan: Mapped[Optional[dict]] = Column(JSON, nullable=True)
+    celery_task_id: Mapped[Optional[str]] = Column(String(256), nullable=True)
     summary: Mapped[Optional[str]] = Column(Text, nullable=True)
     paused_state: Mapped[Optional[dict]] = Column(JSON, nullable=True)
     accumulated_directive: Mapped[Optional[dict]] = Column(JSON, nullable=True)
