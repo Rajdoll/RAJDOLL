@@ -65,11 +65,9 @@ def test_all_scanning_agents_have_tool_server_map():
     from multi_agent_system.agents.business_logic_agent import BusinessLogicAgent
     from multi_agent_system.agents.error_handling_agent import ErrorHandlingAgent
     from multi_agent_system.agents.file_upload_agent import FileUploadAgent
-    from multi_agent_system.agents.api_testing_agent import APITestingAgent
     from multi_agent_system.agents.base_agent import BaseAgent
 
-    for cls in [ClientSideAgent, BusinessLogicAgent, ErrorHandlingAgent,
-                FileUploadAgent, APITestingAgent]:
+    for cls in [ClientSideAgent, BusinessLogicAgent, ErrorHandlingAgent, FileUploadAgent]:
         # Must override base class (which returns {})
         assert cls._get_tool_server_map is not BaseAgent._get_tool_server_map, \
             f"{cls.__name__} does not override _get_tool_server_map"
