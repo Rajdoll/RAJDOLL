@@ -6,6 +6,7 @@ import json
 
 from multi_agent_system.core.db import get_db
 from multi_agent_system.models.models import Job, JobAgent, Finding, AgentEvent
+from multi_agent_system.utils.report_service import serialize_findings_for_job, summarize_findings
 
 
 router = APIRouter()
@@ -32,7 +33,25 @@ def list_scans(limit: int = Query(20, ge=1, le=200)):
 
 
 @router.get("/scans/{job_id}/findings")
-def get_findings(job_id: int):
+def get_findings(
+    job_id: int,
+    mode: str = Query("reportable", pattern="^(raw|reportable|validated)$"),
+):
+    with get_db() as db:
+        job = db.query(Job).get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return serialize_findings_for_job(
+            db,
+            job_id,
+            mode=mode,
+            include_evidence=True,
+            include_internal_evidence=(mode == "raw"),
+        )
+
+
+@router.get("/scans/{job_id}/findings/summary")
+def get_findings_summary(job_id: int):
     with get_db() as db:
         job = db.query(Job).get(job_id)
         if not job:
@@ -43,21 +62,10 @@ def get_findings(job_id: int):
             .order_by(Finding.created_at.asc())
             .all()
         )
-        return [
-            {
-                "id": f.id,
-                "agent_name": f.agent_name,
-                "category": f.category,
-                "title": f.title,
-                "severity": f.severity.value if hasattr(f.severity, 'value') else str(f.severity),
-                "evidence": f.evidence,
-                "details": f.details,
-                "created_at": f.created_at,
-                "is_true_positive": f.is_true_positive,
-                "validation_notes": f.validation_notes,
-            }
-            for f in findings
-        ]
+        return {
+            "job_id": job_id,
+            **summarize_findings(findings),
+        }
 
 
 @router.get("/scans/{job_id}/plan")
@@ -115,10 +123,16 @@ def get_events(job_id: int, agent: Optional[str] = None, limit: int = Query(200,
             q = q.filter(JobAgent.agent_name == agent)
         events = q.order_by(AgentEvent.created_at.asc()).limit(limit).all()
 
+        agent_ids = {e.job_agent_id for e in events}
+        agent_names = {
+            ja.id: ja.agent_name
+            for ja in db.query(JobAgent).filter(JobAgent.id.in_(agent_ids)).all()
+        } if agent_ids else {}
+
         return [
             {
                 "created_at": e.created_at,
-                "agent_name": db.query(JobAgent).get(e.job_agent_id).agent_name,  # minimal extra lookup
+                "agent_name": agent_names.get(e.job_agent_id, "unknown"),
                 "level": e.level,
                 "message": e.message,
                 "data": e.data,
