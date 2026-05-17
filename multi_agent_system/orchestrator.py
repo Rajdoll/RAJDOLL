@@ -1320,6 +1320,10 @@ class Orchestrator:
 		return False
 
 	def run(self) -> None:
+		with get_db() as db:
+			_job = db.query(Job).get(self.job_id)
+			if _job and _job.status == JobStatus.cancelled:
+				return
 		self._update_job_status(JobStatus.running)
 		# Record actual scan start time (not queue time) for accurate duration
 		with get_db() as db:
