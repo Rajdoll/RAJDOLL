@@ -1655,26 +1655,26 @@ Operate autonomously without human guidance.
                     self.add_finding(
                         "WSTG-INFO-02",
                         "security.txt disclosure file present",
-                        severity="medium",
+                        severity="informational",
                         evidence={
                             "url": _sec_url,
-                            "proof_type": "sensitive_data_exposure",
+                            "proof_type": "disclosure_policy",
                             "content_preview": _sec_resp.text[:300],
-                            "impact": "Reveals security contact, encryption key, and acknowledgement URLs per RFC 9116.",
+                            "impact": "Verify Contact/Encryption fields contain no internal addresses.",
                         },
-                        details="/.well-known/security.txt found with content — review for sensitive contact/key info.",
+                        details="/.well-known/security.txt found — review content for sensitive contact info per RFC 9116.",
                     )
                 elif _sec_resp.status_code == 404:
                     self.add_finding(
                         "WSTG-INFO-02",
                         "Missing security.txt — no published security disclosure policy",
-                        severity="medium",
+                        severity="low",
                         evidence={
                             "url": _sec_url,
-                            "proof_type": "sensitive_data_exposure",
-                            "impact": "No security disclosure policy found at RFC 9116 standard location.",
+                            "proof_type": "missing_security_control",
+                            "impact": "No VDP contact at RFC 9116 location — researchers cannot report issues.",
                         },
-                        details="No /.well-known/security.txt — organization has no published security contact.",
+                        details="No /.well-known/security.txt present.",
                     )
         except Exception as _sec_exc:
             self.log("warning", f"[Recon] security.txt probe failed: {_sec_exc}")
