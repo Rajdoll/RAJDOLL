@@ -996,40 +996,19 @@ class BaseAgent:
 			}
 
 			if tool not in NO_AUTH_TOOLS:
-				# Load authenticated sessions from SharedContext
-				context = self.context_manager.load_all()
-				auth_data = context.get('authenticated_sessions', {})
-
-				if auth_data:
-					# Extract session from successful_logins array (created by SessionManager)
-					# Format: {"successful_logins": [{"username": "...", "token": "...", "cookies": {...}}]}
-					successful_logins = auth_data.get('successful_logins', [])
-
-					if successful_logins and len(successful_logins) > 0:
-						# Use first successful login (usually admin or user account)
-						# Format: {"username": "...", "token": "...", "cookies": {...}, "type": "jwt/cookie"}
-						session = successful_logins[0]
-
-						# Also pass it down as the explicit auth_session argument so MCPClient
-						# can standardize auth propagation when appropriate.
-						auth_session = session
-
-						# Inject auth_session into both:
-						# - config.auth_session (most MCP tool modules)
-						# - auth_session (some tools accept it top-level)
-						if 'config' not in args:
-							args['config'] = {}
-						if 'auth_session' not in args.get('config', {}):
-							args['config']['auth_session'] = session
-						if 'auth_session' not in args:
-							args['auth_session'] = session
-							self.log("info", f"🔑 Auto-injected auth session for {tool}", {
-								"tool": tool,
-								"username": session.get('username', 'unknown'),
-								"auth_type": session.get('type', session.get('session_type', 'unknown')),
-								"has_token": bool(session.get('token')),
-								"has_cookies": bool(session.get('cookies'))
-							})
+				session = self._get_auth_session()
+				if session:
+					auth_session = session
+					if 'config' not in args:
+						args['config'] = {}
+					if 'auth_session' not in args.get('config', {}):
+						args['config']['auth_session'] = session
+					if 'auth_session' not in args:
+						args['auth_session'] = session
+					self.log("info", f"Auto-injected auth session for {tool}", {
+						"has_token": bool(session.get('token')),
+						"has_cookies": bool(session.get('cookies'))
+					})
 
 		# Normalize LLM-generated arguments to MCP signatures
 		if args:
