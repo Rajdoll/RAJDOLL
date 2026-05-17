@@ -10,6 +10,7 @@ from ..core.config import settings
 from ..core.db import get_db
 from ..models.models import Job, JobAgent, AgentStatus, JobStatus
 from ..orchestrator import Orchestrator
+from ..utils.shared_context_manager import SharedContextManager
 
 
 def _format_exception_message(exc: BaseException) -> str:
@@ -34,17 +35,17 @@ def run_agent_task(self, job_id: int, agent_name: str) -> str:
         ja.attempts += 1
         db.commit()
 
+    # Import here to avoid circulars
+    from ..agents.base_agent import AgentRegistry
+    agent_cls = AgentRegistry.get(agent_name)
+    agent = agent_cls(job_id=job_id)
     try:
-        # Import here to avoid circulars
-        from ..agents.base_agent import AgentRegistry
-        agent_cls = AgentRegistry.get(agent_name)
-        agent = agent_cls(job_id=job_id)
-        # Run in an event loop
-        asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("closed")
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(agent.run())  # type: ignore[name-defined]
         status = AgentStatus.completed
@@ -73,7 +74,21 @@ def run_job_task(self, job_id: int, resume_from_step_idx: int | None = None) -> 
     When resume_from_step_idx is not None, skips Phases 1/1.5/2 and enters Phase 3
     at the given offset (pause/resume feature).
     """
-    orch = Orchestrator(job_id=job_id, resume_from_step_idx=resume_from_step_idx)
+    execution_id = getattr(getattr(self, "request", None), "id", None) or f"job-{job_id}"
+    context_manager = SharedContextManager(job_id)
+    if not context_manager.acquire_execution_lease(execution_id, settings.execution_lease_timeout):
+        with get_db() as db:
+            job = db.query(Job).get(job_id)
+            if job and job.status == JobStatus.completed:
+                return JobStatus.completed.value
+        return JobStatus.running.value
+
+    if resume_from_step_idx is None:
+        context_manager.delete_prefix("final_report_")
+        context_manager.delete("final_analysis")
+        context_manager.delete("scan_timing")
+
+    orch = Orchestrator(job_id=job_id, resume_from_step_idx=resume_from_step_idx, execution_id=execution_id)
     try:
         orch.run()
     except Exception:  # pragma: no cover
@@ -83,12 +98,14 @@ def run_job_task(self, job_id: int, resume_from_step_idx: int | None = None) -> 
     with get_db() as db:
         job = db.query(Job).get(job_id)
         if not job:
+            context_manager.release_execution_lease(execution_id, JobStatus.failed.value)
             return JobStatus.failed.value
 
         # Respect explicit cancellation or pause — do not overwrite.
         if job.status in (JobStatus.cancelled, JobStatus.paused):
             job.updated_at = _now()
             db.commit()
+            context_manager.release_execution_lease(execution_id, job.status.value)
             return job.status.value
 
         # Determine final status: job is "completed" if the report was generated.
@@ -112,4 +129,5 @@ def run_job_task(self, job_id: int, resume_from_step_idx: int | None = None) -> 
         job.status = final
         job.updated_at = _now()
         db.commit()
+        context_manager.release_execution_lease(execution_id, final.value)
         return final.value
