@@ -11,8 +11,6 @@ from typing import Any, Dict
 
 import httpx
 
-from .agent_runtime import CURRENT_AGENT
-
 # 🆕 Rate limiting integration
 from ..core.security_guards import rate_limiter, RateLimitExceededError
 
@@ -60,7 +58,7 @@ class MCPClient:
         """
         If MCP_SERVER_URLS is provided in env (JSON map of server=>url), use JSON-RPC to call the tool on that server.
         Otherwise, fallback to direct-import of local modules to preserve current logic.
-        
+
         Args:
             server: MCP server name (e.g., "input-validation-testing")
             tool: Tool name to call
@@ -71,15 +69,6 @@ class MCPClient:
                 - headers: Dict of additional headers (e.g., Authorization: Bearer token)
                 - token: JWT token if available
         """
-        # 0) Give the active agent (if any) a chance to request HITL approval or
-        # modify the arguments before the tool is executed.
-        agent = CURRENT_AGENT.get()
-        if agent is not None and hasattr(agent, "_before_tool_execution"):
-            decision = await agent._before_tool_execution(server, tool, args)
-            if not decision.get("approved", True):
-                return {"status": "skipped", "message": "Tool execution rejected by user"}
-            args = decision.get("arguments") or args
-        
         # 🚦 RATE LIMITING: Wait if needed to avoid overwhelming target
         target_url = args.get('domain') or args.get('url') or args.get('target')
         if target_url:
