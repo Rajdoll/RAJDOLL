@@ -24,6 +24,21 @@ from multi_agent_system.core.config import SCAN_PROFILE_DEFAULTS
 from typing import Optional
 
 
+def _mask_identity(value: Optional[str]) -> Optional[str]:
+	if not value:
+		return value
+	if "@" in value:
+		name, _, domain = value.partition("@")
+		if len(name) <= 2:
+			masked_name = "*" * len(name)
+		else:
+			masked_name = f"{name[:1]}***{name[-1:]}"
+		return f"{masked_name}@{domain}"
+	if len(value) <= 2:
+		return "*" * len(value)
+	return f"{value[:1]}***{value[-1:]}"
+
+
 def _resolve_hitl_mode(request_hitl: Optional[str]) -> str:
 	"""Resolve HITL mode: per-scan explicit > SCAN_PROFILE > fallback."""
 	if request_hitl:
@@ -90,11 +105,23 @@ async def create_scan(req: CreateScanRequest):
 	if req.credentials:
 		from multi_agent_system.utils.shared_context_manager import SharedContextManager
 		ctx = SharedContextManager(job_id=job.id)
-		ctx.write("scan_credentials", {
-			"username": req.credentials.username,
-			"password": req.credentials.password,
-			"auth_type": req.credentials.auth_type,
-		})
+		credential_ref = ctx.write_secret(
+			"scan-credentials",
+			{
+				"username": req.credentials.username,
+				"password": req.credentials.password,
+				"auth_type": req.credentials.auth_type,
+			},
+		)
+		ctx.write(
+			"scan_credentials",
+			{
+				"credential_ref": credential_ref,
+				"username_masked": _mask_identity(req.credentials.username),
+				"auth_type": req.credentials.auth_type,
+				"provided": True,
+			},
+		)
 
 	# 📝 AUDIT LOG: Record scan initiation
 	token_hash = hashlib.sha256(req.authorization_token.encode()).hexdigest() if req.authorization_token else None
@@ -107,13 +134,16 @@ async def create_scan(req: CreateScanRequest):
 
 	# Build plan metadata, capturing the requested coverage mode
 	plan_sequence = list(DEFAULT_PLAN)
+	resolved_hitl_mode = _resolve_hitl_mode(req.hitl_mode)
+	resolved_adaptive_mode = _resolve_adaptive_mode(getattr(req, "adaptive_mode", None))
 	plan_payload = {
 		"sequence": plan_sequence,
 		"options": {
 			"full_wstg_coverage": bool(req.full_wstg_coverage),
-			"hitl_enabled": req.hitl_enabled,
+			"hitl_enabled": bool(req.hitl_enabled) if req.hitl_enabled is not None else (resolved_hitl_mode != "off"),
 			"enable_tool_hitl": req.enable_tool_hitl,
-			"hitl_mode": req.hitl_mode,
+			"hitl_mode": resolved_hitl_mode,
+			"adaptive_mode": resolved_adaptive_mode,
 			"auto_approve_agents": req.auto_approve_agents,
 			"skip_agents": req.skip_agents or [],
 		}
@@ -165,6 +195,7 @@ def list_scans(limit: int = 20):
 				status=job.status.value if hasattr(job.status, 'value') else str(job.status),
 				agents=agent_states,
 				summary=job.summary,
+				target=job.target,
 			))
 		return result
 
@@ -203,7 +234,7 @@ def get_status(job_id: int):
 			)
 			for a in agents
 		]
-		return ScanStatusResponse(job_id=job.id, status=job_status_str, agents=agent_states, summary=job.summary)
+		return ScanStatusResponse(job_id=job.id, status=job_status_str, agents=agent_states, summary=job.summary, target=job.target)
 
 
 @router.post("/scans/{job_id}/cancel")
