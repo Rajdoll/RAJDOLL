@@ -120,8 +120,9 @@ def run_job_task(self, job_id: int, resume_from_step_idx: int | None = None) -> 
         statuses = db.query(JobAgent.status).filter(JobAgent.job_id == job_id).all()
         flat_statuses = [s[0] for s in statuses]
         any_failed = any(s == AgentStatus.failed for s in flat_statuses)
+        any_ran = any(s != AgentStatus.pending for s in flat_statuses)
 
-        if report_ok or not any_failed:
+        if report_ok or (any_ran and not any_failed):
             final = JobStatus.completed
         else:
             final = JobStatus.failed
