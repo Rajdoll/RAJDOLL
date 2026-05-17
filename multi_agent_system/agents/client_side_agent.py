@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import httpx
+import os
+
 from .base_agent import BaseAgent, AgentRegistry
 from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
@@ -478,9 +481,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
 
         # Aggressive-mode: force reflected XSS probe on parameterized endpoints.
         # Generic OWASP WSTG-CLNT-01/02 baseline — not target-specific.
-        import os as _os
-        if _os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
-            import httpx as _httpx
+        if os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
             _inventory = self.shared_context.get("endpoint_inventory", {})
             _eps = _inventory.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
             _candidates = [
@@ -493,7 +494,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 f"<img src=x onerror=alert('{_marker}')>",
                 f"<svg onload=alert('{_marker}')>",
             ]
-            async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _xss_client:
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _xss_client:
                 for ep in _candidates:
                     _url = ep.get("url") or ep.get("path")
                     if not _url:

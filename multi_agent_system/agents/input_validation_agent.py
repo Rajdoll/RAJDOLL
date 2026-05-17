@@ -489,9 +489,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 
         # Aggressive-mode: force SSTi probe on parameterized endpoints.
         # Generic Tplmap-style detection — {{7*7}} -> 49 means template eval succeeded.
-        import os as _os
-        if _os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
-            import httpx as _httpx
+        if os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
             _inventory = self.shared_context.get("endpoint_inventory", {})
             _eps = _inventory.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
             _candidates = [
@@ -504,7 +502,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 ("<%= 8675309*9999991 %>", "86753011922219"),
                 ("#{8675309*9999991}", "86753011922219"),
             ]
-            async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _ssti_client:
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _ssti_client:
                 for ep in _candidates:
                     _url = ep.get("url") or ep.get("path")
                     if not _url:
