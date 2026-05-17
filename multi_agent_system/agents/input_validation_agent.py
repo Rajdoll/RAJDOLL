@@ -499,11 +499,10 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))
             ][:15]
             _ssti_payloads = [
-                ("{{7*7}}", "49"),
-                ("${7*7}", "49"),
-                ("<%= 7*7 %>", "49"),
-                ("#{7*7}", "49"),
-                ("{{7*'7'}}", "7777777"),
+                ("{{8675309*9999991}}", "86753011922219"),
+                ("${8675309*9999991}", "86753011922219"),
+                ("<%= 8675309*9999991 %>", "86753011922219"),
+                ("#{8675309*9999991}", "86753011922219"),
             ]
             async with _httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _ssti_client:
                 for ep in _candidates:
