@@ -277,7 +277,7 @@ class SecurityGuardRails:
                 stacklevel=2,
             )
             return False
-        return token == admin_token
+        return hmac.compare_digest(token, admin_token)
     
     async def check_security_policy(self, url: str) -> SecurityPolicy:
         """
@@ -491,9 +491,10 @@ class SensitiveDataRedactor:
     """
     
     PATTERNS = {
-        "password": r'(?i)(password|passwd|pwd|pass)[\s:=]+([^\s,;\n]+)',
+        "password": r'(?i)\b(password|passwd|pwd|pass)\b[\s:=]+([^\s,;\n]+)',
         "api_key": r'(?i)(api[_-]?key|apikey|api_secret)[\s:=]+([^\s,;\n]+)',
-        "token": r'(?i)(token|bearer|jwt)[\s:=]+([^\s,;\n]{20,})',
+        "token": r'(?i)(token|reset[_-]?token|bearer|jwt)[\s:=]+([^\s,;\n]{20,})',
+        "session": r'(?i)(session|sessionid|session_id|cookie)[\s:=]+([^\s,;\n]{20,})',
         "credit_card": r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b',
         "ssn": r'\b\d{3}-\d{2}-\d{4}\b',
         "email": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
@@ -525,6 +526,20 @@ class SensitiveDataRedactor:
             )
         
         return redacted
+
+    def redact_any(self, value):
+        """Recursively redact strings inside JSON-compatible values."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return self.redact(value)
+        if isinstance(value, dict):
+            return {self.redact(str(k)): self.redact_any(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self.redact_any(item) for item in value]
+        if isinstance(value, tuple):
+            return [self.redact_any(item) for item in value]
+        return value
     
     def redact_finding(self, finding) -> None:
         """
