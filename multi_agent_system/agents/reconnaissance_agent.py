@@ -1688,68 +1688,68 @@ Operate autonomously without human guidance.
                         self.js_bundle_analyzer.analyze(_target_url, _client),
                         timeout=60,
                     )
-                _n_routes = len(_js_result.get("routes", []))
-                self.write_context("js_bundle_analysis", {"route_count": _n_routes})
-                self.log("info", f"[Recon] js_bundle_analysis: {_n_routes} SPA routes found")
-                # Add SPA routes to inventory as additional endpoints
-                # CRITICAL: read from DB (not stale snapshot) so R5-built tags are preserved
-                if _js_result["routes"]:
-                    _inventory = self.read_context("endpoint_inventory") or self.shared_context.get("endpoint_inventory") or {}
-                    for _route in _js_result["routes"]:
-                        _inventory.setdefault("by_tag", {}).setdefault("spa_route", []).append(
-                            {"url": _target_url.rstrip("/") + _route["path"],
-                             "method": "GET", "framework_hint": _route.get("framework")}
+                    _n_routes = len(_js_result.get("routes", []))
+                    self.write_context("js_bundle_analysis", {"route_count": _n_routes})
+                    self.log("info", f"[Recon] js_bundle_analysis: {_n_routes} SPA routes found")
+                    # Add SPA routes to inventory as additional endpoints
+                    # CRITICAL: read from DB (not stale snapshot) so R5-built tags are preserved
+                    if _js_result["routes"]:
+                        _inventory = self.read_context("endpoint_inventory") or self.shared_context.get("endpoint_inventory") or {}
+                        for _route in _js_result["routes"]:
+                            _inventory.setdefault("by_tag", {}).setdefault("spa_route", []).append(
+                                {"url": _target_url.rstrip("/") + _route["path"],
+                                 "method": "GET", "framework_hint": _route.get("framework")}
+                            )
+                        self.write_context("endpoint_inventory", _inventory)
+
+                    # WSTG-INFO-06: many client-side routes = hidden route risk.
+                    if _n_routes >= 20:
+                        self.add_finding(
+                            "WSTG-INFO-06",
+                            f"SPA exposes {_n_routes} client-side routes including potential admin/debug surfaces",
+                            severity="medium",
+                            evidence={
+                                "route_count": _n_routes,
+                                "proof_type": "sensitive_data_exposure",
+                                "sample_routes": [r["path"] for r in _js_result.get("routes", [])[:10]],
+                                "impact": "Hidden routes extracted from JS bundle may bypass server-side auth checks.",
+                            },
+                            details="Client-side route table extracted from JS bundle — review each route for authorization.",
                         )
-                    self.write_context("endpoint_inventory", _inventory)
 
-                # WSTG-INFO-06: many client-side routes = hidden route risk.
-                if _n_routes >= 20:
-                    self.add_finding(
-                        "WSTG-INFO-06",
-                        f"SPA exposes {_n_routes} client-side routes including potential admin/debug surfaces",
-                        severity="medium",
-                        evidence={
-                            "route_count": _n_routes,
-                            "proof_type": "sensitive_data_exposure",
-                            "sample_routes": [r["path"] for r in _js_result.get("routes", [])[:10]],
-                            "impact": "Hidden routes extracted from JS bundle may bypass server-side auth checks.",
-                        },
-                        details="Client-side route table extracted from JS bundle — review each route for authorization.",
-                    )
-
-                # WSTG-CONF-01: known-vulnerable JS library detection via regex in bundle source.
-                import re as _re_lib
-                _vuln_patterns = [
-                    (r"/\*!?\s*jQuery v?1\.[0-9]\.", "jQuery 1.x", "Multiple XSS CVEs (e.g. CVE-2020-11022)"),
-                    (r"/\*!?\s*lodash v?[123]\.", "lodash 1-3.x", "Prototype pollution CVE-2018-16487"),
-                    (r"/\*!?\s*moment\.js v?[12]\.", "moment.js 1-2.x", "ReDoS CVE-2017-18214"),
-                    (r"/\*!?\s*AngularJS v?1\.[0-5]\.", "AngularJS 1.0-1.5", "Sandbox escape CVEs"),
-                ]
-                for _src_url in [
-                    _target_url.rstrip("/") + "/main.js",
-                    _target_url.rstrip("/") + "/vendor.js",
-                    _target_url.rstrip("/") + "/runtime.js",
-                ]:
-                    try:
-                        _lib_resp = await _client.get(_src_url, timeout=10)
-                        _lib_text = _lib_resp.text[:200000]
-                        for _pat, _name, _impact in _vuln_patterns:
-                            if _re_lib.search(_pat, _lib_text):
-                                self.add_finding(
-                                    "WSTG-CONF-01",
-                                    f"Outdated JS library detected: {_name}",
-                                    severity="medium",
-                                    evidence={
-                                        "library": _name,
-                                        "source_file": _src_url,
-                                        "proof_type": "data_exposure",
-                                        "impact": _impact,
-                                    },
-                                    details=f"Vendor signature for {_name} found in {_src_url}. Update or replace.",
-                                )
-                                break
-                    except Exception:
-                        continue
+                    # WSTG-CONF-01: known-vulnerable JS library detection via regex in bundle source.
+                    import re as _re_lib
+                    _vuln_patterns = [
+                        (r"/\*!?\s*jQuery v?1\.[0-9]\.", "jQuery 1.x", "Multiple XSS CVEs (e.g. CVE-2020-11022)"),
+                        (r"/\*!?\s*lodash v?[123]\.", "lodash 1-3.x", "Prototype pollution CVE-2018-16487"),
+                        (r"/\*!?\s*moment\.js v?[12]\.", "moment.js 1-2.x", "ReDoS CVE-2017-18214"),
+                        (r"/\*!?\s*AngularJS v?1\.[0-5]\.", "AngularJS 1.0-1.5", "Sandbox escape CVEs"),
+                    ]
+                    for _src_url in [
+                        _target_url.rstrip("/") + "/main.js",
+                        _target_url.rstrip("/") + "/vendor.js",
+                        _target_url.rstrip("/") + "/runtime.js",
+                    ]:
+                        try:
+                            _lib_resp = await _client.get(_src_url, timeout=10)
+                            _lib_text = _lib_resp.text[:200000]
+                            for _pat, _name, _impact in _vuln_patterns:
+                                if _re_lib.search(_pat, _lib_text):
+                                    self.add_finding(
+                                        "WSTG-CONF-01",
+                                        f"Outdated JS library detected: {_name}",
+                                        severity="medium",
+                                        evidence={
+                                            "library": _name,
+                                            "source_file": _src_url,
+                                            "proof_type": "data_exposure",
+                                            "impact": _impact,
+                                        },
+                                        details=f"Vendor signature for {_name} found in {_src_url}. Update or replace.",
+                                    )
+                                    break
+                        except Exception:
+                            continue
             except Exception as _exc:
                 self.log("warning", f"[Recon] JS bundle analysis failed: {_exc}")
 
