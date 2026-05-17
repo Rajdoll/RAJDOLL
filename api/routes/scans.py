@@ -60,18 +60,13 @@ router = APIRouter()
 
 @router.post("/scans", response_model=ScanStatusResponse)
 async def create_scan(req: CreateScanRequest):
-	# Auto-add whitelist_domain(s) — supports single string or list
-	# Safe-Change Rule #6: append BEFORE validate_target
-	for domain in req.get_whitelist_list():
-		d = domain.lower().strip()
-		if d and d not in security_guard.whitelist_domains:
-			security_guard.whitelist_domains.append(d)
-
-	# 🔒 SECURITY VALIDATION: Validate target before creating scan
+	# Validate BEFORE mutating the shared whitelist — prevents poisoning on rejected scans.
+	# Pass requested domains transiently so our own target is accepted without side-effects.
 	try:
 		await security_guard.validate_target(
 			url=str(req.target),
-			auth_token=req.authorization_token
+			auth_token=req.authorization_token,
+			extra_allowed_domains=req.get_whitelist_list(),
 		)
 	except UnauthorizedTargetError as e:
 		audit_logger.log_unauthorized_attempt(
@@ -94,6 +89,12 @@ async def create_scan(req: CreateScanRequest):
 			source_ip="API_REQUEST"
 		)
 		raise HTTPException(status_code=401, detail=f"Invalid authorization token: {str(e)}")
+
+	# Validation passed — now safe to persist whitelist entries for this scan's agents.
+	for domain in req.get_whitelist_list():
+		d = domain.lower().strip()
+		if d and d not in security_guard.whitelist_domains:
+			security_guard.whitelist_domains.append(d)
 
 	with get_db() as db:
 		job = Job(target=str(req.target), status=JobStatus.queued)

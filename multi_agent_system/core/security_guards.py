@@ -119,28 +119,32 @@ class SecurityGuardRails:
     def _load_default_whitelist(self):
         """Load whitelist from ALLOWED_DOMAINS env var (comma-separated).
 
-        Default is empty — all targets require explicit whitelist addition
-        via POST /api/whitelist or whitelist_domain in POST /api/scans.
+        Default is empty — in open mode (empty whitelist) all hosts are allowed.
+        Add entries via POST /api/whitelist or whitelist_domain in POST /api/scans
+        to switch to restricted mode where only listed hosts are permitted.
         """
         import os
         env_domains = os.getenv("ALLOWED_DOMAINS", "")
         self.whitelist_domains = [d.strip() for d in env_domains.split(",") if d.strip()]
     
     async def validate_target(
-        self, 
-        url: str, 
-        auth_token: Optional[str] = None
+        self,
+        url: str,
+        auth_token: Optional[str] = None,
+        extra_allowed_domains: Optional[List[str]] = None,
     ) -> bool:
         """
         Validate target is authorized for testing
-        
+
         Args:
             url: Target URL to test
             auth_token: Authorization token
-        
+            extra_allowed_domains: Domains from the current request's whitelist_domain
+                field — checked transiently without mutating self.whitelist_domains.
+
         Returns:
             True if authorized
-        
+
         Raises:
             UnauthorizedTargetError: If target not whitelisted
             SecurityPolicyViolation: If target explicitly disallows scanning
@@ -149,9 +153,15 @@ class SecurityGuardRails:
         """
         parsed_url = urlparse(url)
         domain = parsed_url.netloc.split(':')[0]  # Remove port
-        
-        # Check 1: Domain whitelist
-        if not self.is_whitelisted(domain):
+
+        # Check 1: Domain whitelist (persistent) + transient extra_allowed_domains
+        allowed = self.is_whitelisted(domain)
+        if not allowed and extra_allowed_domains:
+            allowed = any(
+                fnmatch.fnmatch(domain.lower(), d.lower().strip())
+                for d in extra_allowed_domains if d
+            )
+        if not allowed:
             raise UnauthorizedTargetError(
                 f"Domain '{domain}' not in whitelist. "
                 "Add to whitelist via: POST /api/whitelist\n"
