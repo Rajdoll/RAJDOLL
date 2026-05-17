@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .base_agent import BaseAgent, AgentRegistry
-from typing import ClassVar
+from typing import ClassVar, Dict
 from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
 
@@ -196,7 +196,18 @@ Write to shared_context:
         money_eps = read_tag(inventory, "state_changing_money")
         resource_eps = read_tag(inventory, "state_changing_resource")
         if not money_eps and not resource_eps:
-            self.log("info", "no endpoints classified as state_changing_*, skipping")
+            self.log("info", "no state-changing tags found, emitting inventory-gap lead")
+            self.add_finding(
+                "WSTG-BUSL",
+                "BusinessLogicAgent skipped: no state_changing_money or state_changing_resource endpoints in inventory",
+                severity="info",
+                evidence={
+                    "target": target,
+                    "missing_tags": ["state_changing_money", "state_changing_resource"],
+                    "proof_type": "inventory_only",
+                },
+                details="Recon did not classify any endpoint with business-logic-relevant tags. Rerun with broader discovery or extend the endpoint tagger.",
+            )
             return {"findings": []}
         # Map legacy names to new inventory tags
         checkout_eps = money_eps
