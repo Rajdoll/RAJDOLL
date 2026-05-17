@@ -161,15 +161,17 @@ class HITLManager:
         
         # Timeout - auto-approve original plan
         print(f"⚠️ [HITL] Plan approval timeout, auto-approving original plan")
+        _original_plan = None
         with get_db() as db:
             approval = db.query(PlanApproval).get(approval_id)
             if approval:
                 approval.status = ApprovalStatus.approved
                 approval.responded_at = datetime.utcnow()
                 approval.user_notes = "Auto-approved after timeout"
+                _original_plan = approval.original_plan
                 db.commit()
-        
-        return approval.original_plan
+
+        return _original_plan
     
     async def request_finding_approval(
         self,
@@ -953,7 +955,7 @@ RESPONSE FORMAT (JSON):
             }
         """
         hitl_mode = getattr(settings, "hitl_mode", "off")
-        if hitl_mode != "agent":
+        if not self.hitl_enabled or hitl_mode != "agent":
             return {"action": "proceed"}
 
         # Don't checkpoint after the last agent (ReportGenerationAgent)
@@ -1024,7 +1026,7 @@ RESPONSE FORMAT (JSON):
             }
         """
         hitl_mode = getattr(settings, "hitl_mode", "off")
-        if hitl_mode != "agent":
+        if not self.hitl_enabled or hitl_mode != "agent":
             return {"action": "proceed", "directive_commands": [], "user_notes": None}
 
         if next_agent in ("ReconnaissanceAgent", "ReportGenerationAgent"):
