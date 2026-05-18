@@ -337,10 +337,11 @@ Write to shared_context:
 							break
 			except Exception as e:
 				self.log("warning", f"test_security_questions failed: {e}")
+		_found_reset_issue = False
 		if self.should_run_tool("test_password_reset"):
-			try:
-				for reset_url in _pick_urls(reset_eps):
-					for test_email in ["jim@example.com", "bender@example.com", "admin@juice-sh.op"]:
+			for reset_url in _pick_urls(reset_eps):
+				for test_email in ["jim@example.com", "bender@example.com", "admin@juice-sh.op"]:
+					try:
 						res = await self.run_tool_with_timeout(
 							client.call_tool(
 								server="authentication-testing",
@@ -353,6 +354,7 @@ Write to shared_context:
 						if isinstance(res, dict) and res.get("status") == "success":
 							data = res.get("data", {})
 							if data.get("vulnerabilities_found", 0) > 0:
+								_found_reset_issue = True
 								for finding in data.get("findings", []):
 									severity_map = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
 									safe_evidence = {
@@ -366,11 +368,32 @@ Write to shared_context:
 										severity=severity_map.get(finding.get("severity"), "medium"),
 										evidence=safe_evidence
 									)
-			except Exception as e:
-				self.log("warning", f"test_password_reset failed: {e}")
+					except Exception as e:
+						self.log("warning", f"test_password_reset failed for {test_email}: {e}")
 
-		# Inline WSTG-ATHN-09 fallback — test security question answer predictability
-		if not (getattr(self, "active_flow", None) and _settings.use_active_flow):
+		# Active password reset test (Component C)
+		if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None) and recovery_eps:
+			from multi_agent_system.framework.types import EndpointSpec
+			recovery_ep_url = (recovery_eps[0].get("url") if isinstance(recovery_eps[0], dict)
+							   else recovery_eps[0])
+			ep_spec = EndpointSpec(url=recovery_ep_url, method="POST", params=["email"])
+			try:
+				reset_result = await self.active_flow.test_password_reset(ep_spec)
+			except Exception as exc:
+				self.log("warning", f"password reset test errored: {exc}")
+			else:
+				if reset_result.success:
+					_found_reset_issue = True
+					self.add_finding(
+						category="WSTG-ATHN-09",
+						title=f"Password reset response leaks account existence at {recovery_ep_url}",
+						severity=reset_result.severity,
+						evidence=reset_result.evidence,
+						details="User enumeration via password recovery flow diff.",
+					)
+
+		# Inline WSTG-ATHN-09 fallback — only runs if MCP tool and active flow both produced nothing
+		if not _found_reset_issue:
 			try:
 				import httpx
 				async with httpx.AsyncClient(verify=False, timeout=15) as _client:
@@ -392,26 +415,6 @@ Write to shared_context:
 								)
 			except Exception as e:
 				self.log("warning", f"ATHN-09 inline fallback failed: {e}")
-
-		# Active password reset test (Component C)
-		if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None) and recovery_eps:
-			from multi_agent_system.framework.types import EndpointSpec
-			recovery_ep_url = (recovery_eps[0].get("url") if isinstance(recovery_eps[0], dict)
-							   else recovery_eps[0])
-			ep_spec = EndpointSpec(url=recovery_ep_url, method="POST", params=["email"])
-			try:
-				reset_result = await self.active_flow.test_password_reset(ep_spec)
-			except Exception as exc:
-				self.log("warning", f"password reset test errored: {exc}")
-			else:
-				if reset_result.success:
-					self.add_finding(
-						category="WSTG-ATHN-09",
-						title=f"Password reset response leaks account existence at {recovery_ep_url}",
-						severity=reset_result.severity,
-						evidence=reset_result.evidence,
-						details="User enumeration via password recovery flow diff.",
-					)
 
 		# WSTG-ATHN-07: Test password policy strength
 		if self.should_run_tool("test_password_policy"):
