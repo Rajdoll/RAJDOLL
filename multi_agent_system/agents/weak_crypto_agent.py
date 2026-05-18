@@ -311,20 +311,26 @@ Write to shared_context:
                     None
                 )
                 if not jwt_token:
-                    # Fallback: login to get a fresh token
-                    try:
-                        import httpx
-                        async with httpx.AsyncClient(verify=False, timeout=15) as _c:
-                            r = await _c.post(
-                                f"{target}/rest/user/login",
-                                json={"email": "admin@juice-sh.op", "password": "admin123"},
-                                headers={"Content-Type": "application/json"}
-                            )
-                            if r.status_code == 200:
-                                jwt_token = r.json().get("authentication", {}).get("token")
-                                self.log("info", "JWT fallback login succeeded")
-                    except Exception:
-                        pass
+                    _is_juice_shop = (
+                        "juice" in (target or "").lower() or
+                        "3000" in (target or "")
+                    )
+                    if _is_juice_shop:
+                        try:
+                            import httpx
+                            async with httpx.AsyncClient(verify=False, timeout=15) as _c:
+                                r = await _c.post(
+                                    f"{target}/rest/user/login",
+                                    json={"email": "admin@juice-sh.op", "password": "admin123"},
+                                    headers={"Content-Type": "application/json"}
+                                )
+                                if r.status_code == 200:
+                                    jwt_token = r.json().get("authentication", {}).get("token")
+                                    self.log("info", "JWT fallback login succeeded")
+                                else:
+                                    self.log("warning", f"JWT fallback login returned HTTP {r.status_code}")
+                        except Exception as e:
+                            self.log("warning", f"JWT fallback login failed: {e}")
 
                 if jwt_token:
                     self.log("info", f"Testing JWT token for vulnerabilities (length: {len(jwt_token)})")
