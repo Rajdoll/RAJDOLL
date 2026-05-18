@@ -1,0 +1,27 @@
+{
+  "target": "webgoat",
+  "target_url": "http://webgoat:8080/WebGoat",
+  "description": "OWASP WebGoat — Java/Spring intentionally vulnerable app covering OWASP Top 10",
+  "source": "https://github.com/WebGoat/WebGoat",
+  "total_count": 18,
+  "entries": [
+    {"id": "wg-001", "challenge": "SQL Injection (intro)", "difficulty": "easy", "vuln_category": "SQL Injection", "owasp_wstg": "WSTG-INPV-05", "severity": "high"},
+    {"id": "wg-002", "challenge": "SQL Injection (advanced)", "difficulty": "medium", "vuln_category": "SQL Injection", "owasp_wstg": "WSTG-INPV-05", "severity": "high"},
+    {"id": "wg-003", "challenge": "XSS (reflected)", "difficulty": "easy", "vuln_category": "XSS (Reflected)", "owasp_wstg": "WSTG-INPV-01", "severity": "medium"},
+    {"id": "wg-004", "challenge": "XSS (stored)", "difficulty": "medium", "vuln_category": "XSS (Stored)", "owasp_wstg": "WSTG-INPV-02", "severity": "high"},
+    {"id": "wg-005", "challenge": "Broken Access Control (IDOR)", "difficulty": "medium", "vuln_category": "IDOR", "owasp_wstg": "WSTG-ATHZ-04", "severity": "high"},
+    {"id": "wg-006", "challenge": "JWT (decode/forge)", "difficulty": "medium", "vuln_category": "Weak JWT", "owasp_wstg": "WSTG-CRYP-04", "severity": "high"},
+    {"id": "wg-007", "challenge": "Insecure Deserialization", "difficulty": "hard", "vuln_category": "Insecure Deserialization", "owasp_wstg": "WSTG-INPV-11", "severity": "critical"},
+    {"id": "wg-008", "challenge": "Path Traversal", "difficulty": "easy", "vuln_category": "Path Traversal", "owasp_wstg": "WSTG-CONF-04", "severity": "high"},
+    {"id": "wg-009", "challenge": "CSRF", "difficulty": "medium", "vuln_category": "CSRF", "owasp_wstg": "WSTG-SESS-05", "severity": "medium"},
+    {"id": "wg-010", "challenge": "Missing Function Level Access Control", "difficulty": "medium", "vuln_category": "Broken Access Control", "owasp_wstg": "WSTG-ATHZ-02", "severity": "high"},
+    {"id": "wg-011", "challenge": "Insecure Login (cleartext)", "difficulty": "easy", "vuln_category": "Insecure Transmission", "owasp_wstg": "WSTG-CRYP-03", "severity": "medium"},
+    {"id": "wg-012", "challenge": "Insecure Direct Object Reference", "difficulty": "medium", "vuln_category": "IDOR", "owasp_wstg": "WSTG-ATHZ-04", "severity": "high"},
+    {"id": "wg-013", "challenge": "XXE", "difficulty": "medium", "vuln_category": "XXE", "owasp_wstg": "WSTG-INPV-07", "severity": "high"},
+    {"id": "wg-014", "challenge": "SSRF", "difficulty": "medium", "vuln_category": "SSRF", "owasp_wstg": "WSTG-INPV-19", "severity": "high"},
+    {"id": "wg-015", "challenge": "Secure Passwords", "difficulty": "easy", "vuln_category": "Weak Password Policy", "owasp_wstg": "WSTG-ATHN-07", "severity": "medium"},
+    {"id": "wg-016", "challenge": "Forgot Password", "difficulty": "easy", "vuln_category": "Weak Password Reset", "owasp_wstg": "WSTG-ATHN-09", "severity": "medium"},
+    {"id": "wg-017", "challenge": "HTTP Basics", "difficulty": "easy", "vuln_category": "Information Disclosure", "owasp_wstg": "WSTG-INFO-06", "severity": "low"},
+    {"id": "wg-018", "challenge": "HTTP Proxies", "difficulty": "easy", "vuln_category": "Insecure Configuration", "owasp_wstg": "WSTG-CONF-02", "severity": "low"}
+  ]
+}

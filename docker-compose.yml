@@ -10,7 +10,7 @@ services:
       - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
       - DATABASE_URL=postgresql+psycopg://rajdoll:rajdoll@db:5432/rajdoll
       - REDIS_URL=redis://redis:6379/0
-      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
+      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
     ports:
       - "8000:8000"
     depends_on:
@@ -28,7 +28,6 @@ services:
       - confdep-mcp
       - identity-mcp
       - fileupload-mcp
-      - api-testing-mcp
       - katana-mcp
   worker:
     build: .
@@ -50,7 +49,7 @@ services:
       # RESEARCH MODE: Intelligent Coverage Enforcement
       # LLM tetap sebagai "otak" planning, sistem ensure minimum coverage
       - MIN_TOOLS_PER_AGENT=7
-      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","api-testing":"http://api-testing-mcp:9013/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
+      - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
     depends_on:
       - db
       - redis
@@ -66,7 +65,6 @@ services:
       - confdep-mcp
       - identity-mcp
       - fileupload-mcp
-      - api-testing-mcp
       - katana-mcp
   db:
     image: postgres:16-alpine
@@ -215,18 +213,6 @@ services:
     expose:
       - "9012"
   
-  api-testing-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp-tools
-    command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9013"]
-    environment:
-      - MODULE_PATH=/app/api-testing/api_testing.py
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
-    expose:
-      - "9013"
-
   katana-mcp:
     build:
       context: ./katana-crawler
@@ -242,6 +228,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=2048
+    mem_limit: 2g
 
   # NOTE: juice-shop is now managed here with auto-restart.
   # Scan target: http://juice-shop:3000 (internal) or http://localhost:3000 (host)
@@ -249,6 +238,8 @@ services:
   webgoat:
     image: webgoat/webgoat:latest
     restart: unless-stopped
+    healthcheck:
+      disable: true
     ports:
       - "8081:8080"
     environment:
@@ -273,12 +264,18 @@ services:
     # Init: POST http://localhost:8082/setup.php d="create_db=Create+%2F+Reset+Database"
     # Set Low: POST http://localhost:8082/security.php d="security=low&seclev_submit=Submit"
 
-  bwapp:
-    image: raesene/bwapp
+  pygoat:
+    image: pygoat/pygoat:latest
     restart: unless-stopped
     ports:
-      - "8083:80"
-    # Scan target (internal): http://bwapp:80
-    # Host access: http://localhost:8083
-    # Login: bee / bug  |  Security level: Low (security_level=0)
-    # Install: GET http://localhost:8083/install.php?install=yes (first boot only)
+      - "8090:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/install"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # Scan target (internal): http://pygoat:8000
+    # Host access: http://localhost:8090
+    # Default credentials: admin / adminpassword (may need to register first)
+

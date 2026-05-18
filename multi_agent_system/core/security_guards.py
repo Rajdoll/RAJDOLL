@@ -86,6 +86,7 @@ class SecurityGuardRails:
             "dvwa",  # Docker hostname
             "webgoat",  # WebGoat Docker hostname
             "bwapp",    # bWAPP Docker hostname
+            "pygoat",   # PyGoat Docker hostname
         }
         
         # Token storage (in production: use database or secure vault)

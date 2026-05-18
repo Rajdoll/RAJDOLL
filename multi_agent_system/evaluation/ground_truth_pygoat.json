@@ -1,0 +1,23 @@
+{
+  "target": "pygoat",
+  "target_url": "http://pygoat:8000",
+  "description": "OWASP PyGoat — intentionally vulnerable Django/Python app covering OWASP Top 10",
+  "source": "https://github.com/adeyosemanputra/pygoat",
+  "total_count": 14,
+  "entries": [
+    {"id": "pg-001", "challenge": "SQL Injection", "difficulty": "easy", "vuln_category": "SQL Injection", "owasp_wstg": "WSTG-INPV-05", "severity": "high"},
+    {"id": "pg-002", "challenge": "Blind SQL Injection", "difficulty": "medium", "vuln_category": "SQL Injection", "owasp_wstg": "WSTG-INPV-05", "severity": "high"},
+    {"id": "pg-003", "challenge": "XSS Reflected", "difficulty": "easy", "vuln_category": "XSS (Reflected)", "owasp_wstg": "WSTG-INPV-01", "severity": "medium"},
+    {"id": "pg-004", "challenge": "XSS Stored", "difficulty": "easy", "vuln_category": "XSS (Stored)", "owasp_wstg": "WSTG-INPV-02", "severity": "high"},
+    {"id": "pg-005", "challenge": "IDOR", "difficulty": "medium", "vuln_category": "IDOR", "owasp_wstg": "WSTG-ATHZ-04", "severity": "high"},
+    {"id": "pg-006", "challenge": "SSRF", "difficulty": "medium", "vuln_category": "SSRF", "owasp_wstg": "WSTG-INPV-19", "severity": "high"},
+    {"id": "pg-007", "challenge": "XXE", "difficulty": "medium", "vuln_category": "XXE", "owasp_wstg": "WSTG-INPV-07", "severity": "high"},
+    {"id": "pg-008", "challenge": "Command Injection", "difficulty": "easy", "vuln_category": "OS Command Injection", "owasp_wstg": "WSTG-INPV-12", "severity": "critical"},
+    {"id": "pg-009", "challenge": "Broken Access Control", "difficulty": "easy", "vuln_category": "Broken Access Control", "owasp_wstg": "WSTG-ATHZ-02", "severity": "high"},
+    {"id": "pg-010", "challenge": "SSTI", "difficulty": "medium", "vuln_category": "SSTI (Jinja2)", "owasp_wstg": "WSTG-INPV-18", "severity": "high"},
+    {"id": "pg-011", "challenge": "Path Traversal", "difficulty": "medium", "vuln_category": "Path Traversal", "owasp_wstg": "WSTG-CONF-04", "severity": "high"},
+    {"id": "pg-012", "challenge": "Insecure Deserialization", "difficulty": "hard", "vuln_category": "Insecure Deserialization", "owasp_wstg": "WSTG-INPV-11", "severity": "critical"},
+    {"id": "pg-013", "challenge": "Log4J (CVE-2021-44228)", "difficulty": "hard", "vuln_category": "Log Injection", "owasp_wstg": "WSTG-INPV-05", "severity": "critical"},
+    {"id": "pg-014", "challenge": "CSRF", "difficulty": "medium", "vuln_category": "CSRF", "owasp_wstg": "WSTG-SESS-05", "severity": "medium"}
+  ]
+}

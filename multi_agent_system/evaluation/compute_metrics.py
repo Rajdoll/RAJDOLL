@@ -320,7 +320,7 @@ def main():
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--target",
-                       choices=["dvwa", "bwapp", "juiceshop", "ctf"],
+                       choices=["dvwa", "bwapp", "juiceshop", "ctf", "webgoat", "pygoat"],
                        help="Target name — must match ground_truth_{target}.json")
     group.add_argument("--all", action="store_true",
                        help="Compute metrics for all three canonical targets")
