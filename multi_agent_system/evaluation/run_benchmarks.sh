@@ -9,7 +9,7 @@ API="http://localhost:8000"
 EVAL_DIR="multi_agent_system/evaluation"
 DB_CONTAINER="rajdoll-db-1"
 LOG_FILE="$EVAL_DIR/benchmark_run_$(date +%Y%m%d_%H%M%S).log"
-N_RUNS=7
+N_RUNS=${1:-1}  # default 1 run; override: ./run_benchmarks.sh 3
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
@@ -45,7 +45,7 @@ print(f'Exported {len(data)} findings -> ${label}')
 }
 
 # ── Prerequisites ─────────────────────────────────────────────────────
-log "=== RAJDOLL Benchmark — Juice Shop x${N_RUNS} (Qwen 3-4B) ==="
+log "=== RAJDOLL Benchmark — Juice Shop x${N_RUNS} run(s) (Qwen 3-4B) ==="
 curl -sf "$API/api/health" > /dev/null 2>&1 || { log "ERROR: API not reachable at $API"; exit 1; }
 curl -sf "http://localhost:3000/" > /dev/null 2>&1 || { log "ERROR: Juice Shop not reachable"; exit 1; }
 log "Prerequisites OK"
