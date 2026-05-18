@@ -152,7 +152,7 @@ Write to shared_context:
                     data = res.get("data", {})
                     insecure = data.get("insecure_headers", {}) if isinstance(data, dict) else {}
                     if insecure:
-                        self.add_finding("WSTG-CONF", "Missing or weak security headers", severity="low", evidence=insecure)
+                        self.add_finding("WSTG-CONF-07", "Missing or weak security headers", severity="low", evidence=insecure)
             except Exception as e:
                 self.log("warning", f"test_http_methods_and_headers failed: {e}")
 
@@ -172,7 +172,7 @@ Write to shared_context:
                     data = res.get("data", {})
                     critical_services = data.get("critical_services_exposed", [])
                     if critical_services:
-                        self.add_finding("WSTG-CONF", "Critical services exposed", severity="high", evidence={"services": critical_services})
+                        self.add_finding("WSTG-CONF-01", "Critical services exposed", severity="high", evidence={"services": critical_services})
             except Exception as e:
                 self.log("warning", f"test_network_infrastructure failed: {e}")
 
@@ -200,7 +200,7 @@ Write to shared_context:
                     ]
                     if accessible:
                         self.add_finding(
-                            "WSTG-CONF",
+                            "WSTG-CONF-05",
                             "Sensitive files/directories accessible",
                             severity="high",
                             evidence={
@@ -230,7 +230,7 @@ Write to shared_context:
                     vulns = data.get("findings", [])
                     vuln_count = data.get("vulnerabilities_found", 0)
                     if vulns and vuln_count > 0:
-                        self.add_finding("WSTG-CONF", f"Dangerous file extensions allowed: {vuln_count} vulnerable extension(s)", severity="high", evidence={"findings": vulns[:5]})
+                        self.add_finding("WSTG-CONF-03", f"Dangerous file extensions allowed: {vuln_count} vulnerable extension(s)", severity="high", evidence={"findings": vulns[:5]})
             except Exception as e:
                 self.log("warning", f"test_file_extensions failed: {e}")
 
@@ -248,7 +248,7 @@ Write to shared_context:
                     findings = data.get("findings", [])
                     vuln_count = data.get("vulnerabilities_found", 0)
                     if findings and vuln_count > 0:
-                        self.add_finding("WSTG-CONF", f"Cross-domain policy misconfiguration: {vuln_count} issue(s)", severity="medium", evidence={"findings": findings[:3]})
+                        self.add_finding("WSTG-CONF-08", f"Cross-domain policy misconfiguration: {vuln_count} issue(s)", severity="medium", evidence={"findings": findings[:3]})
             except Exception as e:
                 self.log("warning", f"test_ria_cross_domain failed: {e}")
 
@@ -267,7 +267,7 @@ Write to shared_context:
                     vuln_count = data.get("vulnerabilities_found", 0)
                     if findings and vuln_count > 0:
                         severity = "high" if any("traversal" in str(f).lower() for f in findings) else "medium"
-                        self.add_finding("WSTG-CONF", f"File permission vulnerabilities: {vuln_count} found", severity=severity, evidence={"findings": findings[:3]})
+                        self.add_finding("WSTG-CONF-09", f"File permission vulnerabilities: {vuln_count} found", severity=severity, evidence={"findings": findings[:3]})
             except Exception as e:
                 self.log("warning", f"test_file_permissions failed: {e}")
 
@@ -285,7 +285,7 @@ Write to shared_context:
                     findings = data.get("findings", [])
                     vuln_count = data.get("vulnerabilities_found", 0)
                     if findings and vuln_count > 0:
-                        self.add_finding("WSTG-CONF", f"Cloud storage exposed: {vuln_count} issue(s)", severity="critical", evidence={"findings": findings[:3]})
+                        self.add_finding("WSTG-CONF-11", f"Cloud storage exposed: {vuln_count} issue(s)", severity="critical", evidence={"findings": findings[:3]})
             except Exception as e:
                 self.log("warning", f"test_cloud_storage failed: {e}")
 

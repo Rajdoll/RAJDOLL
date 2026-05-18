@@ -212,7 +212,7 @@ Write to shared_context:
 				autocomplete_weak = bool(re.search(r'<input[^>]+type=["\']password["\'][^>]*autocomplete=["\']?on', html, re.I))
 				if not csrf_present:
 					self.add_finding(
-						"WSTG-ATHN",
+						"WSTG-ATHN-01",
 						"Possible missing CSRF token on login form",
 						severity="medium",
 						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Login form did not expose a recognizable CSRF token in static HTML"},
@@ -220,7 +220,7 @@ Write to shared_context:
 					)
 				if not form_method_post:
 					self.add_finding(
-						"WSTG-ATHN",
+						"WSTG-ATHN-01",
 						"Login form may not use POST method",
 						severity="medium",
 						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Static login form did not declare method=POST"},
@@ -228,7 +228,7 @@ Write to shared_context:
 					)
 				if autocomplete_weak:
 					self.add_finding(
-						"WSTG-ATHN",
+						"WSTG-ATHN-06",
 						"Password field allows autocomplete",
 						severity="low",
 						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Password input allows autocomplete"},
@@ -260,9 +260,9 @@ Write to shared_context:
 						"form_action_is_https": bool(data.get("form_action_is_https"))
 					}
 					if not data.get("page_served_over_https") or not data.get("form_action_is_https"):
-						self.add_finding("WSTG-ATHN", "Login not fully over HTTPS", severity="medium", evidence=safe_evidence)
+						self.add_finding("WSTG-ATHN-01", "Login not fully over HTTPS", severity="medium", evidence=safe_evidence)
 					else:
-						self.add_finding("WSTG-ATHN", "Login served over HTTPS", severity="info", evidence=safe_evidence)
+						self.add_finding("WSTG-ATHN-01", "Login served over HTTPS", severity="info", evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_tls_credentials failed: {e}")
 
@@ -286,7 +286,7 @@ Write to shared_context:
 							"impact": "Sensitive auth page may be stored by browser or intermediary cache",
 							"is_caching_disabled": bool(data.get("is_caching_disabled")),
 						}
-						self.add_finding("WSTG-ATHN", "Sensitive pages may be cacheable", severity="low", evidence=safe_evidence)
+						self.add_finding("WSTG-ATHN-06", "Sensitive pages may be cacheable", severity="low", evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_cache_headers failed: {e}")
 
@@ -307,7 +307,7 @@ Write to shared_context:
 						if not data.get("lockout_detected") and not data.get("rate_limiting_suspected"):
 							self.log("info", "account lockout/rate-limit absence recorded as non-reportable signal", {"login_url": login_url})
 						elif data.get("rate_limiting_suspected"):
-							self.add_finding("WSTG-ATHN", "Rate limiting detected (good security)", severity="info",
+							self.add_finding("WSTG-ATHN-03", "Rate limiting detected (good security)", severity="info",
 										   evidence={"mechanism": "rate_limiting"})
 			except Exception as e:
 				self.log("warning", f"test_lockout_mechanism failed: {e}")
@@ -332,7 +332,7 @@ Write to shared_context:
 							# Sanitize questions - might contain unhashable objects
 							questions = data.get("sample_questions", [])
 							safe_questions = str(questions) if not isinstance(questions, (list, dict, str, int, float, bool, type(None))) else questions
-							self.add_finding("WSTG-ATHN", "Security questions may be predictable", severity=severity,
+							self.add_finding("WSTG-ATHN-08", "Security questions may be predictable", severity=severity,
 										   evidence={"questions": safe_questions, "rate_limiting": data.get("rate_limiting")})
 							break
 			except Exception as e:
@@ -491,7 +491,7 @@ Write to shared_context:
 							severity_map = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
 							# Sanitize finding to remove unhashable objects
 							safe_evidence = {"description": finding.get("description", ""), "severity": finding.get("severity", "medium")}
-							self.add_finding("WSTG-ATHN", f"Alt channel: {finding.get('description')}", 
+							self.add_finding("WSTG-ATHN-10", f"Alt channel: {finding.get('description')}", 
 										   severity=severity_map.get(finding.get("severity"), "medium"),
 										   evidence=safe_evidence)
 			except Exception as e:
@@ -613,7 +613,7 @@ Write to shared_context:
 			except Exception as e:
 				self.log("warning", f"analyze_jwt failed: {e}")
 
-		# WSTG-ATHN-09: 2FA/TOTP bypass testing
+		# WSTG-ATHN-11: 2FA/TOTP bypass testing
 		if self.should_run_tool("test_2fa_bypass"):
 			try:
 				res = await self.run_tool_with_timeout(
@@ -627,7 +627,7 @@ Write to shared_context:
 					if data.get("vulnerable"):
 						for finding in data.get("findings", []):
 							self.add_finding(
-								"WSTG-ATHN-09",
+								"WSTG-ATHN-11",
 								f"2FA bypass: {finding.get('type', 'unknown')}",
 								severity=finding.get("severity", "high"),
 								evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}

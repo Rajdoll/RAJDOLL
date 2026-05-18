@@ -240,7 +240,7 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("vulnerable"):
-                        self.add_finding("WSTG-SESS", "CORS misconfiguration could leak credentials", severity="high", evidence=data)
+                        self.add_finding("WSTG-SESS-05", "CORS misconfiguration could leak credentials", severity="high", evidence=data)
             except Exception as e:
                 self.log("warning", f"test_cors_misconfiguration failed: {e}")
 
@@ -260,7 +260,7 @@ Write to shared_context:
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         if data.get("session_still_valid"):
-                            self.add_finding("WSTG-SESS", "Session timeout not enforced", severity="medium", evidence=data)
+                            self.add_finding("WSTG-SESS-07", "Session timeout not enforced", severity="medium", evidence=data)
             except Exception as e:
                 self.log("warning", f"test_session_timeout failed: {e}")
 
@@ -282,7 +282,7 @@ Write to shared_context:
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         if data.get("session_valid_after_logout"):
-                            self.add_finding("WSTG-SESS", "Session remains valid after logout", severity="high", evidence=data)
+                            self.add_finding("WSTG-SESS-06", "Session remains valid after logout", severity="high", evidence=data)
             except Exception as e:
                 self.log("warning", f"test_logout_functionality failed: {e}")
 
@@ -306,7 +306,7 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("vulnerable_to_fixation"):
-                        self.add_finding("WSTG-SESS", "Session fixation vulnerability detected", severity="high", evidence=data)
+                        self.add_finding("WSTG-SESS-03", "Session fixation vulnerability detected", severity="high", evidence=data)
             except Exception as e:
                 self.log("warning", f"test_session_fixation failed: {e}")
 
@@ -326,7 +326,7 @@ Write to shared_context:
                     data = res.get("data", {})
                     exposed = data.get("exposed_vars", [])
                     if exposed:
-                        self.add_finding("WSTG-SESS", "Session variables exposed in URL or page", severity="medium", evidence={"exposed": exposed})
+                        self.add_finding("WSTG-SESS-04", "Session variables exposed in URL or page", severity="medium", evidence={"exposed": exposed})
             except Exception as e:
                 self.log("warning", f"test_exposed_session_vars failed: {e}")
 

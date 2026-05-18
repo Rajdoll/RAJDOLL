@@ -1,163 +1,498 @@
 {
-  "comprehensive_domain_recon": ["WSTG-INFO-01", "WSTG-INFO-04"],
-  "enumerate_active_subdomains": ["WSTG-INFO-04"],
-  "enumerate_applications": ["WSTG-INFO-04"],
-  "advanced_technology_fingerprinting": ["WSTG-INFO-08", "WSTG-INFO-09"],
-  "fingerprint_web_server": ["WSTG-INFO-02"],
-  "search_engine_reconnaissance": ["WSTG-INFO-01"],
-  "security_headers_analysis": ["WSTG-INFO-02"],
-  "run_comprehensive_scan": ["WSTG-INFO-04"],
-  "check_meta_files": ["WSTG-INFO-03"],
-  "check_metafiles": ["WSTG-INFO-03"],
-  "analyze_content": ["WSTG-INFO-05"],
-  "analyze_webpage_content": ["WSTG-INFO-05"],
-  "identify_entry_points": ["WSTG-INFO-06"],
-  "find_entry_points": ["WSTG-INFO-06"],
-  "map_execution_paths": ["WSTG-INFO-07"],
-  "fingerprint_framework": ["WSTG-INFO-08"],
-  "fingerprint_application": ["WSTG-INFO-09"],
-  "map_architecture": ["WSTG-INFO-10"],
-  "ffuf_directory_scan": ["WSTG-INFO-04", "WSTG-CONF-04"],
-  "dirsearch_scan": ["WSTG-INFO-04", "WSTG-CONF-04"],
-  "feroxbuster_scan": ["WSTG-INFO-04", "WSTG-CONF-04"],
-  "analyze_javascript_routes": ["WSTG-INFO-06"],
-
-  "test_network_infrastructure": ["WSTG-CONF-01"],
-  "find_sensitive_files_and_dirs": ["WSTG-CONF-04", "WSTG-CONF-05"],
-  "test_http_methods_and_headers": ["WSTG-CONF-06"],
-  "test_file_extensions": ["WSTG-CONF-03"],
-  "test_ria_cross_domain": ["WSTG-CONF-08"],
-  "test_file_permissions": ["WSTG-CONF-09"],
-  "test_cloud_storage": ["WSTG-CONF-11"],
-  "test_sensitive_file_extensions": ["WSTG-CONF-03"],
-  "test_hsts": ["WSTG-CONF-07"],
-  "test_subdomain_takeover": ["WSTG-CONF-10"],
-  "test_vulnerable_components": ["WSTG-CONF-02"],
-  "test_hidden_endpoints": ["WSTG-CONF-05"],
-  "test_npm_vulnerabilities": ["WSTG-CONF-02"],
-
-  "test_role_definitions": ["WSTG-IDNT-01"],
-  "test_user_registration": ["WSTG-IDNT-02"],
-  "test_account_provisioning": ["WSTG-IDNT-03"],
-  "test_account_enumeration": ["WSTG-IDNT-04"],
-  "test_username_policy": ["WSTG-IDNT-05"],
-  "test_weak_username_policy": ["WSTG-IDNT-05"],
-  "test_registration_mass_assignment": ["WSTG-IDNT-02"],
-
-  "test_tls_credentials": ["WSTG-ATHN-01"],
-  "test_default_credentials": ["WSTG-ATHN-02"],
-  "test_lockout_mechanism": ["WSTG-ATHN-03"],
-  "test_auth_bypass": ["WSTG-ATHN-04"],
-  "test_auth_bypass_schema": ["WSTG-ATHN-04"],
-  "test_remember_me": ["WSTG-ATHN-05"],
-  "test_cache_headers": ["WSTG-ATHN-06"],
-  "test_password_policy": ["WSTG-ATHN-07"],
-  "test_security_questions": ["WSTG-ATHN-08"],
-  "test_password_reset": ["WSTG-ATHN-09"],
-  "test_alternative_channel_auth": ["WSTG-ATHN-10"],
-  "test_2fa_bypass": ["WSTG-ATHN-04"],
-  "analyze_jwt": ["WSTG-ATHN-04"],
-
-  "test_vertical_privilege_escalation": ["WSTG-ATHZ-03"],
-  "test_idor_vulnerability": ["WSTG-ATHZ-04"],
-  "test_idor_comprehensive": ["WSTG-ATHZ-04"],
-  "test_http_method_tampering": ["WSTG-ATHZ-02"],
-  "test_user_spoofing": ["WSTG-ATHZ-02"],
-
-  "analyze_cookies": ["WSTG-SESS-02"],
-  "test_session_fixation": ["WSTG-SESS-03"],
-  "test_exposed_session_vars": ["WSTG-SESS-04"],
-  "test_logout_functionality": ["WSTG-SESS-06"],
-  "test_session_timeout": ["WSTG-SESS-07"],
-  "test_csrf_protection": ["WSTG-SESS-05"],
-  "test_session_puzzling": ["WSTG-SESS-08"],
-  "test_session_hijacking": ["WSTG-SESS-09"],
-
-  "test_sqli": ["WSTG-INPV-05"],
-  "test_sqli_post": ["WSTG-INPV-05"],
-  "test_sqli_login": ["WSTG-INPV-05"],
-  "run_sqlmap_scan": ["WSTG-INPV-05"],
-  "test_xss_reflected": ["WSTG-INPV-01"],
-  "test_xss_post": ["WSTG-INPV-01"],
-  "test_stored_xss": ["WSTG-INPV-02"],
-  "run_dalfox_scan": ["WSTG-INPV-01", "WSTG-INPV-02"],
-  "test_lfi": ["WSTG-ATHZ-01"],
-  "test_rfi": ["WSTG-ATHZ-01"],
-  "run_ffuf_lfi_scan": ["WSTG-ATHZ-01"],
-  "test_xxe": ["WSTG-INPV-07"],
-  "test_xml_injection": ["WSTG-INPV-07"],
-  "test_xpath_injection": ["WSTG-INPV-09"],
-  "test_ldap_injection": ["WSTG-INPV-06"],
-  "test_nosql_injection": ["WSTG-INPV-05"],
-  "test_ssti_comprehensive": ["WSTG-INPV-18"],
-  "run_tplmap_scan": ["WSTG-INPV-18"],
-  "test_ssrf_comprehensive": ["WSTG-INPV-19"],
-  "run_ssrfmap_scan": ["WSTG-INPV-19"],
-  "test_command_injection": ["WSTG-INPV-12"],
-  "run_commix_scan": ["WSTG-INPV-12"],
-  "test_ssi_injection": ["WSTG-INPV-08"],
-  "test_email_injection": ["WSTG-INPV-10"],
-  "test_format_string": ["WSTG-INPV-13"],
-  "test_redos": ["WSTG-INPV-14"],
-  "test_http_smuggling": ["WSTG-INPV-15"],
-  "test_http_verb_tampering": ["WSTG-INPV-03"],
-  "test_http_parameter_pollution": ["WSTG-INPV-04"],
-  "test_http_incoming_requests": ["WSTG-INPV-16"],
-  "test_host_header_injection": ["WSTG-INPV-17"],
-
-  "probe_for_error_leaks": ["WSTG-ERRH-01", "WSTG-ERRH-02"],
-  "check_generic_error_pages": ["WSTG-ERRH-01"],
-
-  "test_tls_configuration": ["WSTG-CRYP-01"],
-  "test_cleartext_info": ["WSTG-CRYP-03"],
-  "analyze_token_randomness": ["WSTG-CRYP-04"],
-  "test_jwt_weakness": ["WSTG-CRYP-04"],
-
-  "test_business_data_validation": ["WSTG-BUSL-01"],
-  "test_data_validation_extremes": ["WSTG-BUSL-01"],
-  "test_parameter_tampering": ["WSTG-BUSL-01"],
-  "test_mass_assignment": ["WSTG-BUSL-01"],
-  "test_forge_requests": ["WSTG-BUSL-02"],
-  "test_integrity_checks": ["WSTG-BUSL-03"],
-  "test_process_timing_race_condition": ["WSTG-BUSL-04"],
-  "test_race_conditions": ["WSTG-BUSL-04"],
-  "test_function_limits": ["WSTG-BUSL-05"],
-  "test_usage_limits_burst": ["WSTG-BUSL-05"],
-  "test_workflow_bypass": ["WSTG-BUSL-06"],
-  "test_application_misuse_defenses": ["WSTG-BUSL-07"],
-  "test_captcha_and_rate_limit": ["WSTG-BUSL-07"],
-  "test_shopping_cart_manipulation": ["WSTG-BUSL-01"],
-  "test_coupon_forgery": ["WSTG-BUSL-01"],
-  "test_unexpected_file_upload": ["WSTG-BUSL-08"],
-  "test_malicious_file_upload": ["WSTG-BUSL-09"],
-  "test_file_upload_logic": ["WSTG-BUSL-08", "WSTG-BUSL-09"],
-
-  "test_unrestricted_upload": ["WSTG-BUSL-08"],
-  "test_path_traversal_upload": ["WSTG-BUSL-09"],
-  "test_xxe_via_svg": ["WSTG-INPV-07", "WSTG-BUSL-09"],
-  "test_mime_type_bypass": ["WSTG-BUSL-08"],
-  "test_upload_size_limit": ["WSTG-BUSL-08"],
-  "test_path_traversal_download": ["WSTG-ATHZ-01"],
-  "discover_upload_endpoints": ["WSTG-INFO-06"],
-
-  "test_dom_xss": ["WSTG-CLNT-01"],
-  "test_javascript_execution": ["WSTG-CLNT-02"],
-  "test_html_injection": ["WSTG-CLNT-03"],
-  "test_client_url_redirect": ["WSTG-CLNT-04"],
-  "test_open_redirect": ["WSTG-CLNT-04"],
-  "test_css_injection": ["WSTG-CLNT-05"],
-  "test_resource_manipulation": ["WSTG-CLNT-06"],
-  "test_cors_misconfiguration": ["WSTG-CLNT-07"],
-  "test_clickjacking": ["WSTG-CLNT-09"],
-  "test_websockets": ["WSTG-CLNT-10"],
-  "test_web_messaging": ["WSTG-CLNT-11"],
-  "test_postmessage_vulnerabilities": ["WSTG-CLNT-11"],
-  "test_browser_storage": ["WSTG-CLNT-12"],
-  "test_prototype_pollution": ["WSTG-CLNT-02"],
-  "test_client_side_template_injection": ["WSTG-CLNT-02"],
-  "test_csp_bypass": ["WSTG-CLNT-02"],
-  "scan_vulnerable_components": ["WSTG-CONF-02"],
-
-  "test_graphql_introspection": ["WSTG-APIT-01"],
-  "test_graphql_mutations": ["WSTG-APIT-01"]
+  "comprehensive_domain_recon": [
+    "WSTG-INFO-01",
+    "WSTG-INFO-04"
+  ],
+  "enumerate_active_subdomains": [
+    "WSTG-INFO-04"
+  ],
+  "enumerate_applications": [
+    "WSTG-INFO-04"
+  ],
+  "advanced_technology_fingerprinting": [
+    "WSTG-INFO-08",
+    "WSTG-INFO-09"
+  ],
+  "fingerprint_web_server": [
+    "WSTG-INFO-02"
+  ],
+  "search_engine_reconnaissance": [
+    "WSTG-INFO-01"
+  ],
+  "security_headers_analysis": [
+    "WSTG-INFO-02"
+  ],
+  "run_comprehensive_scan": [
+    "WSTG-INFO-04"
+  ],
+  "check_meta_files": [
+    "WSTG-INFO-03"
+  ],
+  "check_metafiles": [
+    "WSTG-INFO-03"
+  ],
+  "analyze_content": [
+    "WSTG-INFO-05"
+  ],
+  "analyze_webpage_content": [
+    "WSTG-INFO-05"
+  ],
+  "identify_entry_points": [
+    "WSTG-INFO-06"
+  ],
+  "find_entry_points": [
+    "WSTG-INFO-06"
+  ],
+  "map_execution_paths": [
+    "WSTG-INFO-07"
+  ],
+  "fingerprint_framework": [
+    "WSTG-INFO-08"
+  ],
+  "fingerprint_application": [
+    "WSTG-INFO-09"
+  ],
+  "map_architecture": [
+    "WSTG-INFO-10"
+  ],
+  "ffuf_directory_scan": [
+    "WSTG-INFO-04",
+    "WSTG-CONF-04"
+  ],
+  "dirsearch_scan": [
+    "WSTG-INFO-04",
+    "WSTG-CONF-04"
+  ],
+  "feroxbuster_scan": [
+    "WSTG-INFO-04",
+    "WSTG-CONF-04"
+  ],
+  "analyze_javascript_routes": [
+    "WSTG-INFO-06"
+  ],
+  "test_network_infrastructure": [
+    "WSTG-CONF-01"
+  ],
+  "find_sensitive_files_and_dirs": [
+    "WSTG-CONF-04",
+    "WSTG-CONF-05"
+  ],
+  "test_http_methods_and_headers": [
+    "WSTG-CONF-06"
+  ],
+  "test_file_extensions": [
+    "WSTG-CONF-03"
+  ],
+  "test_ria_cross_domain": [
+    "WSTG-CONF-08"
+  ],
+  "test_file_permissions": [
+    "WSTG-CONF-09"
+  ],
+  "test_cloud_storage": [
+    "WSTG-CONF-11"
+  ],
+  "test_sensitive_file_extensions": [
+    "WSTG-CONF-03"
+  ],
+  "test_hsts": [
+    "WSTG-CONF-07"
+  ],
+  "test_subdomain_takeover": [
+    "WSTG-CONF-10"
+  ],
+  "test_vulnerable_components": [
+    "WSTG-CONF-02"
+  ],
+  "test_hidden_endpoints": [
+    "WSTG-CONF-05"
+  ],
+  "test_npm_vulnerabilities": [
+    "WSTG-CONF-02"
+  ],
+  "test_role_definitions": [
+    "WSTG-IDNT-01"
+  ],
+  "test_user_registration": [
+    "WSTG-IDNT-02"
+  ],
+  "test_account_provisioning": [
+    "WSTG-IDNT-03"
+  ],
+  "test_account_enumeration": [
+    "WSTG-IDNT-04"
+  ],
+  "test_username_policy": [
+    "WSTG-IDNT-05"
+  ],
+  "test_weak_username_policy": [
+    "WSTG-IDNT-05"
+  ],
+  "test_registration_mass_assignment": [
+    "WSTG-IDNT-02"
+  ],
+  "test_tls_credentials": [
+    "WSTG-ATHN-01"
+  ],
+  "test_default_credentials": [
+    "WSTG-ATHN-02"
+  ],
+  "test_lockout_mechanism": [
+    "WSTG-ATHN-03"
+  ],
+  "test_auth_bypass": [
+    "WSTG-ATHN-04"
+  ],
+  "test_auth_bypass_schema": [
+    "WSTG-ATHN-04"
+  ],
+  "test_remember_me": [
+    "WSTG-ATHN-05"
+  ],
+  "test_cache_headers": [
+    "WSTG-ATHN-06"
+  ],
+  "test_password_policy": [
+    "WSTG-ATHN-07"
+  ],
+  "test_security_questions": [
+    "WSTG-ATHN-08"
+  ],
+  "test_password_reset": [
+    "WSTG-ATHN-09"
+  ],
+  "test_alternative_channel_auth": [
+    "WSTG-ATHN-10"
+  ],
+  "test_2fa_bypass": [
+    "WSTG-ATHN-04"
+  ],
+  "analyze_jwt": [
+    "WSTG-ATHN-04"
+  ],
+  "test_vertical_privilege_escalation": [
+    "WSTG-ATHZ-03"
+  ],
+  "test_idor_vulnerability": [
+    "WSTG-ATHZ-04"
+  ],
+  "test_idor_comprehensive": [
+    "WSTG-ATHZ-04"
+  ],
+  "test_http_method_tampering": [
+    "WSTG-ATHZ-02"
+  ],
+  "test_user_spoofing": [
+    "WSTG-ATHZ-02"
+  ],
+  "analyze_cookies": [
+    "WSTG-SESS-02"
+  ],
+  "test_session_fixation": [
+    "WSTG-SESS-03"
+  ],
+  "test_exposed_session_vars": [
+    "WSTG-SESS-04"
+  ],
+  "test_logout_functionality": [
+    "WSTG-SESS-06"
+  ],
+  "test_session_timeout": [
+    "WSTG-SESS-07"
+  ],
+  "test_csrf_protection": [
+    "WSTG-SESS-05"
+  ],
+  "test_session_puzzling": [
+    "WSTG-SESS-08"
+  ],
+  "test_session_hijacking": [
+    "WSTG-SESS-09"
+  ],
+  "test_sqli": [
+    "WSTG-INPV-05"
+  ],
+  "test_sqli_post": [
+    "WSTG-INPV-05"
+  ],
+  "test_sqli_login": [
+    "WSTG-INPV-05"
+  ],
+  "run_sqlmap_scan": [
+    "WSTG-INPV-05"
+  ],
+  "test_xss_reflected": [
+    "WSTG-INPV-01"
+  ],
+  "test_xss_post": [
+    "WSTG-INPV-01"
+  ],
+  "test_stored_xss": [
+    "WSTG-INPV-02"
+  ],
+  "run_dalfox_scan": [
+    "WSTG-INPV-01",
+    "WSTG-INPV-02"
+  ],
+  "test_lfi": [
+    "WSTG-ATHZ-01"
+  ],
+  "test_rfi": [
+    "WSTG-ATHZ-01"
+  ],
+  "run_ffuf_lfi_scan": [
+    "WSTG-ATHZ-01"
+  ],
+  "test_xxe": [
+    "WSTG-INPV-07"
+  ],
+  "test_xml_injection": [
+    "WSTG-INPV-07"
+  ],
+  "test_xpath_injection": [
+    "WSTG-INPV-09"
+  ],
+  "test_ldap_injection": [
+    "WSTG-INPV-06"
+  ],
+  "test_nosql_injection": [
+    "WSTG-INPV-05"
+  ],
+  "test_ssti_comprehensive": [
+    "WSTG-INPV-18"
+  ],
+  "run_tplmap_scan": [
+    "WSTG-INPV-18"
+  ],
+  "test_ssrf_comprehensive": [
+    "WSTG-INPV-19"
+  ],
+  "run_ssrfmap_scan": [
+    "WSTG-INPV-19"
+  ],
+  "test_command_injection": [
+    "WSTG-INPV-12"
+  ],
+  "run_commix_scan": [
+    "WSTG-INPV-12"
+  ],
+  "test_ssi_injection": [
+    "WSTG-INPV-08"
+  ],
+  "test_email_injection": [
+    "WSTG-INPV-10"
+  ],
+  "test_format_string": [
+    "WSTG-INPV-13"
+  ],
+  "test_redos": [
+    "WSTG-INPV-14"
+  ],
+  "test_http_smuggling": [
+    "WSTG-INPV-15"
+  ],
+  "test_http_verb_tampering": [
+    "WSTG-INPV-03"
+  ],
+  "test_http_parameter_pollution": [
+    "WSTG-INPV-04"
+  ],
+  "test_http_incoming_requests": [
+    "WSTG-INPV-16"
+  ],
+  "test_host_header_injection": [
+    "WSTG-INPV-17"
+  ],
+  "probe_for_error_leaks": [
+    "WSTG-ERRH-01",
+    "WSTG-ERRH-02"
+  ],
+  "check_generic_error_pages": [
+    "WSTG-ERRH-01"
+  ],
+  "test_tls_configuration": [
+    "WSTG-CRYP-01"
+  ],
+  "test_cleartext_info": [
+    "WSTG-CRYP-03"
+  ],
+  "analyze_token_randomness": [
+    "WSTG-CRYP-04"
+  ],
+  "test_jwt_weakness": [
+    "WSTG-CRYP-04"
+  ],
+  "test_business_data_validation": [
+    "WSTG-BUSL-01"
+  ],
+  "test_data_validation_extremes": [
+    "WSTG-BUSL-01"
+  ],
+  "test_parameter_tampering": [
+    "WSTG-BUSL-01"
+  ],
+  "test_mass_assignment": [
+    "WSTG-BUSL-01"
+  ],
+  "test_forge_requests": [
+    "WSTG-BUSL-02"
+  ],
+  "test_integrity_checks": [
+    "WSTG-BUSL-03"
+  ],
+  "test_process_timing_race_condition": [
+    "WSTG-BUSL-04"
+  ],
+  "test_race_conditions": [
+    "WSTG-BUSL-04"
+  ],
+  "test_function_limits": [
+    "WSTG-BUSL-05"
+  ],
+  "test_usage_limits_burst": [
+    "WSTG-BUSL-05"
+  ],
+  "test_workflow_bypass": [
+    "WSTG-BUSL-06"
+  ],
+  "test_application_misuse_defenses": [
+    "WSTG-BUSL-07"
+  ],
+  "test_captcha_and_rate_limit": [
+    "WSTG-BUSL-07"
+  ],
+  "test_shopping_cart_manipulation": [
+    "WSTG-BUSL-01"
+  ],
+  "test_coupon_forgery": [
+    "WSTG-BUSL-01"
+  ],
+  "test_unexpected_file_upload": [
+    "WSTG-BUSL-08"
+  ],
+  "test_malicious_file_upload": [
+    "WSTG-BUSL-09"
+  ],
+  "test_file_upload_logic": [
+    "WSTG-BUSL-08",
+    "WSTG-BUSL-09"
+  ],
+  "test_unrestricted_upload": [
+    "WSTG-BUSL-08"
+  ],
+  "test_path_traversal_upload": [
+    "WSTG-BUSL-09"
+  ],
+  "test_xxe_via_svg": [
+    "WSTG-INPV-07",
+    "WSTG-BUSL-09"
+  ],
+  "test_mime_type_bypass": [
+    "WSTG-BUSL-08"
+  ],
+  "test_upload_size_limit": [
+    "WSTG-BUSL-08"
+  ],
+  "test_path_traversal_download": [
+    "WSTG-ATHZ-01"
+  ],
+  "discover_upload_endpoints": [
+    "WSTG-INFO-06"
+  ],
+  "test_dom_xss": [
+    "WSTG-CLNT-01"
+  ],
+  "test_javascript_execution": [
+    "WSTG-CLNT-02"
+  ],
+  "test_html_injection": [
+    "WSTG-CLNT-03"
+  ],
+  "test_client_url_redirect": [
+    "WSTG-CLNT-04"
+  ],
+  "test_open_redirect": [
+    "WSTG-CLNT-04"
+  ],
+  "test_css_injection": [
+    "WSTG-CLNT-05"
+  ],
+  "test_resource_manipulation": [
+    "WSTG-CLNT-06"
+  ],
+  "test_cors_misconfiguration": [
+    "WSTG-CLNT-07"
+  ],
+  "test_clickjacking": [
+    "WSTG-CLNT-09"
+  ],
+  "test_websockets": [
+    "WSTG-CLNT-10"
+  ],
+  "test_web_messaging": [
+    "WSTG-CLNT-11"
+  ],
+  "test_postmessage_vulnerabilities": [
+    "WSTG-CLNT-11"
+  ],
+  "test_browser_storage": [
+    "WSTG-CLNT-12"
+  ],
+  "test_prototype_pollution": [
+    "WSTG-CLNT-02"
+  ],
+  "test_client_side_template_injection": [
+    "WSTG-CLNT-02"
+  ],
+  "test_csp_bypass": [
+    "WSTG-CLNT-02"
+  ],
+  "scan_vulnerable_components": [
+    "WSTG-CONF-02"
+  ],
+  "test_reflected_xss": [
+    "WSTG-INPV-01"
+  ],
+  "test_xss": [
+    "WSTG-INPV-01"
+  ],
+  "test_error_handling": [
+    "WSTG-ERRH-01",
+    "WSTG-ERRH-02"
+  ],
+  "test_rest_api_abuse": [
+    "WSTG-CONF-11"
+  ],
+  "test_rate_limiting": [
+    "WSTG-ATHN-03"
+  ],
+  "test_graphql_introspection": [
+    "WSTG-CONF-05"
+  ],
+  "test_graphql_mutations": [
+    "WSTG-INPV-05"
+  ],
+  "parse_openapi_spec": [
+    "WSTG-INFO-02"
+  ],
+  "test_api_versioning_issues": [
+    "WSTG-CONF-02"
+  ],
+  "get_manual_testing_checklist": [
+    "WSTG-ATHN-08",
+    "WSTG-ATHN-10"
+  ],
+  "get_manual_authorization_checklist": [
+    "WSTG-AUTHZ-01",
+    "WSTG-AUTHZ-02"
+  ],
+  "generate_test_usernames": [
+    "WSTG-IDNT-05"
+  ],
+  "generate_identity_report": [
+    "WSTG-IDNT-01"
+  ],
+  "validate_admin_interfaces": [
+    "WSTG-CONF-06"
+  ]
 }
