@@ -250,19 +250,6 @@ services:
     # Register account at /WebGoat/registration before scanning
     # Suggested scan credentials: {"username": "guest", "password": "guest"}
 
-  dvwa:
-    image: vulnerables/web-dvwa
-    restart: unless-stopped
-    ports:
-      - "8082:80"
-    environment:
-      - RECAPTCHA_PRIV_KEY=
-      - RECAPTCHA_PUB_KEY=
-    # Scan target (internal): http://dvwa:80
-    # Host access: http://localhost:8082
-    # Login: admin / password  |  Security level: Low
-    # Init: POST http://localhost:8082/setup.php d="create_db=Create+%2F+Reset+Database"
-    # Set Low: POST http://localhost:8082/security.php d="security=low&seclev_submit=Submit"
 
   pygoat:
     image: pygoat/pygoat:latest
