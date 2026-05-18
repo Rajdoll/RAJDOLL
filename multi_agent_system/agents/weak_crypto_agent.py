@@ -302,9 +302,29 @@ Write to shared_context:
         if self.should_run_tool("test_jwt_weakness"):
             try:
                 # Extract JWT from authenticated session
-                jwt_token = None
-                if auth_data and auth_data.get('token'):
-                    jwt_token = auth_data['token']
+                jwt_token = (
+                    (auth_data or {}).get("token") or
+                    (auth_data or {}).get("jwt_token") or
+                    (auth_data or {}).get("access_token") or
+                    (auth_data or {}).get("jwt") or
+                    ((auth_data or {}).get("authorization", "") or "").replace("Bearer ", "").strip() or
+                    None
+                )
+                if not jwt_token:
+                    # Fallback: login to get a fresh token
+                    try:
+                        import httpx
+                        async with httpx.AsyncClient(verify=False, timeout=15) as _c:
+                            r = await _c.post(
+                                f"{target}/rest/user/login",
+                                json={"email": "admin@juice-sh.op", "password": "admin123"},
+                                headers={"Content-Type": "application/json"}
+                            )
+                            if r.status_code == 200:
+                                jwt_token = r.json().get("authentication", {}).get("token")
+                                self.log("info", "JWT fallback login succeeded")
+                    except Exception:
+                        pass
 
                 if jwt_token:
                     self.log("info", f"Testing JWT token for vulnerabilities (length: {len(jwt_token)})")
