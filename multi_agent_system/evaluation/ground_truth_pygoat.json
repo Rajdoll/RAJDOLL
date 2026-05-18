@@ -17,7 +17,7 @@
     {"id": "pg-010", "challenge": "SSTI", "difficulty": "medium", "vuln_category": "SSTI (Jinja2)", "owasp_wstg": "WSTG-INPV-18", "severity": "high"},
     {"id": "pg-011", "challenge": "Path Traversal", "difficulty": "medium", "vuln_category": "Path Traversal", "owasp_wstg": "WSTG-CONF-04", "severity": "high"},
     {"id": "pg-012", "challenge": "Insecure Deserialization", "difficulty": "hard", "vuln_category": "Insecure Deserialization", "owasp_wstg": "WSTG-INPV-11", "severity": "critical"},
-    {"id": "pg-013", "challenge": "Log4J (CVE-2021-44228)", "difficulty": "hard", "vuln_category": "Log Injection", "owasp_wstg": "WSTG-INPV-05", "severity": "critical"},
+    {"id": "pg-013", "challenge": "Log4J (CVE-2021-44228)", "difficulty": "hard", "vuln_category": "Log Injection", "owasp_wstg": "WSTG-INPV-11", "severity": "critical"},
     {"id": "pg-014", "challenge": "CSRF", "difficulty": "medium", "vuln_category": "CSRF", "owasp_wstg": "WSTG-SESS-05", "severity": "medium"}
   ]
 }

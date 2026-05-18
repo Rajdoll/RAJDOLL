@@ -200,7 +200,7 @@ Write to shared_context:
                     ]
                     if accessible:
                         self.add_finding(
-                            "WSTG-CONF-05",
+                            "WSTG-CONF-04",
                             "Sensitive files/directories accessible",
                             severity="high",
                             evidence={
@@ -368,7 +368,7 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_vulnerable_components failed: {e}")
 
-        # WSTG-CONF-04: Hidden endpoints / sensitive path discovery
+        # WSTG-CONF-05: Hidden endpoints / sensitive path discovery
         if self.should_run_tool("test_hidden_endpoints"):
             try:
                 res = await self.run_tool_with_timeout(
@@ -388,17 +388,17 @@ Write to shared_context:
                         other_findings = [f for f in findings if f.get("severity") not in ("critical", "high")]
 
                         if critical_findings:
-                            self.add_finding("WSTG-CONF-04",
+                            self.add_finding("WSTG-CONF-05",
                                 f"Critical sensitive endpoints exposed: {len(critical_findings)} path(s)",
                                 severity="critical",
                                 evidence={"findings": critical_findings[:5]})
                         if high_findings:
-                            self.add_finding("WSTG-CONF-04",
+                            self.add_finding("WSTG-CONF-05",
                                 f"Sensitive endpoints exposed: {len(high_findings)} high-severity path(s)",
                                 severity="high",
                                 evidence={"findings": high_findings[:5]})
                         if other_findings:
-                            self.add_finding("WSTG-CONF-04",
+                            self.add_finding("WSTG-CONF-05",
                                 f"Hidden endpoints discovered: {len(other_findings)} path(s)",
                                 severity="low",
                                 evidence={

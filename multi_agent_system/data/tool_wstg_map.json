@@ -483,8 +483,8 @@
     "WSTG-ATHN-10"
   ],
   "get_manual_authorization_checklist": [
-    "WSTG-AUTHZ-01",
-    "WSTG-AUTHZ-02"
+    "WSTG-ATHZ-01",
+    "WSTG-ATHZ-02"
   ],
   "generate_test_usernames": [
     "WSTG-IDNT-05"

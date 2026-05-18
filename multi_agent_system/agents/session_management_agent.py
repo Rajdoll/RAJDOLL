@@ -240,7 +240,7 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("vulnerable"):
-                        self.add_finding("WSTG-SESS-05", "CORS misconfiguration could leak credentials", severity="high", evidence=data)
+                        self.add_finding("WSTG-CLNT-07", "CORS misconfiguration could leak credentials", severity="high", evidence=data)
             except Exception as e:
                 self.log("warning", f"test_cors_misconfiguration failed: {e}")
 
