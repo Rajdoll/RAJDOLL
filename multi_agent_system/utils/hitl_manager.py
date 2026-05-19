@@ -962,6 +962,13 @@ RESPONSE FORMAT (JSON):
         if not next_agent and not remaining_agents:
             return {"action": "proceed"}
 
+        # Check if user previously chose "Allow All" for this job (persisted to DB)
+        with get_db() as db:
+            _job = db.query(Job).get(self.job_id)
+            if _job and isinstance(_job.plan, dict):
+                if _job.plan.get("options", {}).get("hitl_allow_all"):
+                    return {"action": "proceed"}
+
         with get_db() as db:
             checkpoint = AgentCheckpoint(
                 job_id=self.job_id,
@@ -1031,6 +1038,13 @@ RESPONSE FORMAT (JSON):
 
         if next_agent in ("ReconnaissanceAgent", "ReportGenerationAgent"):
             return {"action": "proceed", "directive_commands": [], "user_notes": None}
+
+        # Check if user previously chose "Allow All" for this job (persisted to DB)
+        with get_db() as db:
+            _job = db.query(Job).get(self.job_id)
+            if _job and isinstance(_job.plan, dict):
+                if _job.plan.get("options", {}).get("hitl_allow_all"):
+                    return {"action": "proceed", "directive_commands": [], "user_notes": None}
 
         with get_db() as db:
             checkpoint = AgentCheckpoint(

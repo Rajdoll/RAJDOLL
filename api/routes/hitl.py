@@ -756,6 +756,16 @@ async def respond_to_agent_checkpoint(checkpoint_id: int, body: AgentCheckpointR
 
         db.commit()
 
+        # Persist "Allow All" so it survives worker restarts
+        if body.action == "auto":
+            with get_db() as db2:
+                job2 = db2.query(Job).get(checkpoint.job_id)
+                if job2 and isinstance(job2.plan, dict):
+                    opts = dict(job2.plan.get("options", {}) or {})
+                    opts["hitl_allow_all"] = True
+                    job2.plan = {**job2.plan, "options": opts}
+                    db2.commit()
+
         return {
             "status": "success",
             "checkpoint_id": checkpoint_id,
