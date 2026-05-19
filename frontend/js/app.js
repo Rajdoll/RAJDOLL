@@ -195,7 +195,7 @@ async function handleScanSubmit(e) {
         const payload = {
             target: targetUrl,
             full_wstg_coverage: true,
-            hitl_mode: 'agent',          // HITL always on
+            hitl_mode: 'off',            // HITL off by default for lab/benchmark runs
             ...(credentials && { credentials }),
         };
 

@@ -61,7 +61,19 @@ def recover_stuck_jobs(sender, **kwargs):
 
             print(f"[Recovery] Found {len(stuck_jobs)} stuck job(s) in waiting_checkpoint")
 
+            now = datetime.utcnow()
             for job in stuck_jobs:
+                age_hours = (now - job.updated_at).total_seconds() / 3600 if job.updated_at else 99
+
+                # Jobs older than 1 hour: the Celery task is definitely dead — cancel them
+                if age_hours > 1:
+                    job.status = JobStatus.cancelled
+                    db.commit()
+                    print(f"[Recovery] Job {job.id}: cancelled (stale, {age_hours:.1f}h old)")
+                    continue
+
+                # Recent jobs: Celery task may still be alive and polling — just approve
+                # the checkpoint so it picks it up automatically. No re-queue needed.
                 pending_cp = (
                     db.query(AgentCheckpoint)
                     .filter(
@@ -74,37 +86,18 @@ def recover_stuck_jobs(sender, **kwargs):
 
                 if not pending_cp:
                     job.status = JobStatus.running
-                    print(f"[Recovery] Job {job.id}: no pending checkpoint, restored to running")
                     db.commit()
+                    print(f"[Recovery] Job {job.id}: no pending checkpoint, restored to running")
                     continue
 
                 pending_cp.action = CheckpointAction.proceed
-                pending_cp.responded_at = datetime.utcnow()
+                pending_cp.responded_at = now
                 pending_cp.user_notes = "Auto-approved by worker recovery on restart"
                 pending_cp.wait_duration_seconds = int(
-                    (datetime.utcnow() - pending_cp.requested_at).total_seconds()
+                    (now - pending_cp.requested_at).total_seconds()
                 ) if pending_cp.requested_at else 0
-
-                seq_idx = pending_cp.agent_sequence_index or 0
-                if pending_cp.checkpoint_type == "pre_agent":
-                    resume_from = seq_idx
-                else:
-                    resume_from = seq_idx + 1
-
-                job.status = JobStatus.queued
                 db.commit()
-
-                try:
-                    celery_app.send_task(
-                        "multi_agent_system.tasks.tasks.run_job_task",
-                        args=[job.id, resume_from],
-                    )
-                    print(
-                        f"[Recovery] Job {job.id}: approved checkpoint {pending_cp.id}, "
-                        f"re-queued with resume_from_step_idx={resume_from}"
-                    )
-                except Exception as send_err:
-                    print(f"[Recovery] FAILED to re-queue job {job.id}: {send_err}")
+                print(f"[Recovery] Job {job.id}: approved checkpoint {pending_cp.id} (task may still be alive)")
 
     except Exception as e:
         print(f"[Recovery] ERROR during stuck job recovery: {e}")
