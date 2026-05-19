@@ -94,14 +94,17 @@ def recover_stuck_jobs(sender, **kwargs):
                 job.status = JobStatus.queued
                 db.commit()
 
-                celery_app.send_task(
-                    "multi_agent_system.tasks.tasks.run_job_task",
-                    args=[job.id, resume_from],
-                )
-                print(
-                    f"[Recovery] Job {job.id}: approved checkpoint {pending_cp.id}, "
-                    f"re-queued with resume_from_step_idx={resume_from}"
-                )
+                try:
+                    celery_app.send_task(
+                        "multi_agent_system.tasks.tasks.run_job_task",
+                        args=[job.id, resume_from],
+                    )
+                    print(
+                        f"[Recovery] Job {job.id}: approved checkpoint {pending_cp.id}, "
+                        f"re-queued with resume_from_step_idx={resume_from}"
+                    )
+                except Exception as send_err:
+                    print(f"[Recovery] FAILED to re-queue job {job.id}: {send_err}")
 
     except Exception as e:
         print(f"[Recovery] ERROR during stuck job recovery: {e}")

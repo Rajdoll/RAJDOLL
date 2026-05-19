@@ -766,6 +766,9 @@ async def respond_to_agent_checkpoint(checkpoint_id: int, body: AgentCheckpointR
                     opts["hitl_allow_all"] = True
                     job2.plan = {**job2.plan, "options": opts}
                     db2.commit()
+                else:
+                    print(f"[HITL] WARNING: could not persist allow_all for job {checkpoint.job_id} "
+                          f"(plan={job2.plan if job2 else 'job not found'})")
 
         return {
             "status": "success",
@@ -887,7 +890,7 @@ async def recover_stuck_job(job_id: int):
         if not job:
             raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-        if job.status != "waiting_checkpoint":
+        if job.status != JobStatus.waiting_checkpoint:
             return {
                 "message": f"Job {job_id} is not stuck (status: {job.status})",
                 "recovered": False,
@@ -919,16 +922,12 @@ async def recover_stuck_job(job_id: int):
             if pending_cp.requested_at
             else 0
         )
-        db.commit()
 
         seq_idx = pending_cp.agent_sequence_index or 0
         resume_from = seq_idx if pending_cp.checkpoint_type == "pre_agent" else seq_idx + 1
 
-    with get_db() as db:
-        job = db.query(Job).get(job_id)
-        if job:
-            job.status = JobStatus.queued
-            db.commit()
+        job.status = JobStatus.queued
+        db.commit()
 
     celery_app.send_task(
         "multi_agent_system.tasks.tasks.run_job_task",
