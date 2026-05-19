@@ -929,10 +929,13 @@ async def recover_stuck_job(job_id: int):
         job.status = JobStatus.queued
         db.commit()
 
-    celery_app.send_task(
-        "multi_agent_system.tasks.tasks.run_job_task",
-        args=[job_id, resume_from],
-    )
+    try:
+        celery_app.send_task(
+            "multi_agent_system.tasks.tasks.run_job_task",
+            args=[job_id, resume_from],
+        )
+    except Exception as send_err:
+        raise HTTPException(status_code=503, detail=f"Job queued in DB but failed to dispatch task: {send_err}")
 
     return {
         "message": f"Job {job_id} re-queued with resume_from_step_idx={resume_from}",
