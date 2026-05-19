@@ -12,7 +12,8 @@ from datetime import datetime
 from sqlalchemy import or_
 
 from multi_agent_system.core.db import get_db
-from multi_agent_system.models.models import Job, Finding
+from multi_agent_system.models.models import Job, Finding, JobStatus
+from multi_agent_system.tasks.celery_app import celery_app
 from multi_agent_system.models.hitl_models import (
     PlanApproval,
     FindingApproval,
@@ -868,4 +869,75 @@ async def respond_to_high_risk_tool(approval_id: int, body: HighRiskToolArgReque
         "status": "success",
         "approval_id": approval_id,
         "action": body.action,
+    }
+
+
+@router.post("/scans/{job_id}/recover")
+async def recover_stuck_job(job_id: int):
+    """Recover a job stuck in waiting_checkpoint.
+
+    Approves any pending checkpoint and re-queues the job to resume from
+    the next agent. Safe to call even if the original Celery task is still
+    running -- it will see the checkpoint approved and proceed normally.
+    """
+    from datetime import datetime as _dt
+
+    with get_db() as db:
+        job = db.query(Job).get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+        if job.status != "waiting_checkpoint":
+            return {
+                "message": f"Job {job_id} is not stuck (status: {job.status})",
+                "recovered": False,
+            }
+
+        pending_cp = (
+            db.query(AgentCheckpoint)
+            .filter(
+                AgentCheckpoint.job_id == job_id,
+                AgentCheckpoint.action == CheckpointAction.pending,
+            )
+            .order_by(AgentCheckpoint.id.desc())
+            .first()
+        )
+
+        if not pending_cp:
+            job.status = JobStatus.running
+            db.commit()
+            return {
+                "message": "No pending checkpoint -- restored status to running",
+                "recovered": True,
+            }
+
+        pending_cp.action = CheckpointAction.proceed
+        pending_cp.responded_at = _dt.utcnow()
+        pending_cp.user_notes = "Manually recovered via /recover endpoint"
+        pending_cp.wait_duration_seconds = (
+            int((_dt.utcnow() - pending_cp.requested_at).total_seconds())
+            if pending_cp.requested_at
+            else 0
+        )
+        db.commit()
+
+        seq_idx = pending_cp.agent_sequence_index or 0
+        resume_from = seq_idx if pending_cp.checkpoint_type == "pre_agent" else seq_idx + 1
+
+    with get_db() as db:
+        job = db.query(Job).get(job_id)
+        if job:
+            job.status = JobStatus.queued
+            db.commit()
+
+    celery_app.send_task(
+        "multi_agent_system.tasks.tasks.run_job_task",
+        args=[job_id, resume_from],
+    )
+
+    return {
+        "message": f"Job {job_id} re-queued with resume_from_step_idx={resume_from}",
+        "recovered": True,
+        "checkpoint_id": pending_cp.id,
+        "resume_from_step_idx": resume_from,
     }
