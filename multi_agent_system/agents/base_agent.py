@@ -588,9 +588,14 @@ class BaseAgent:
 		for spec in round2_specs:
 			tool_name = spec.get("tool")
 			server_name = spec.get("server") or tool_server_map.get(tool_name, "")
-			args = spec.get("arguments") or {}
+			args = dict(spec.get("arguments") or {})
 			if not tool_name or not server_name:
 				continue
+			# Inject target URL if not provided — Round 2 LLM often omits it
+			target = self._target or self._get_target_from_db()
+			if target:
+				if "url" not in args and "base_url" not in args:
+					args["url"] = target
 			try:
 				await self.execute_tool(server=server_name, tool=tool_name, args=args)
 			except Exception as e:

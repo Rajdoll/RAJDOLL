@@ -1,9 +1,55 @@
 from __future__ import annotations
 
 from .base_agent import BaseAgent, AgentRegistry
-from typing import ClassVar
+from typing import Any, ClassVar, Dict, List
+from urllib.parse import urljoin
 from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
+
+
+COMMON_UPLOAD_PATHS = (
+    "/file-upload",
+    "/upload",
+    "/uploads",
+    "/api/upload",
+    "/api/uploads",
+    "/rest/upload",
+)
+
+
+def _absolute_target_url(target: str, candidate: str) -> str:
+    if candidate.startswith(("http://", "https://")):
+        return candidate
+    return urljoin(target.rstrip("/") + "/", candidate.lstrip("/"))
+
+
+def build_upload_endpoint_candidates(target: str, inventory: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Build deterministic upload candidates even when crawler tagging misses forms."""
+    candidates: List[str] = []
+
+    upload_eps = read_tag(inventory, "file_upload")
+    candidates.extend(ep.get("url") or ep.get("path") for ep in upload_eps if ep.get("url") or ep.get("path"))
+    candidates.extend(COMMON_UPLOAD_PATHS)
+
+    for endpoint in inventory.get("endpoints", []):
+        if not isinstance(endpoint, dict):
+            continue
+        value = endpoint.get("url") or endpoint.get("path") or ""
+        if any(kw in value.lower() for kw in ("upload", "file", "image", "photo", "avatar", "attachment")):
+            candidates.append(value)
+
+    seen: set[str] = set()
+    normalized: List[Dict[str, str]] = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        url = _absolute_target_url(target, str(candidate))
+        if url in seen:
+            continue
+        seen.add(url)
+        normalized.append({"url": url})
+
+    return normalized
 
 
 @AgentRegistry.register("FileUploadAgent")
@@ -62,22 +108,12 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
         self.log_tool_execution_plan()
 
         inventory = self.shared_context.get("endpoint_inventory", {})
-        upload_eps = read_tag(inventory, "file_upload")
-        upload_endpoints = [{"url": ep["path"]} for ep in upload_eps if ep.get("path")]
+        upload_endpoints = build_upload_endpoint_candidates(target, inventory)
         if not upload_endpoints:
-            # Fallback: probe well-known upload paths derived from discovered endpoints
-            all_eps = inventory.get("endpoints", [])
-            upload_candidates = [
-                e for e in all_eps if isinstance(e, dict)
-                and any(kw in (e.get("url") or e.get("path") or "").lower()
-                        for kw in ("upload", "file", "image", "photo", "avatar", "attachment"))
-            ]
-            if upload_candidates:
-                upload_endpoints = [{"url": e.get("url") or e.get("path")} for e in upload_candidates[:3]]
-                self.log("info", f"no file_upload tag — falling back to {len(upload_endpoints)} URL-matched endpoints")
-            else:
-                upload_endpoints = [{"url": target}]
-                self.log("info", "no file_upload tag and no upload-keyword endpoints — using base target")
+            upload_endpoints = [{"url": target}]
+            self.log("info", "no upload candidates found — using base target as last resort")
+        else:
+            self.log("info", f"Prepared {len(upload_endpoints)} upload endpoint candidate(s)")
         
         # Step 2: Test each discovered endpoint
         for endpoint in upload_endpoints[:2]:  # Test up to 2 endpoints (5 caused cascading timeout issues)
@@ -104,14 +140,15 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                             for finding in findings:
                                 self.add_finding(
                                     "WSTG-BUSL-08",
-                                    f"Unrestricted file upload: {finding['filename']}",
+                                    f"Unrestricted file upload: {finding.get('filename', 'unknown')}",
                                     severity="critical",
                                     evidence={
                                         "url": upload_url,
-                                        "filename": finding['filename'],
-                                        "extension": finding['extension'],
-                                        "description": finding['description'],
-                                        "recommendation": finding['recommendation']
+                                        "filename": finding.get('filename', 'unknown'),
+                                        "extension": finding.get('extension', ''),
+                                        "proof_type": "validated_file_upload",
+                                        "description": finding.get('description', ''),
+                                        "recommendation": finding.get('recommendation', 'Review upload security controls')
                                     }
                                 )
                             self.log("info", f"✓ Found {len(findings)} unrestricted upload vulnerabilities")
@@ -138,13 +175,14 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                             for finding in findings:
                                 self.add_finding(
                                     "WSTG-BUSL-08",
-                                    f"Path traversal in upload: {finding['filename']}",
+                                    f"Path traversal in upload: {finding.get('filename', 'unknown')}",
                                     severity="high",
                                     evidence={
                                         "url": upload_url,
-                                        "filename": finding['filename'],
-                                        "description": finding['description'],
-                                        "recommendation": finding['recommendation']
+                                        "filename": finding.get('filename', 'unknown'),
+                                        "proof_type": "validated_file_upload_path_traversal",
+                                        "description": finding.get('description', ''),
+                                        "recommendation": finding.get('recommendation', 'Review upload security controls')
                                     }
                                 )
                             self.log("info", f"✓ Found {len(findings)} path traversal upload vulnerabilities")
@@ -170,15 +208,16 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                             findings = data.get("findings", [])
                             for finding in findings:
                                 self.add_finding(
-                                    "WSTG-BUSL-08",
-                                    f"XXE via SVG upload: {finding['filename']}",
+                                    "WSTG-INPV-07",
+                                    f"XXE via SVG upload: {finding.get('filename', 'unknown')}",
                                     severity="critical",
                                     evidence={
                                         "url": upload_url,
-                                        "filename": finding['filename'],
-                                        "description": finding['description'],
+                                        "filename": finding.get('filename', 'unknown'),
+                                        "proof_type": "validated_xxe_upload",
+                                        "description": finding.get('description', ''),
                                         "evidence": finding['evidence'][:200],
-                                        "recommendation": finding['recommendation']
+                                        "recommendation": finding.get('recommendation', 'Review upload security controls')
                                     }
                                 )
                             self.log("info", f"✓ Found {len(findings)} XXE via SVG vulnerabilities")
@@ -205,14 +244,15 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                             for finding in findings:
                                 self.add_finding(
                                     "WSTG-BUSL-08",
-                                    f"MIME type bypass: {finding['filename']}",
+                                    f"MIME type bypass: {finding.get('filename', 'unknown')}",
                                     severity="high",
                                     evidence={
                                         "url": upload_url,
-                                        "filename": finding['filename'],
-                                        "mime_type": finding['mime_type'],
-                                        "description": finding['description'],
-                                        "recommendation": finding['recommendation']
+                                        "filename": finding.get('filename', 'unknown'),
+                                        "mime_type": finding.get('mime_type', 'unknown'),
+                                        "proof_type": "validated_mime_bypass",
+                                        "description": finding.get('description', ''),
+                                        "recommendation": finding.get('recommendation', 'Review upload security controls')
                                     }
                                 )
                             self.log("info", f"✓ Found {len(findings)} MIME type bypass vulnerabilities")
@@ -242,7 +282,11 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                                     "WSTG-BUSL-08",
                                     f"Upload size limit bypass: {finding.get('file_size', 'unknown')}",
                                     severity=finding.get("severity", "medium"),
-                                    evidence={"url": upload_url, "description": finding.get("description", "")}
+                                    evidence={
+                                        "url": upload_url,
+                                        "proof_type": "validated_upload_size_bypass",
+                                        "description": finding.get("description", ""),
+                                    }
                                 )
                             self.log("info", f"Found {len(findings)} size limit issues")
                 except Exception as e:
