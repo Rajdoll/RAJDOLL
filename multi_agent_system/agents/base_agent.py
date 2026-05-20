@@ -352,10 +352,9 @@ class BaseAgent:
 
 			disable_planning = os.getenv('DISABLE_LLM_PLANNING', 'false').lower() == 'true'
 
-			# Tier 2.2: Skip LLM planning for agents with <= 5 tools (no value in selection)
-			if not disable_planning and len(available_tools) <= 5:
-				disable_planning = True
-				print(f"⏭️ {self.agent_name}: Skipping LLM — only {len(available_tools)} tools (run all)", file=sys.stderr, flush=True)
+			# LLM planning always runs regardless of tool count.
+			# Even agents with 2-3 tools benefit from LLM argument selection
+			# (which endpoint, which payload, based on recon context).
 
 			print(
 				f"▶▶▶ {self.agent_name}: disable_planning={disable_planning}, has_llm_client={bool(self._llm_client)}",
