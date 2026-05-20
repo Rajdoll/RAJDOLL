@@ -1600,7 +1600,7 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
         try:
             # Call LLM for planning (with longer timeout for comprehensive analysis)
             print(f"🔍 LLM-PLAN-DEBUG-7: About to call _query_llm()", file=sys.stderr, flush=True)
-            llm_response = await self._query_llm(planning_prompt, max_tokens=1024)
+            llm_response = await self._query_llm(planning_prompt, max_tokens=2048)
             print(f"🔍 LLM-PLAN-DEBUG-8: _query_llm() returned, response length: {len(llm_response)}", file=sys.stderr, flush=True)
 
             # Parse JSON response

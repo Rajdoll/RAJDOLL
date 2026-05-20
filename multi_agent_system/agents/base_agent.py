@@ -78,6 +78,7 @@ class BaseAgent:
 		self._tool_arguments_map: Dict[str, Dict[str, Any]] = {}
 		self.hitl_manager: Optional[HITLManager] = None
 		self._auto_approve_agents = set(getattr(settings, "auto_approve_tool_agents", []))
+		self._pending_directive_specs: List[dict] = []  # stored until tool_plan is ready
 		self._hitl_overrides: Dict[str, Any] = {}
 		self._circuit_breaker_limit = CIRCUIT_BREAKER_FAILURES  # Use constant
 		self._llm_retry_count = 0  # Track LLM retries
@@ -447,6 +448,11 @@ class BaseAgent:
 					print(f"❌ {self.agent_name}: Using ALL available tools. Reason: {reason}", file=sys.stderr, flush=True)
 					self.tool_plan = {"tools": available_tools, "reasoning": reason, "priority": "high"}
 
+		# Apply any directive specs that arrived before tool_plan was ready
+		if self._pending_directive_specs:
+			self._apply_directive_specs(self._pending_directive_specs)
+			self._pending_directive_specs = []
+
 		# Broadcast agent start to Live Monitor
 		self.broadcast_execution_status({
 			"phase": "agent_running",
@@ -494,10 +500,15 @@ class BaseAgent:
 		return {}
 
 	def _inject_directive_tools(self, tool_specs: List[dict]) -> None:
-		"""Force-add tools from the LLM orchestrator directive into the tool plan."""
+		"""Force-add tools from the LLM orchestrator directive into the tool plan.
+		If tool_plan isn't set yet, store specs and apply after LLM planning."""
 		if not self.tool_plan:
-			self.log("warning", "Cannot inject directive tools — no tool_plan set")
+			self._pending_directive_specs = list(tool_specs)
 			return
+		self._apply_directive_specs(tool_specs)
+
+	def _apply_directive_specs(self, tool_specs: List[dict]) -> None:
+		"""Apply directive tool specs into the current tool_plan."""
 		current_tools: list = self.tool_plan.setdefault("tools", [])
 		for spec in tool_specs:
 			tool_name = spec.get("tool")
@@ -641,6 +652,10 @@ class BaseAgent:
 		confidence: ConfidenceScore | None = None,
 	) -> None:
 		import json, sys
+		# Normalize severity to DB enum values (info/low/medium/high/critical)
+		_SEV_NORM = {"informational": "info", "information": "info", "none": "info",
+		             "warn": "low", "warning": "low"}
+		severity = _SEV_NORM.get(str(severity).lower(), severity)
 		# Sanitize evidence to prevent unhashable type errors
 		if evidence is not None:
 			try:
