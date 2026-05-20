@@ -995,7 +995,7 @@ class BaseAgent:
 			}
 
 			if tool not in NO_AUTH_TOOLS:
-				session = self._get_auth_session()
+				session = self.get_auth_session()
 				if session:
 					auth_session = session
 					if 'config' not in args:
