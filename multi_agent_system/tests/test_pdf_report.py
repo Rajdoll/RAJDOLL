@@ -247,3 +247,43 @@ def test_severity_group_headers_in_findings():
     )
     assert "Critical Findings" in html
     assert "High Findings" in html
+
+
+def test_appendix_shows_dynamic_agent_count_and_llm_model():
+    """Appendix A/C show llm_model and agent_count from template vars, not hardcoded."""
+    from pathlib import Path
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    from api.routes.pdf_report import _md, WSTG_ALL_CATEGORIES
+
+    template_path = Path(__file__).resolve().parent.parent / "templates" / "report.html.j2"
+    env = Environment(
+        loader=FileSystemLoader(str(template_path.parent)),
+        autoescape=select_autoescape(["html"]),
+    )
+    env.filters["md"] = _md
+
+    fake_finding = {
+        "id": 1, "ref": "RAJDOLL-0001", "category": "WSTG-INPV", "title": "XSS",
+        "severity": "HIGH", "agent_name": "InputValidationAgent",
+        "evidence": "e", "explanation": "", "remediation": "",
+        "cwe_id": "", "wstg_id": "WSTG-INPV-07", "cvss_score_v4": None,
+        "references": [], "enrichment_source": "llm",
+    }
+    html = env.get_template(template_path.name).render(
+        job_id=1, target="http://example.com",
+        scan_date="2026-05-23", scan_duration="1h",
+        total_findings=1, final_analysis="",
+        findings=[fake_finding], top_findings=[fake_finding],
+        sev_counts={"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0, "INFO": 0},
+        wstg_categories={"WSTG-INPV": 1},
+        enrichment_stats={"static_kb": 0, "llm": 1, "fallback": 0},
+        agents=[{"agent_name": "InputValidationAgent", "status": "completed",
+                 "duration": "5m", "note": ""}],
+        scope_whitelist=[], oos_findings=None, scan_timing=None,
+        llm_model="my-custom-model-7b",
+        agent_count=99,
+        wstg_all_categories=WSTG_ALL_CATEGORIES,
+    )
+    assert "my-custom-model-7b" in html
+    assert "99" in html
+    assert "Qwen 3-4B" not in html
