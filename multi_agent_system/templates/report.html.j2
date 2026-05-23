@@ -304,7 +304,12 @@
   {% endfor %}
 </table>
 
+{% set ns = namespace(current_sev='') %}
 {% for f in findings %}
+{% if f.severity != ns.current_sev %}
+{% set ns.current_sev = f.severity %}
+<h2 style="margin-top:24px">{{ f.severity | title }} Findings ({{ sev_counts.get(f.severity, 0) }})</h2>
+{% endif %}
 <div class="finding">
   <div class="finding-header">
     <div class="finding-ref">{{ f.ref }}</div>
