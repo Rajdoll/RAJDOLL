@@ -122,3 +122,43 @@ def test_template_receives_new_vars():
     assert len(WSTG_ALL_CATEGORIES) == 11
     assert "WSTG-INPV" in WSTG_ALL_CATEGORIES
     assert "WSTG-ATHN" in WSTG_ALL_CATEGORIES
+
+
+def test_wstg_coverage_shows_all_11_categories():
+    """All 11 WSTG categories appear in rendered HTML, including those with 0 findings."""
+    from pathlib import Path
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    from api.routes.pdf_report import _md, WSTG_ALL_CATEGORIES
+
+    template_path = Path(__file__).resolve().parent.parent / "templates" / "report.html.j2"
+    env = Environment(
+        loader=FileSystemLoader(str(template_path.parent)),
+        autoescape=select_autoescape(["html"]),
+    )
+    env.filters["md"] = _md
+
+    fake_finding = {
+        "id": 1, "ref": "RAJDOLL-0001", "category": "WSTG-INPV",
+        "title": "XSS", "severity": "HIGH", "agent_name": "InputValidationAgent",
+        "evidence": "xss", "explanation": "", "remediation": "",
+        "cwe_id": "", "wstg_id": "WSTG-INPV-07", "cvss_score_v4": None,
+        "references": [], "enrichment_source": "fallback",
+    }
+    html = env.get_template(template_path.name).render(
+        job_id=1, target="http://example.com",
+        scan_date="2026-05-23", scan_duration="1h",
+        total_findings=1, final_analysis="",
+        findings=[fake_finding], top_findings=[fake_finding],
+        sev_counts={"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0, "INFO": 0},
+        wstg_categories={"WSTG-INPV": 1},
+        enrichment_stats={"static_kb": 0, "llm": 0, "fallback": 1},
+        agents=[{"agent_name": "InputValidationAgent", "status": "completed",
+                 "duration": "5m", "note": ""}],
+        scope_whitelist=[], oos_findings=None, scan_timing=None,
+        llm_model="qwen/qwen3-4b", agent_count=14,
+        wstg_all_categories=WSTG_ALL_CATEGORIES,
+    )
+    for cat_id in WSTG_ALL_CATEGORIES:
+        assert cat_id in html, f"Missing category: {cat_id}"
+    assert "Not detected" in html
+    assert "Detected" in html

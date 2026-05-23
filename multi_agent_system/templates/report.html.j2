@@ -118,8 +118,8 @@
   .refs-list li::before { content: "· "; color: #1565c0; }
 
   /* ── Stats row ──────────────────────────────────────── */
-  .sev-grid { display: table; width: 100%; border-collapse: separate; border-spacing: 8px; margin: 12px 0; }
-  .sev-cell { display: table-cell; text-align: center; background: #f5f5f5; border-radius: 4px; padding: 10px 4px; }
+  .sev-grid { border-collapse: separate; border-spacing: 8px; margin: 12px 0; }
+  .sev-grid td { text-align: center; background: #f5f5f5; border-radius: 4px; padding: 10px 4px; border-bottom: none; vertical-align: middle; }
   .sev-num  { font-size: 22pt; font-weight: 900; line-height: 1; }
   .sev-lbl  { font-size: 8pt; color: #546e7a; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
 
@@ -133,8 +133,8 @@
   .toc-item { padding: 2px 0; font-size: 9.5pt; }
   .toc-item span { float: right; color: #9e9e9e; }
 
-  /* string for header */
-  .target-str { string-set: target-header content(); }
+  /* string for header — hidden from visual flow, still picked up by string-set */
+  .target-str { string-set: target-header content(); font-size: 0; line-height: 0; }
 </style>
 </head>
 <body>
@@ -170,28 +170,15 @@
 {% endif %}
 <p>Overall Risk Rating: <span class="risk-badge" style="background:{{ overall_color }}">{{ overall_label }}</span></p>
 
-<div class="sev-grid">
-  <div class="sev-cell">
-    <div class="sev-num" style="color:#b71c1c">{{ sev_counts.get('CRITICAL', 0) }}</div>
-    <div class="sev-lbl">Critical</div>
-  </div>
-  <div class="sev-cell">
-    <div class="sev-num" style="color:#e65100">{{ sev_counts.get('HIGH', 0) }}</div>
-    <div class="sev-lbl">High</div>
-  </div>
-  <div class="sev-cell">
-    <div class="sev-num" style="color:#f57f17">{{ sev_counts.get('MEDIUM', 0) }}</div>
-    <div class="sev-lbl">Medium</div>
-  </div>
-  <div class="sev-cell">
-    <div class="sev-num" style="color:#2e7d32">{{ sev_counts.get('LOW', 0) }}</div>
-    <div class="sev-lbl">Low</div>
-  </div>
-  <div class="sev-cell">
-    <div class="sev-num" style="color:#1565c0">{{ sev_counts.get('INFO', 0) }}</div>
-    <div class="sev-lbl">Info</div>
-  </div>
-</div>
+<table class="sev-grid">
+  <tr>
+    <td><div class="sev-num" style="color:#b71c1c">{{ sev_counts.get('CRITICAL', 0) }}</div><div class="sev-lbl">Critical</div></td>
+    <td><div class="sev-num" style="color:#e65100">{{ sev_counts.get('HIGH', 0) }}</div><div class="sev-lbl">High</div></td>
+    <td><div class="sev-num" style="color:#f57f17">{{ sev_counts.get('MEDIUM', 0) }}</div><div class="sev-lbl">Medium</div></td>
+    <td><div class="sev-num" style="color:#2e7d32">{{ sev_counts.get('LOW', 0) }}</div><div class="sev-lbl">Low</div></td>
+    <td><div class="sev-num" style="color:#1565c0">{{ sev_counts.get('INFO', 0) }}</div><div class="sev-lbl">Info</div></td>
+  </tr>
+</table>
 
 {% if final_analysis %}
 <h2>Key Findings Narrative</h2>
@@ -278,11 +265,23 @@
   {% endfor %}
 </table>
 
-<h2>Findings by WSTG Category</h2>
+<h2>WSTG Coverage</h2>
 <table>
-  <tr><th>WSTG Category</th><th>Count</th></tr>
-  {% for wstg_cat, cnt in wstg_categories.items() | sort %}
-  <tr><td>{{ wstg_cat or 'Uncategorized' }}</td><td>{{ cnt }}</td></tr>
+  <tr><th>Category</th><th>Name</th><th>Findings</th><th>Status</th></tr>
+  {% for cat_id, cat_name in wstg_all_categories.items() %}
+  {% set cnt = wstg_categories.get(cat_id, 0) %}
+  <tr>
+    <td style="font-family:monospace;font-size:8.5pt">{{ cat_id }}</td>
+    <td>{{ cat_name }}</td>
+    <td>{{ cnt }}</td>
+    <td>
+      {% if cnt > 0 %}
+        <span style="color:#2e7d32;font-weight:bold">&#10003; Detected</span>
+      {% else %}
+        <span style="color:#9e9e9e">Not detected</span>
+      {% endif %}
+    </td>
+  </tr>
   {% endfor %}
 </table>
 
