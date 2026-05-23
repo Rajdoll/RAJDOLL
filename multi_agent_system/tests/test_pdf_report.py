@@ -162,3 +162,45 @@ def test_wstg_coverage_shows_all_11_categories():
         assert cat_id in html, f"Missing category: {cat_id}"
     assert "Not detected" in html
     assert "Detected" in html
+
+
+def test_findings_index_table_present():
+    """Findings Index table appears before finding cards with ref, title, severity, wstg, agent."""
+    from pathlib import Path
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    from api.routes.pdf_report import _md, WSTG_ALL_CATEGORIES
+
+    template_path = Path(__file__).resolve().parent.parent / "templates" / "report.html.j2"
+    env = Environment(
+        loader=FileSystemLoader(str(template_path.parent)),
+        autoescape=select_autoescape(["html"]),
+    )
+    env.filters["md"] = _md
+
+    fake_finding = {
+        "id": 1, "ref": "RAJDOLL-0001", "category": "WSTG-INPV",
+        "title": "SQL Injection via login", "severity": "CRITICAL",
+        "agent_name": "InputValidationAgent", "evidence": "payload",
+        "explanation": "", "remediation": "",
+        "cwe_id": "CWE-89", "wstg_id": "WSTG-INPV-05",
+        "cvss_score_v4": 9.3, "references": [], "enrichment_source": "static_kb",
+    }
+    html = env.get_template(template_path.name).render(
+        job_id=1, target="http://example.com",
+        scan_date="2026-05-23", scan_duration="1h",
+        total_findings=1, final_analysis="",
+        findings=[fake_finding], top_findings=[fake_finding],
+        sev_counts={"CRITICAL": 1, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0},
+        wstg_categories={"WSTG-INPV": 1},
+        enrichment_stats={"static_kb": 1, "llm": 0, "fallback": 0},
+        agents=[{"agent_name": "InputValidationAgent", "status": "completed",
+                 "duration": "5m", "note": ""}],
+        scope_whitelist=[], oos_findings=None, scan_timing=None,
+        llm_model="qwen/qwen3-4b", agent_count=14,
+        wstg_all_categories=WSTG_ALL_CATEGORIES,
+    )
+    assert "Findings Index" in html
+    assert "RAJDOLL-0001" in html
+    assert "SQL Injection via login" in html
+    assert "WSTG-INPV-05" in html
+    assert "InputValidationAgent" in html

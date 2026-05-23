@@ -289,6 +289,21 @@
 <h1 class="section-break">4. Detailed Findings</h1>
 <p style="font-size:9pt;color:#546e7a">Sorted by severity (Critical → High → Medium → Low → Info). {{ total_findings }} findings total.</p>
 
+<h2>Findings Index</h2>
+<table>
+  <tr><th>#</th><th>Ref</th><th>Title</th><th>Severity</th><th>WSTG</th><th>Agent</th></tr>
+  {% for f in findings %}
+  <tr>
+    <td>{{ loop.index }}</td>
+    <td style="font-family:monospace;font-size:8pt;white-space:nowrap">{{ f.ref }}</td>
+    <td style="font-size:9pt">{{ f.title }}</td>
+    <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+    <td style="font-size:8.5pt;white-space:nowrap">{{ f.wstg_id or '—' }}</td>
+    <td style="font-size:8.5pt;color:#546e7a">{{ f.agent_name }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
 {% for f in findings %}
 <div class="finding">
   <div class="finding-header">
