@@ -94,7 +94,14 @@ def test_template_renders_markdown_fields():
         findings=[fake_finding], top_findings=[fake_finding],
         sev_counts={"CRITICAL": 1, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0},
         wstg_categories={"WSTG-INPV": 1}, enrichment_stats={"static_kb": 0, "llm": 0, "fallback": 1},
-        agents=[{"agent_name": "InputValidationAgent", "status": "completed", "duration": "5m"}],
+        agents=[{"agent_name": "InputValidationAgent", "status": "completed", "duration": "5m", "note": ""}],
+        scope_whitelist=[], oos_findings=None, scan_timing=None,
+        llm_model="test-model",
+        agent_count=14,
+        wstg_all_categories={
+            "WSTG-INFO": "Information Gathering",
+            "WSTG-INPV": "Input Validation",
+        },
     )
 
     # markdown was converted — no raw markers in output
@@ -107,3 +114,11 @@ def test_template_renders_markdown_fields():
 
     # fallback badge shows GEN not —
     assert '<span class="src-fallback">GEN</span>' in html
+
+
+def test_template_receives_new_vars():
+    """WSTG_ALL_CATEGORIES is importable and template renders without error with new vars."""
+    from api.routes.pdf_report import WSTG_ALL_CATEGORIES
+    assert len(WSTG_ALL_CATEGORIES) == 11
+    assert "WSTG-INPV" in WSTG_ALL_CATEGORIES
+    assert "WSTG-ATHN" in WSTG_ALL_CATEGORIES

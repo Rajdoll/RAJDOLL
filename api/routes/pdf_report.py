@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
@@ -13,7 +14,10 @@ from fastapi.responses import Response, JSONResponse
 from typing import Dict, Any, List
 
 from multi_agent_system.core.db import get_db
-from multi_agent_system.models.models import Job, Finding, JobAgent, SharedContext
+from multi_agent_system.models.models import Job, JobAgent, SharedContext
+from multi_agent_system.core.security_guards import data_redactor
+from multi_agent_system.utils.finding_serializer import serialize_finding
+from multi_agent_system.utils.report_service import final_report_mode, get_findings_for_job, serialize_findings_for_job
 
 import markdown as _markdown
 from markupsafe import Markup
@@ -35,6 +39,20 @@ _TEMPLATE_PATH = Path(__file__).parent.parent.parent / "multi_agent_system" / "t
 
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
+WSTG_ALL_CATEGORIES = {
+    "WSTG-INFO": "Information Gathering",
+    "WSTG-CONF": "Configuration & Deployment",
+    "WSTG-IDNT": "Identity Management",
+    "WSTG-ATHN": "Authentication",
+    "WSTG-ATHZ": "Authorization",
+    "WSTG-SESS": "Session Management",
+    "WSTG-INPV": "Input Validation",
+    "WSTG-ERRH": "Error Handling",
+    "WSTG-CRYP": "Weak Cryptography",
+    "WSTG-BUSL": "Business Logic",
+    "WSTG-CLNT": "Client-Side Testing",
+}
+
 
 def _normalize_severity(sev: str) -> str:
     s = (sev or "info").upper()
@@ -44,6 +62,7 @@ def _normalize_severity(sev: str) -> str:
 def _format_evidence(evidence) -> str:
     if evidence is None:
         return "No evidence recorded."
+    evidence = data_redactor.redact_any(evidence)
     if isinstance(evidence, dict):
         # Remove internal confidence metadata from display
         display = {k: v for k, v in evidence.items() if not k.startswith("_")}
@@ -111,11 +130,7 @@ def _render_pdf(job_id: int) -> bytes:
         if not job:
             raise ValueError(f"Job {job_id} not found")
 
-        findings_db = (
-            db.query(Finding)
-            .filter(Finding.job_id == job_id)
-            .all()
-        )
+        findings_db = get_findings_for_job(db, job_id, mode=final_report_mode())
         agents_db = db.query(JobAgent).filter(JobAgent.job_id == job_id).all()
 
         # Load final_analysis from SharedContext
@@ -150,24 +165,15 @@ def _render_pdf(job_id: int) -> bytes:
     # Build findings list (normalized)
     findings: list[dict] = []
     for f in findings_db:
-        sev = _normalize_severity(f.severity.value if hasattr(f.severity, "value") else str(f.severity))
-        findings.append({
-            "id": f.id,
-            "category": f.category or "Uncategorized",
-            "title": f.title or "Untitled",
-            "severity": sev,
-            "agent_name": f.agent_name or "Unknown",
-            "evidence": _format_evidence(f.evidence),
-            "details": f.details,
-            # Enrichment columns
-            "explanation": f.explanation or "",
-            "remediation": f.remediation or "",
-            "cwe_id": f.cwe_id or "",
-            "wstg_id": f.wstg_id or "",
-            "cvss_score_v4": f.cvss_score_v4,
-            "references": f.references or [],
-            "enrichment_source": f.enrichment_source or "fallback",
-        })
+        serialized = serialize_finding(
+            f,
+            include_evidence=False,
+            uppercase_severity=True,
+            for_report=True,
+        )
+        serialized["severity"] = _normalize_severity(serialized["severity"])
+        serialized["evidence"] = _format_evidence(f.evidence)
+        findings.append(serialized)
 
     # Sort by severity
     findings_sorted = sorted(findings, key=lambda x: SEVERITY_ORDER.get(x["severity"], 999))
@@ -257,6 +263,9 @@ def _render_pdf(job_id: int) -> bytes:
         scope_whitelist=scope_whitelist,
         oos_findings=oos_findings if has_oos else None,
         scan_timing=scan_timing,
+        llm_model=os.getenv("LLM_MODEL", "qwen/qwen3-4b"),
+        agent_count=len(agents_list),
+        wstg_all_categories=WSTG_ALL_CATEGORIES,
     )
 
     # Convert to PDF
@@ -273,33 +282,20 @@ async def download_json_report(job_id: int):
         if not job:
             raise HTTPException(404, f"Job {job_id} not found")
 
-        findings_db = db.query(Finding).filter(Finding.job_id == job_id).all()
         agents = db.query(JobAgent).filter(JobAgent.job_id == job_id).all()
 
-    findings_list = []
-    for f in findings_db:
-        sev = _normalize_severity(f.severity.value if hasattr(f.severity, "value") else str(f.severity))
-        evidence = f.evidence
-        if isinstance(evidence, str):
-            try:
-                evidence = json.loads(evidence)
-            except Exception:
-                pass
-
-        findings_list.append({
-            "category": f.category or "N/A",
-            "title": f.title or "Untitled",
-            "severity": sev,
-            "evidence": evidence,
-            "details": f.details,
-            "explanation": f.explanation,
-            "remediation": f.remediation,
-            "cwe_id": f.cwe_id,
-            "wstg_id": f.wstg_id,
-            "cvss_score_v4": f.cvss_score_v4,
-            "references": f.references,
-            "enrichment_source": f.enrichment_source,
-        })
+        findings_list = []
+        for serialized in serialize_findings_for_job(
+            db,
+            job_id,
+            mode=final_report_mode(),
+            include_evidence=True,
+            include_internal_evidence=False,
+            uppercase_severity=True,
+            for_report=True,
+        ):
+            serialized["severity"] = _normalize_severity(serialized["severity"])
+            findings_list.append(serialized)
 
     report = {
         "job_id": job_id,
