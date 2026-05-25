@@ -43,6 +43,9 @@ document.addEventListener('DOMContentLoaded', () => {
     downloadBtn.addEventListener('click', handleDownloadReport);
     downloadPdfBtn.addEventListener('click', handleDownloadPdfReport);
     clearLogsBtn.addEventListener('click', clearLogs);
+    document.getElementById('evalViewBtn').addEventListener('click', () => {
+        if (currentJobId) loadEvaluationView(currentJobId);
+    });
 
     // Live Monitor: skip URL / skip agent
     document.getElementById('hitlSkipUrl').addEventListener('click', () => sendIntervention('skip_url'));
@@ -113,6 +116,7 @@ async function restoreLastScan() {
         monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
         document.getElementById('btnValidateFindings').style.display = 'inline-block';
+        document.getElementById('evalViewBtn').style.display = 'inline-block';
         _findingsLoaded = false;
         document.getElementById('findingsValidationPanel').style.display = 'none';
 
@@ -224,6 +228,7 @@ async function handleScanSubmit(e) {
         monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
         document.getElementById('btnValidateFindings').style.display = 'inline-block';
+        document.getElementById('evalViewBtn').style.display = 'inline-block';
         _findingsLoaded = false;
         document.getElementById('findingsValidationPanel').style.display = 'none';
 
@@ -1155,4 +1160,43 @@ function hitlClearAllowAll() {
     sessionStorage.removeItem('hitl_allow_all');
     hitlAllowAllStatusUpdate();
     addLog('[HITL] Allow all this session — DISABLED. Next checkpoint will block again.', 'info');
+}
+
+async function loadEvaluationView(jobId) {
+    const panel = document.getElementById('evaluationPanel');
+    try {
+        const resp = await fetch(`${API_BASE}/scans/${jobId}/evaluation?target_profile=juiceshop`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        const s = data.summary;
+        document.getElementById('evalSummary').innerHTML =
+            `<strong>Precision:</strong> ${s.precision}% &nbsp; ` +
+            `<strong>Recall:</strong> ${s.recall}% &nbsp; ` +
+            `<strong>F1:</strong> ${s.f1}% &nbsp; ` +
+            `(${s.detected_gt}/${s.total_gt} ground-truth detected, ${s.fp_findings} false positives)`;
+
+        const body = document.getElementById('evalTableBody');
+        body.innerHTML = data.ground_truth_rows.map((r, i) => {
+            const mark = r.detected ? '✓' : '✗';
+            const cls = r.status === 'TP' ? 'status-tp' : 'status-fn';
+            return `<tr class="${cls}"><td>${i + 1}</td><td>${r.wstg}</td>` +
+                   `<td>${r.vuln_category} (${r.challenge})</td><td>${mark}</td>` +
+                   `<td>${r.status}</td></tr>`;
+        }).join('');
+
+        const fpBody = document.getElementById('evalFpBody');
+        fpBody.innerHTML = data.false_positives.length
+            ? data.false_positives.map(f =>
+                `<tr><td>${f.wstg}</td><td>${f.title}</td><td>${f.agent_name}</td><td>${f.severity}</td></tr>`
+              ).join('')
+            : '<tr><td colspan="4">None</td></tr>';
+
+        panel.style.display = 'block';
+        panel.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+        panel.style.display = 'block';
+        document.getElementById('evalSummary').innerHTML =
+            `<span style="color:#c62828">Failed to load evaluation: ${err.message}</span>`;
+    }
 }

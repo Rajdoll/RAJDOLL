@@ -141,6 +141,9 @@
                             <span class="btn-icon">📄</span>
                             Download PDF Report
                         </button>
+                        <button id="evalViewBtn" class="btn btn-secondary" style="display:none;">
+                            <span class="btn-icon">📊</span> Evaluation View
+                        </button>
                         <button class="btn btn-secondary" id="btnValidateFindings" style="display:none;" onclick="toggleFindingsPanel()">
                             <span class="btn-icon">✓</span>
                             Validate Findings
@@ -370,6 +373,28 @@
                     <div id="logsContainer" class="logs-container">
                         <div class="log-line">[SYSTEM] Waiting for scan initialization...</div>
                     </div>
+                </div>
+            </section>
+
+            <!-- Evaluation View Panel -->
+            <section id="evaluationPanel" class="panel" style="display:none;">
+                <div class="panel-header">
+                    <span class="panel-icon">📊</span>
+                    <h2>Evaluation - Actual vs Predicted</h2>
+                </div>
+                <div class="panel-body">
+                    <div id="evalSummary" class="eval-summary"></div>
+                    <table id="evalTable" class="eval-table">
+                        <thead>
+                            <tr><th>#</th><th>WSTG</th><th>Ground Truth (Actual)</th><th>Detected</th><th>Status</th></tr>
+                        </thead>
+                        <tbody id="evalTableBody"></tbody>
+                    </table>
+                    <h4>False Positives (Predicted, no Actual match)</h4>
+                    <table id="evalFpTable" class="eval-table">
+                        <thead><tr><th>WSTG</th><th>Title</th><th>Agent</th><th>Severity</th></tr></thead>
+                        <tbody id="evalFpBody"></tbody>
+                    </table>
                 </div>
             </section>
         </main>

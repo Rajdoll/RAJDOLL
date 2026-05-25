@@ -774,3 +774,11 @@ body {
     font-size: 0.85rem;
     color: var(--accent-warning);
 }
+
+/* Evaluation View panel */
+.eval-summary { margin: 8px 0 16px; font-size: 14px; }
+.eval-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+.eval-table th, .eval-table td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+.eval-table th { background: #f5f5f5; }
+.eval-table tr.status-tp td { background: #e8f5e9; }
+.eval-table tr.status-fn td { background: #ffebee; }
