@@ -15,7 +15,7 @@ import sys
 
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s [session-managemenet-testing] %(message)s',
+    format='[%(asctime)s] %(levelname)s [session-management-testing] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     stream=sys.stdout
 )

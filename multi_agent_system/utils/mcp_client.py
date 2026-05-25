@@ -164,13 +164,13 @@ class MCPClient:
             # Authorization
             "authorization-testing": os.path.join(self.workspace_root, "authorization-testing", "authorization.py"),
             # Session Management
-            "session-management-testing": os.path.join(self.workspace_root, "session-managemenet-testing", "session-management.py"),
+            "session-management-testing": os.path.join(self.workspace_root, "session-management-testing", "session-management.py"),
             # Input Validation
             "input-validation-testing": os.path.join(self.workspace_root, "input-validation-testing", "input-validation.py"),
             # Error Handling
             "error-handling-testing": os.path.join(self.workspace_root, "error-handling-testing", "error-handling.py"),
             # Weak Cryptography
-            "weak-cryptography-testing": os.path.join(self.workspace_root, "testing-for-weak-cryptography", "weak-cryptography.py"),
+            "weak-cryptography-testing": os.path.join(self.workspace_root, "weak-cryptography-testing", "weak-cryptography.py"),
             # Client-side
             "client-side-testing": os.path.join(self.workspace_root, "client-side-testing", "client-side.py"),
             # Business Logic

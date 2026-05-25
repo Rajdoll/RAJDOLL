@@ -119,7 +119,7 @@ services:
       dockerfile: Dockerfile.mcp-tools
     command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9004"]
     environment:
-      - MODULE_PATH=/app/session-managemenet-testing/session-management.py
+      - MODULE_PATH=/app/session-management-testing/session-management.py
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
     expose:
@@ -152,7 +152,7 @@ services:
       dockerfile: Dockerfile.mcp-tools
     command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9007"]
     environment:
-      - MODULE_PATH=/app/testing-for-weak-cryptography/weak-cryptography.py
+      - MODULE_PATH=/app/weak-cryptography-testing/weak-cryptography.py
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ADAPTIVE_MODE=${ADAPTIVE_MODE:-off}
     expose:
