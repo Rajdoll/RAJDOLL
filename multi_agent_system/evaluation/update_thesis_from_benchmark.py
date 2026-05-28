@@ -170,3 +170,57 @@ def update_comparison_table(doc, baseline: dict, agg: dict, metrics_list: list, 
     tbl.rows[7].cells[3].text = f"+{tp_mean - tp_baseline}" if isinstance(tp_baseline, int) else "?"
 
     # Row 8: Kegagalan Agen — biarkan (0, Stabil)
+
+
+def update_text_paragraphs(doc, agg: dict, baseline_recall: float, baseline_job_id: int) -> list:
+    """
+    Ganti 9 pattern angka lama di paragraf teks.
+    Urutan dari paling spesifik ke umum untuk mencegah partial match.
+    Mengembalikan list string perubahan untuk logging.
+    """
+    def _fs2(v: float) -> str:
+        return f"{v:.2f}".replace(".", ",")
+
+    p_mean = _fmt(agg["precision_mean"])
+    p_std  = _fs2(agg["precision_std"])
+    r_mean = _fmt(agg["recall_mean"])
+    r_std  = _fs2(agg["recall_std"])
+    f_mean = _fmt(agg["f1_mean"])
+    f_std  = _fs2(agg["f1_std"])
+    t_mean = _fmt(agg["tcr_mean"])
+    t_std  = _fs2(agg["tcr_std"])
+    b_rec  = _fmt(baseline_recall)
+
+    # Ordered: paling spesifik dulu
+    patterns = [
+        ("90,71% (±3,1%)",          f"{p_mean}% (±{p_std}%)"),
+        ("92,10% (±4,38%)",         f"{r_mean}% (±{r_std}%)"),
+        ("92,10% bukan 100%",       f"{r_mean}% bukan 100%"),
+        ("91,40% (±3,73%)",         f"{f_mean}% (±{f_std}%)"),
+        ("87,03% (±5,55%)",         f"{t_mean}% (±{t_std}%)"),
+        ("68,42% (baseline run1)",  f"{b_rec}% (baseline job{baseline_job_id})"),
+        ("91,23% (run9 final)",     f"{r_mean}% (rata-rata 10 run)"),
+        ("91,40%",                  f"{f_mean}%"),
+        ("87,03%",                  f"{t_mean}%"),
+    ]
+
+    changes = []
+    for para in doc.paragraphs:
+        for old, new in patterns:
+            if old in para.text:
+                replaced = False
+                for run in para.runs:
+                    if old in run.text:
+                        run.text = run.text.replace(old, new)
+                        changes.append(f"  '{old}' -> '{new}'")
+                        replaced = True
+                        break
+                if not replaced:
+                    # cross-run fallback
+                    full = para.text
+                    if old in full:
+                        remainder = full.replace(old, new, 1)
+                        for i, run in enumerate(para.runs):
+                            run.text = remainder if i == 0 else ""
+                        changes.append(f"  '{old}' -> '{new}' (cross-run)")
+    return changes

@@ -136,3 +136,39 @@ def test_update_comparison_table_updates_header_and_metrics(tmp_path):
     assert "Rata-rata" in tbl.rows[0].cells[2].text
     assert "90,54" in tbl.rows[3].cells[1].text   # precision baseline
     assert "91,00" in tbl.rows[3].cells[2].text   # precision final mean
+
+def make_text_docx(tmp_path):
+    doc = Document()
+    doc.add_paragraph("Precision 90,71% (±3,1%), Recall 92,10% (±4,38%), dan F1-Score 91,40% semuanya melampaui.")
+    doc.add_paragraph("TCR mencapai 87,03% (±5,55%) dengan waktu eksekusi.")
+    doc.add_paragraph("Recall 92,10% bukan 100%.")
+    doc.add_paragraph("91,40% standalone di kalimat lain.")
+    doc.add_paragraph("87,03% standalone.")
+    doc.add_paragraph("dari 68,42% (baseline run1) menjadi 91,23% (run9 final).")
+    path = tmp_path / "text.docx"
+    doc.save(str(path))
+    return path
+
+def test_update_text_paragraphs_replaces_all_patterns(tmp_path):
+    from update_thesis_from_benchmark import update_text_paragraphs
+    agg = {
+        "precision_mean": 92.0, "precision_std": 2.5,
+        "recall_mean": 93.0, "recall_std": 3.2,
+        "f1_mean": 92.5, "f1_std": 2.8,
+        "tcr_mean": 88.0, "tcr_std": 4.1,
+    }
+    baseline_recall = 89.47
+    baseline_job_id = 74
+    docx_path = make_text_docx(tmp_path)
+    doc = Document(str(docx_path))
+    changes = update_text_paragraphs(doc, agg, baseline_recall, baseline_job_id)
+    texts = [p.text for p in doc.paragraphs]
+    assert "92,00% (±2,50%)" in texts[0]   # precision with std
+    assert "93,00% (±3,20%)" in texts[0]   # recall with std
+    assert "92,50%" in texts[0]            # f1 standalone
+    assert "88,00% (±4,10%)" in texts[1]   # tcr with std
+    assert "93,00% bukan 100%" in texts[2]  # recall standalone pattern
+    assert "88,00%" in texts[4]            # tcr standalone
+    assert "89,47%" in texts[5]            # baseline recall
+    assert "93,00% (rata-rata 10 run)" in texts[5]
+    assert len(changes) >= 6
