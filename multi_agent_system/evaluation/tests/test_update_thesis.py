@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from docx import Document
-from update_thesis_from_benchmark import load_run_metrics, compute_aggregate, update_summary_json, update_distribution_table, update_comparison_table
+from update_thesis_from_benchmark import load_run_metrics, compute_aggregate, update_summary_json, update_distribution_table, update_comparison_table, load_all_metrics, RUN_LABELS
 
 SAMPLE_METRICS = {
     "precision": 90.54, "recall": 89.47, "f1": 89.99, "tcr": 85.19,
@@ -172,3 +172,20 @@ def test_update_text_paragraphs_replaces_all_patterns(tmp_path):
     assert "89,47%" in texts[5]            # baseline recall
     assert "93,00% (rata-rata 10 run)" in texts[5]
     assert len(changes) >= 6
+
+
+def test_load_all_metrics_raises_if_any_missing(tmp_path):
+    runs_dir = tmp_path / "runs"
+    # Hanya buat 9 dari 10 run
+    for i in range(1, 10):
+        make_run_dir(tmp_path, f"juiceshop_benchmark_run{i}", SAMPLE_METRICS, job_id=73+i)
+    with pytest.raises(FileNotFoundError, match="Missing"):
+        load_all_metrics(runs_dir, RUN_LABELS)
+
+def test_load_all_metrics_returns_10_items(tmp_path):
+    runs_dir = tmp_path / "runs"
+    for i in range(1, 11):
+        make_run_dir(tmp_path, f"juiceshop_benchmark_run{i}", SAMPLE_METRICS, job_id=73+i)
+    result = load_all_metrics(runs_dir, RUN_LABELS)
+    assert len(result) == 10
+    assert result[0]["job_id"] == 74

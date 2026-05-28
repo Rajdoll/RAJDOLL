@@ -15,7 +15,6 @@ import statistics
 import sys
 from datetime import datetime
 from pathlib import Path
-from docx import Document
 
 BASE_DIR = Path(__file__).parent
 RUNS_DIR = BASE_DIR / "runs"
@@ -224,3 +223,76 @@ def update_text_paragraphs(doc, agg: dict, baseline_recall: float, baseline_job_
                             run.text = remainder if i == 0 else ""
                         changes.append(f"  '{old}' -> '{new}' (cross-run)")
     return changes
+
+
+def load_all_metrics(runs_dir: Path, run_labels: list) -> list:
+    """Load semua run; raise FileNotFoundError jika ada yang belum ada."""
+    result = []
+    missing = []
+    for label in run_labels:
+        try:
+            result.append(load_run_metrics(runs_dir, label))
+        except FileNotFoundError as e:
+            missing.append(str(e))
+    if missing:
+        raise FileNotFoundError("Missing metrics files:\n" + "\n".join(missing))
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Update thesis benchmark data")
+    parser.add_argument("--docx", required=True, help="Path ke file .docx thesis")
+    parser.add_argument("--dry-run", action="store_true", help="Tampilkan perubahan tanpa menyimpan")
+    args = parser.parse_args()
+
+    from docx import Document
+
+    docx_path = Path(args.docx)
+    if not docx_path.exists():
+        sys.exit(f"ERROR: {docx_path} tidak ditemukan")
+
+    print("Memuat metrics dari 10 run...")
+    metrics_list = load_all_metrics(RUNS_DIR, RUN_LABELS)
+    baseline = metrics_list[0]
+    print(f"  OK - job IDs: {[m.get('job_id') for m in metrics_list]}")
+
+    agg = compute_aggregate(metrics_list)
+    print(f"  Aggregate: P={agg['precision_mean']}% R={agg['recall_mean']}% "
+          f"F1={agg['f1_mean']}% TCR={agg['tcr_mean']}%")
+
+    if not args.dry_run:
+        # Backup docx
+        bak = docx_path.with_name(
+            docx_path.stem + f"_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        )
+        shutil.copy2(docx_path, bak)
+        print(f"Backup: {bak.name}")
+
+        # Update JSON summary
+        update_summary_json(SUMMARY_FILE, agg, metrics_list)
+        print(f"Updated: {SUMMARY_FILE.name}")
+
+        # Update docx
+        doc = Document(str(docx_path))
+        update_distribution_table(doc, metrics_list, agg, table_index=17)
+        update_comparison_table(doc, baseline, agg, metrics_list, table_index=22)
+        changes = update_text_paragraphs(doc, agg,
+                                          baseline_recall=baseline["recall"],
+                                          baseline_job_id=baseline.get("job_id", 74))
+        doc.save(str(docx_path))
+        print(f"Updated: {docx_path.name}")
+        print(f"\nPerubahan teks ({len(changes)}):")
+        for c in changes:
+            print(c)
+    else:
+        print("\n[DRY RUN] Tidak ada file yang diubah.")
+        print(f"Nilai baru: P={agg['precision_mean']}+-{agg['precision_std']} "
+              f"R={agg['recall_mean']}+-{agg['recall_std']} "
+              f"F1={agg['f1_mean']}+-{agg['f1_std']} "
+              f"TCR={agg['tcr_mean']}+-{agg['tcr_std']}")
+
+    print("\nSelesai.")
+
+
+if __name__ == "__main__":
+    main()
