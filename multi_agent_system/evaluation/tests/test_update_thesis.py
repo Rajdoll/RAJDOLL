@@ -6,7 +6,8 @@ from unittest.mock import patch, mock_open
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from update_thesis_from_benchmark import load_run_metrics, compute_aggregate, update_summary_json
+from docx import Document
+from update_thesis_from_benchmark import load_run_metrics, compute_aggregate, update_summary_json, update_distribution_table
 
 SAMPLE_METRICS = {
     "precision": 90.54, "recall": 89.47, "f1": 89.99, "tcr": 85.19,
@@ -60,3 +61,37 @@ def test_update_summary_json_writes_correct_data(tmp_path):
     assert result["precision_mean"] == pytest.approx(91.0)
     assert len(result["per_run"]) == 2
     assert result["target"] == "juiceshop"
+
+def make_sample_docx(tmp_path):
+    """Buat docx dengan tabel distribusi 12 baris (header + 10 data + rata-rata)."""
+    doc = Document()
+    tbl = doc.add_table(rows=12, cols=6)
+    header = ['Run', 'P (%)', 'R (%)', 'F1 (%)', 'TCR (%)', 'Total']
+    for j, h in enumerate(header):
+        tbl.rows[0].cells[j].text = h
+    old_runs = ['job54','job56','job57','job58','job59','job61','job64','job65','job66','job67']
+    for i, r in enumerate(old_runs, 1):
+        tbl.rows[i].cells[0].text = r
+        tbl.rows[i].cells[1].text = '93,65'
+        tbl.rows[i].cells[2].text = '96,49'
+        tbl.rows[i].cells[3].text = '95,05'
+        tbl.rows[i].cells[4].text = '92,59'
+    tbl.rows[11].cells[0].text = 'Rata-rata'
+    tbl.rows[11].cells[1].text = '90,71 ±3,1'
+    path = tmp_path / "test.docx"
+    doc.save(str(path))
+    return path
+
+def test_update_distribution_table_replaces_rows(tmp_path):
+    metrics_list = [
+        {**SAMPLE_METRICS, "precision": 91.0, "recall": 90.0, "f1": 90.5, "tcr": 85.0, "job_id": 74 + i}
+        for i in range(10)
+    ]
+    agg = compute_aggregate(metrics_list)
+    docx_path = make_sample_docx(tmp_path)
+    doc = Document(str(docx_path))
+    update_distribution_table(doc, metrics_list, agg, table_index=0)
+    tbl = doc.tables[0]
+    assert tbl.rows[1].cells[0].text == "job74"
+    assert tbl.rows[10].cells[0].text == "job83"
+    assert "91,00" in tbl.rows[11].cells[1].text  # rata-rata Precision

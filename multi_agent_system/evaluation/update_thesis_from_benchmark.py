@@ -15,6 +15,7 @@ import statistics
 import sys
 from datetime import datetime
 from pathlib import Path
+from docx import Document
 
 BASE_DIR = Path(__file__).parent
 RUNS_DIR = BASE_DIR / "runs"
@@ -80,3 +81,30 @@ def update_summary_json(summary_file: Path, agg: dict, metrics_list: list, targe
         "target": target,
     }
     summary_file.write_text(json.dumps(data, indent=2))
+
+
+def _fmt(val: float) -> str:
+    """Format float dengan koma desimal (Indonesian)."""
+    return f"{val:.2f}".replace(".", ",")
+
+
+def update_distribution_table(doc, metrics_list: list, agg: dict, table_index: int = 17):
+    """Ganti 10 baris data + baris rata-rata di tabel distribusi run."""
+    tbl = doc.tables[table_index]
+    for i, m in enumerate(metrics_list, 1):
+        job_id = m.get("job_id", f"run{i}")
+        row = tbl.rows[i]
+        row.cells[0].text = f"job{job_id}"
+        row.cells[1].text = _fmt(m["precision"])
+        row.cells[2].text = _fmt(m["recall"])
+        row.cells[3].text = _fmt(m["f1"])
+        row.cells[4].text = _fmt(m["tcr"])
+        row.cells[5].text = ""
+
+    avg_row = tbl.rows[11]
+    avg_row.cells[0].text = "Rata-rata"
+    avg_row.cells[1].text = f"{_fmt(agg['precision_mean'])} ±{agg['precision_std']}"
+    avg_row.cells[2].text = f"{_fmt(agg['recall_mean'])} ±{agg['recall_std']}"
+    avg_row.cells[3].text = f"{_fmt(agg['f1_mean'])} ±{agg['f1_std']}"
+    avg_row.cells[4].text = f"{_fmt(agg['tcr_mean'])} ±{agg['tcr_std']}"
+    avg_row.cells[5].text = "n=10 run Qwen3-4B"
