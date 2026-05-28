@@ -56,3 +56,27 @@ def compute_aggregate(metrics_list: list) -> dict:
         "f1_mean":     f_mean,    "f1_std":        f_std,
         "tcr_mean":    t_mean,    "tcr_std":       t_std,
     }
+
+
+def update_summary_json(summary_file: Path, agg: dict, metrics_list: list, target: str = "juiceshop"):
+    """Tulis ulang evaluation_juiceshop_summary.json dengan data baru."""
+    per_run = []
+    for m in metrics_list:
+        entry = {k: v for k, v in m.items() if k != "job_id"}
+        per_run.append(entry)
+    data = {
+        "n_runs": agg["n_runs"],
+        "precision_mean": agg["precision_mean"],
+        "precision_std":  agg["precision_std"],
+        "recall_mean":    agg["recall_mean"],
+        "recall_std":     agg["recall_std"],
+        "f1_mean":        agg["f1_mean"],
+        "f1_std":         agg["f1_std"],
+        "tcr_mean":       agg["tcr_mean"],
+        "tcr_std":        agg["tcr_std"],
+        "scan_time_mean_hours": None,
+        "scan_time_std_hours":  None,
+        "per_run": per_run,
+        "target": target,
+    }
+    summary_file.write_text(json.dumps(data, indent=2))

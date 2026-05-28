@@ -6,7 +6,7 @@ from unittest.mock import patch, mock_open
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from update_thesis_from_benchmark import load_run_metrics, compute_aggregate
+from update_thesis_from_benchmark import load_run_metrics, compute_aggregate, update_summary_json
 
 SAMPLE_METRICS = {
     "precision": 90.54, "recall": 89.47, "f1": 89.99, "tcr": 85.19,
@@ -46,3 +46,17 @@ def test_compute_aggregate_mean_and_std():
     assert agg["recall_mean"] == pytest.approx(90.0)
     assert agg["precision_std"] == pytest.approx(1.0, abs=0.1)
     assert agg["n_runs"] == 2
+
+def test_update_summary_json_writes_correct_data(tmp_path):
+    summary_file = tmp_path / "evaluation_juiceshop_summary.json"
+    metrics_list = [
+        {**SAMPLE_METRICS, "precision": 90.0, "recall": 88.0, "f1": 89.0, "tcr": 84.0, "job_id": 74},
+        {**SAMPLE_METRICS, "precision": 92.0, "recall": 92.0, "f1": 92.0, "tcr": 88.0, "job_id": 75},
+    ]
+    agg = compute_aggregate(metrics_list)
+    update_summary_json(summary_file, agg, metrics_list, target="juiceshop")
+    result = json.loads(summary_file.read_text())
+    assert result["n_runs"] == 2
+    assert result["precision_mean"] == pytest.approx(91.0)
+    assert len(result["per_run"]) == 2
+    assert result["target"] == "juiceshop"
