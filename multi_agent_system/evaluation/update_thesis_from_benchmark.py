@@ -108,3 +108,59 @@ def update_distribution_table(doc, metrics_list: list, agg: dict, table_index: i
     avg_row.cells[3].text = f"{_fmt(agg['f1_mean'])} ±{agg['f1_std']}"
     avg_row.cells[4].text = f"{_fmt(agg['tcr_mean'])} ±{agg['tcr_std']}"
     avg_row.cells[5].text = "n=10 run Qwen3-4B"
+
+
+def update_comparison_table(doc, baseline: dict, agg: dict, metrics_list: list, table_index: int = 22):
+    """Update tabel perbandingan: job74 (Run Pertama) vs Rata-rata 10 Run."""
+    tbl = doc.tables[table_index]
+    job_id = baseline.get("job_id", 74)
+
+    # Header row
+    tbl.rows[0].cells[1].text = f"job{job_id} (Run Pertama)"
+    tbl.rows[0].cells[2].text = "Rata-rata 10 Run (Final)"
+    tbl.rows[0].cells[3].text = "Delta"
+
+    total_baseline = baseline.get("total_findings_non_info", "?")
+    total_mean = round(statistics.mean(
+        m.get("total_findings_non_info", 0) for m in metrics_list
+    ))
+    tp_baseline = baseline.get("tp_gt_entries", "?")
+    tp_mean = round(statistics.mean(m.get("tp_gt_entries", 0) for m in metrics_list))
+
+    # Row 2: Total Temuan
+    tbl.rows[2].cells[1].text = f"{total_baseline} temuan"
+    tbl.rows[2].cells[2].text = f"~{total_mean} temuan (mean 10 run)"
+    delta_temuan = total_mean - total_baseline if isinstance(total_baseline, int) else "?"
+    tbl.rows[2].cells[3].text = f"+{delta_temuan}" if isinstance(delta_temuan, int) else "?"
+
+    def delta_str(base, final):
+        d = round(final - base, 2)
+        sign = "+" if d >= 0 else ""
+        return f"{sign}{_fmt(d)}%"
+
+    # Row 3: Precision
+    tbl.rows[3].cells[1].text = f"{_fmt(baseline['precision'])}%"
+    tbl.rows[3].cells[2].text = f"{_fmt(agg['precision_mean'])}% (±{agg['precision_std']}%)"
+    tbl.rows[3].cells[3].text = delta_str(baseline['precision'], agg['precision_mean'])
+
+    # Row 4: Recall
+    tbl.rows[4].cells[1].text = f"{_fmt(baseline['recall'])}%"
+    tbl.rows[4].cells[2].text = f"{_fmt(agg['recall_mean'])}% (±{agg['recall_std']}%)"
+    tbl.rows[4].cells[3].text = delta_str(baseline['recall'], agg['recall_mean'])
+
+    # Row 5: F1-Score
+    tbl.rows[5].cells[1].text = f"{_fmt(baseline['f1'])}%"
+    tbl.rows[5].cells[2].text = f"{_fmt(agg['f1_mean'])}% (±{agg['f1_std']}%)"
+    tbl.rows[5].cells[3].text = delta_str(baseline['f1'], agg['f1_mean'])
+
+    # Row 6: TCR
+    tbl.rows[6].cells[1].text = f"{_fmt(baseline['tcr'])}%"
+    tbl.rows[6].cells[2].text = f"{_fmt(agg['tcr_mean'])}% (±{agg['tcr_std']}%)"
+    tbl.rows[6].cells[3].text = delta_str(baseline['tcr'], agg['tcr_mean'])
+
+    # Row 7: Tantangan Terdeteksi
+    tbl.rows[7].cells[1].text = f"{tp_baseline}/57 entri GT"
+    tbl.rows[7].cells[2].text = f"~{tp_mean}/57 entri GT (mean)"
+    tbl.rows[7].cells[3].text = f"+{tp_mean - tp_baseline}" if isinstance(tp_baseline, int) else "?"
+
+    # Row 8: Kegagalan Agen — biarkan (0, Stabil)

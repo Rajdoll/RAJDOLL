@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from docx import Document
-from update_thesis_from_benchmark import load_run_metrics, compute_aggregate, update_summary_json, update_distribution_table
+from update_thesis_from_benchmark import load_run_metrics, compute_aggregate, update_summary_json, update_distribution_table, update_comparison_table
 
 SAMPLE_METRICS = {
     "precision": 90.54, "recall": 89.47, "f1": 89.99, "tcr": 85.19,
@@ -95,3 +95,44 @@ def test_update_distribution_table_replaces_rows(tmp_path):
     assert tbl.rows[1].cells[0].text == "job74"
     assert tbl.rows[10].cells[0].text == "job83"
     assert "91,00" in tbl.rows[11].cells[1].text  # rata-rata Precision
+
+def make_comparison_docx(tmp_path):
+    doc = Document()
+    tbl = doc.add_table(rows=9, cols=4)
+    rows_data = [
+        ['Metrik', 'run1 (Baseline, Iterasi 3)', 'run9 (Final, Iterasi 4)', 'Delta'],
+        ['Durasi Scan', '~37 menit', 'Di bawah 65 menit (mean 10 run Qwen)', '+75%'],
+        ['Total Temuan', '62 temuan', '~71 temuan (mean 10 run Qwen)', '+14,5%'],
+        ['Precision', '59,68%', '90,71% (±3,1%)', '+31,03%'],
+        ['Recall', '68,42%', '92,10% (±4,38%)', '+23,68%'],
+        ['F1-Score', '63,75%', '91,40% (±3,73%)', '+27,65%'],
+        ['TCR', '62,96%', '87,03% (±5,55%)', '+24,07%'],
+        ['Tantangan Terdeteksi', '39/57 entri GT', '~53/57 entri GT (mean)', '+13'],
+        ['Kegagalan Agen', '0', '0', 'Stabil'],
+    ]
+    for i, row_data in enumerate(rows_data):
+        for j, val in enumerate(row_data):
+            tbl.rows[i].cells[j].text = val
+    path = tmp_path / "comp.docx"
+    doc.save(str(path))
+    return path
+
+def test_update_comparison_table_updates_header_and_metrics(tmp_path):
+    baseline = {**SAMPLE_METRICS, "precision": 90.54, "recall": 89.47, "f1": 89.99,
+                "tcr": 85.19, "tp_gt_entries": 51, "job_id": 74}
+    agg = {
+        "precision_mean": 91.0, "precision_std": 2.0,
+        "recall_mean": 90.0, "recall_std": 3.0,
+        "f1_mean": 90.5, "f1_std": 2.5,
+        "tcr_mean": 86.0, "tcr_std": 4.0,
+        "n_runs": 10,
+    }
+    metrics_list = [baseline] * 10
+    docx_path = make_comparison_docx(tmp_path)
+    doc = Document(str(docx_path))
+    update_comparison_table(doc, baseline, agg, metrics_list, table_index=0)
+    tbl = doc.tables[0]
+    assert "job74" in tbl.rows[0].cells[1].text
+    assert "Rata-rata" in tbl.rows[0].cells[2].text
+    assert "90,54" in tbl.rows[3].cells[1].text   # precision baseline
+    assert "91,00" in tbl.rows[3].cells[2].text   # precision final mean
