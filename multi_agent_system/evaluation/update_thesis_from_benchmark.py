@@ -88,6 +88,12 @@ def _fmt(val: float) -> str:
     return f"{val:.2f}".replace(".", ",")
 
 
+def _fs(val: float) -> str:
+    """Format std deviation with Indonesian comma, removing trailing zeros."""
+    s = str(round(val, 2)).replace(".", ",")
+    return s if s else "0"
+
+
 def update_distribution_table(doc, metrics_list: list, agg: dict, table_index: int = 17):
     """Ganti 10 baris data + baris rata-rata di tabel distribusi run."""
     tbl = doc.tables[table_index]
@@ -103,10 +109,10 @@ def update_distribution_table(doc, metrics_list: list, agg: dict, table_index: i
 
     avg_row = tbl.rows[11]
     avg_row.cells[0].text = "Rata-rata"
-    avg_row.cells[1].text = f"{_fmt(agg['precision_mean'])} ±{agg['precision_std']}"
-    avg_row.cells[2].text = f"{_fmt(agg['recall_mean'])} ±{agg['recall_std']}"
-    avg_row.cells[3].text = f"{_fmt(agg['f1_mean'])} ±{agg['f1_std']}"
-    avg_row.cells[4].text = f"{_fmt(agg['tcr_mean'])} ±{agg['tcr_std']}"
+    avg_row.cells[1].text = f"{_fmt(agg['precision_mean'])} ±{_fs(agg['precision_std'])}"
+    avg_row.cells[2].text = f"{_fmt(agg['recall_mean'])} ±{_fs(agg['recall_std'])}"
+    avg_row.cells[3].text = f"{_fmt(agg['f1_mean'])} ±{_fs(agg['f1_std'])}"
+    avg_row.cells[4].text = f"{_fmt(agg['tcr_mean'])} ±{_fs(agg['tcr_std'])}"
     avg_row.cells[5].text = "n=10 run Qwen3-4B"
 
 
@@ -140,22 +146,22 @@ def update_comparison_table(doc, baseline: dict, agg: dict, metrics_list: list, 
 
     # Row 3: Precision
     tbl.rows[3].cells[1].text = f"{_fmt(baseline['precision'])}%"
-    tbl.rows[3].cells[2].text = f"{_fmt(agg['precision_mean'])}% (±{agg['precision_std']}%)"
+    tbl.rows[3].cells[2].text = f"{_fmt(agg['precision_mean'])}% (±{_fs(agg['precision_std'])}%)"
     tbl.rows[3].cells[3].text = delta_str(baseline['precision'], agg['precision_mean'])
 
     # Row 4: Recall
     tbl.rows[4].cells[1].text = f"{_fmt(baseline['recall'])}%"
-    tbl.rows[4].cells[2].text = f"{_fmt(agg['recall_mean'])}% (±{agg['recall_std']}%)"
+    tbl.rows[4].cells[2].text = f"{_fmt(agg['recall_mean'])}% (±{_fs(agg['recall_std'])}%)"
     tbl.rows[4].cells[3].text = delta_str(baseline['recall'], agg['recall_mean'])
 
     # Row 5: F1-Score
     tbl.rows[5].cells[1].text = f"{_fmt(baseline['f1'])}%"
-    tbl.rows[5].cells[2].text = f"{_fmt(agg['f1_mean'])}% (±{agg['f1_std']}%)"
+    tbl.rows[5].cells[2].text = f"{_fmt(agg['f1_mean'])}% (±{_fs(agg['f1_std'])}%)"
     tbl.rows[5].cells[3].text = delta_str(baseline['f1'], agg['f1_mean'])
 
     # Row 6: TCR
     tbl.rows[6].cells[1].text = f"{_fmt(baseline['tcr'])}%"
-    tbl.rows[6].cells[2].text = f"{_fmt(agg['tcr_mean'])}% (±{agg['tcr_std']}%)"
+    tbl.rows[6].cells[2].text = f"{_fmt(agg['tcr_mean'])}% (±{_fs(agg['tcr_std'])}%)"
     tbl.rows[6].cells[3].text = delta_str(baseline['tcr'], agg['tcr_mean'])
 
     # Row 7: Tantangan Terdeteksi
