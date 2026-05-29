@@ -108,3 +108,6 @@ identity-testing/
 /multi_agent_system/__pycache__/
 Penelitian/
 docs/
+.github/
+pytest.ini
+scripts/
