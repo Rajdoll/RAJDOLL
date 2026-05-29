@@ -9,23 +9,24 @@ from datetime import datetime
 from .core.config import settings
 from .core.db import get_db
 from .models.models import Job, JobAgent, JobStatus, AgentStatus, Finding
-from .agents.base_agent import AgentRegistry, AGENT_EXECUTION_TIMEOUT  # FIX #2: Import timeout
+from .agents.base_agent import AgentRegistry, AGENT_EXECUTION_TIMEOUT  #  agent runs sequentially so that
+	# every subsequent agent receives the cumulative summary + task tree from
+	# all predecessors.  This maximises context quality for the local LLM
+	# (no semaphore contention, no parallel bottleneck).
+
+	# ReferencesFIX #2: Import timeout
 from .utils.hitl_manager import HITLManager
 from .utils.shared_context_manager import SharedContextManager
 from .utils.session_service import create_authenticated_session
+from .framework.js_bundle_analyzer import JSBundleAnalyzer as _JSBundleAnalyzer
 from .utils.simple_llm_client import SimpleLLMClient
-from .core.task_tree import build_task_tree, build_subtest_task_tree
+from .core.task_tree import build_task_tree
 from . import agents  # noqa: F401  # ensure agent classes are registered
 
 
 DEFAULT_PLAN: List[Any] = [
 	# ===== FULL SEQUENTIAL EXECUTION =====
-	# Planner-Summarizer architecture: each agent runs sequentially so that
-	# every subsequent agent receives the cumulative summary + task tree from
-	# all predecessors.  This maximises context quality for the local LLM
-	# (no semaphore contention, no parallel bottleneck).
-	#
-	# References:
+	# Planner-Summarizer architecture: each:
 	#   - PentestGPT (Deng et al.) — Pentesting Task Tree for context tracking
 	#   - HackSynth (Muzsai et al.) — Planner + Summarizer loop
 	#   - PENTEST-AI (Bianou & Batogna) — sequential Saga Controller pattern
@@ -36,7 +37,7 @@ DEFAULT_PLAN: List[Any] = [
 	"AuthorizationAgent",         #  5. Privilege escalation, IDOR
 	"ConfigDeploymentAgent",      #  6. Misconfigurations, HSTS, headers
 	"ClientSideAgent",            #  7. DOM XSS, CORS, clickjacking
-	"FileUploadAgent",            #  8. File upload vulnerabilities (WSTG-INPV-08/09)
+	"FileUploadAgent",            #  8. File upload vulnerabilities
 	"ErrorHandlingAgent",         #  9. Error disclosure, stack traces
 	"WeakCryptographyAgent",      # 10. Weak TLS, crypto flaws
 	"BusinessLogicAgent",         # 11. Business logic bypass
@@ -44,34 +45,19 @@ DEFAULT_PLAN: List[Any] = [
 	"ReportGenerationAgent",      # 13. Final OWASP WSTG 4.2 report
 ]
 
-
-def _mask_identity(value: str | None) -> str | None:
-	if not value:
-		return value
-	if "@" in value:
-		name, _, domain = value.partition("@")
-		if len(name) <= 2:
-			masked_name = "*" * len(name)
-		else:
-			masked_name = f"{name[:1]}***{name[-1:]}"
-		return f"{masked_name}@{domain}"
-	if len(value) <= 2:
-		return "*" * len(value)
-	return f"{value[:1]}***{value[-1:]}"
-
 # Mapping agent names to OWASP categories
 AGENT_TO_OWASP_MAP = {
 	"ReconnaissanceAgent": "WSTG-INFO",
 	"ConfigDeploymentAgent": "WSTG-CONF",
 	"IdentityManagementAgent": "WSTG-IDNT",
 	"AuthenticationAgent": "WSTG-ATHN",
-	"AuthorizationAgent": "WSTG-ATHZ",
+	"AuthorizationAgent": "WSTG-AUTHZ",
 	"SessionManagementAgent": "WSTG-SESS",
 	"InputValidationAgent": "WSTG-INPV",
 	"ErrorHandlingAgent": "WSTG-ERRH",
 	"WeakCryptographyAgent": "WSTG-CRYP",
 	"BusinessLogicAgent": "WSTG-BUSL",
-	"FileUploadAgent": "WSTG-BUSL",  # WSTG-BUSL-08/09: upload file tak terduga & berbahaya
+	"FileUploadAgent": "WSTG-BUSL",
 	"ClientSideAgent": "WSTG-CLNT",
 	"ReportGenerationAgent": "WSTG-REPORT",  # 🆕 Final: Generate OWASP WSTG 4.2 report
 }
@@ -103,7 +89,6 @@ class Orchestrator:
 	def __init__(self, job_id: int, resume_from_step_idx: int | None = None, execution_id: str | None = None):
 		self.job_id = job_id
 		self.resume_from_step_idx = resume_from_step_idx
-		self.execution_id = execution_id
 		self.shared_context: Dict[str, Any] = {}  # Cache of aggregated shared context
 		self.context_manager = SharedContextManager(job_id, log_hook=self._log_context_event)
 		self.plan_metadata: Dict[str, Any] = self._load_plan_metadata()
@@ -196,24 +181,8 @@ class Orchestrator:
 			return
 
 		agent = agent_cls(job_id=self.job_id)
-
-		# Inject framework components when USE_FRAMEWORK=true
-		if settings.use_framework:
-			try:
-				from pathlib import Path
-				from .framework.payload_synthesizer import PayloadSynthesizer
-				from .framework.js_bundle_analyzer import JSBundleAnalyzer
-				from .framework.active_flow import ActiveFlowTester
-				_llm = SimpleLLMClient()
-				_db_path = Path("multi_agent_system/data/learned_patterns.db")
-				agent.payload_synth = PayloadSynthesizer(
-					llm_client=_llm, pattern_db_path=_db_path,
-					enabled=settings.use_payload_synth,
-				)
-				agent.js_bundle_analyzer = JSBundleAnalyzer() if settings.use_js_analyzer else None
-				agent.active_flow = ActiveFlowTester() if settings.use_active_flow else None
-			except Exception as _fw_exc:
-				print(f"[Orchestrator] WARNING: framework injection failed: {_fw_exc}")
+		if settings.use_framework and settings.use_js_analyzer:
+			agent.js_bundle_analyzer = _JSBundleAnalyzer()
 
 		# Inject tools from LLM orchestrator directive
 		inject_specs = self._accumulated_directive.inject_tools.get(agent_name, [])
@@ -275,6 +244,8 @@ class Orchestrator:
 		for name in agent_names:
 			agent_cls = AgentRegistry.get(name)
 			agent = agent_cls(job_id=self.job_id)
+			if settings.use_framework and settings.use_js_analyzer:
+				agent.js_bundle_analyzer = _JSBundleAnalyzer()
 
 			# Inject tool plan if provided by LLM
 			if tools_map and name in tools_map and hasattr(agent, 'set_tool_plan'):
@@ -321,80 +292,6 @@ class Orchestrator:
 			loop = asyncio.new_event_loop()
 			asyncio.set_event_loop(loop)
 		return loop
-
-	def _wait_for_target_ready(self, timeout_s: int = 60, interval_s: int = 5) -> None:
-		"""Block until target responds 200 OK, or give up after timeout_s.
-		Guards against target crash/restart between Recon and Phase 3.
-		"""
-		import time
-		import urllib.request
-		target = self._get_target()
-		if not target:
-			return
-		deadline = time.monotonic() + timeout_s
-		while time.monotonic() < deadline:
-			try:
-				with urllib.request.urlopen(target, timeout=5) as resp:
-					if resp.status < 500:
-						return
-			except Exception:
-				pass
-			remaining = int(deadline - time.monotonic())
-			print(f"[Orchestrator] Target not ready, waiting {interval_s}s (up to {remaining}s remaining)...")
-			time.sleep(interval_s)
-		print(f"[Orchestrator] WARNING: target {target} did not recover in {timeout_s}s — proceeding anyway")
-
-	def _build_and_persist_test_slots(self) -> None:
-		"""After Recon: LLM tags endpoints with WSTG sub-tests, build registry, persist."""
-		from .core.endpoint_tagger import tag_endpoints
-		from .core.slot_registry import TestSlotRegistry
-		from .core.wstg_catalog import load_catalog
-		summarizer = self._get_llm_summarizer()
-		if not summarizer:
-			return
-		inv = self.shared_context.get("endpoint_inventory") or {}
-		endpoints = inv.get("endpoints", [])
-		if not endpoints:
-			print("[Orchestrator] DETA: no endpoints — skipping slot build")
-			return
-		tech = self.shared_context.get("tech_stack") or {}
-		cat = load_catalog()
-		loop = self._ensure_event_loop()
-		try:
-			endpoint_map = loop.run_until_complete(
-				asyncio.wait_for(
-					tag_endpoints(endpoints, cat, tech, summarizer),
-					timeout=120,
-				)
-			)
-		except Exception as e:
-			print(f"[Orchestrator] DETA: tag_endpoints failed: {e}")
-			return
-		if not endpoint_map:
-			print("[Orchestrator] DETA: empty mapping — skipping")
-			return
-		registry = TestSlotRegistry.build(endpoint_map, endpoints, cat)
-		self.context_manager.write("test_slots", registry.to_dict())
-		print(f"[Orchestrator] DETA: {registry.total} slots built from {len(endpoints)} endpoints")
-
-	def _inject_test_slots_for_agent(
-		self, shared_ctx: Dict[str, Any], agent_name: str
-	) -> Dict[str, Any]:
-		"""Inject this agent's TestSlots into the shared context snapshot."""
-		slots_data = shared_ctx.get("test_slots") or self.shared_context.get("test_slots")
-		if not slots_data:
-			return shared_ctx
-		try:
-			from .core.slot_registry import TestSlotRegistry
-			registry = TestSlotRegistry.from_dict(slots_data)
-			my_slots = registry.slots_for_agent(agent_name)
-			if my_slots:
-				shared_ctx = dict(shared_ctx)
-				shared_ctx["my_test_slots"] = [s.to_dict() for s in my_slots]
-				print(f"[Orchestrator] DETA: injected {len(my_slots)} slots for {agent_name}")
-		except Exception as e:
-			print(f"[Orchestrator] DETA: slot injection failed for {agent_name}: {e}")
-		return shared_ctx
 
 	def _is_job_cancelled(self) -> bool:
 		"""Check if the job has been cancelled by user"""
@@ -574,8 +471,6 @@ class Orchestrator:
 		On "proceed", stores directive_commands in self._pending_director_directives[agent_name].
 		"""
 		if getattr(settings, "hitl_mode", "off") != "agent":
-			return "proceed"
-		if not getattr(self.hitl_manager, "hitl_enabled", True):
 			return "proceed"
 		if agent_name in ("ReconnaissanceAgent", "ReportGenerationAgent"):
 			return "proceed"
@@ -760,82 +655,6 @@ class Orchestrator:
 			"impact_chains": analysis.get("impact_chains", []) if isinstance(analysis, dict) else [],
 		}
 		self.context_manager.write("agent_analyses", existing_analyses)
-		self._run_post_agent_coverage_audit(agent_name)
-
-	def _identify_subtest_gaps(self, agent_name: str, tree: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
-		return [
-			st for st in tree.values()
-			if st.get("owner_agent") == agent_name
-			and st.get("high_risk")
-			and st.get("status") == "pending"
-		]
-
-	def _run_post_agent_coverage_audit(self, agent_name: str) -> None:
-		from .core.wstg_catalog import tools_for_subtest
-		from .utils.orchestrator_directive import OrchestratorDirective, merge_directives
-
-		if not hasattr(self, "_audit_attempted"):
-			self._audit_attempted = set()
-		if agent_name in self._audit_attempted:
-			return
-
-		summarizer = self._get_llm_summarizer()
-		if not summarizer:
-			return
-
-		try:
-			tree = build_subtest_task_tree(self.job_id)
-			gaps = self._identify_subtest_gaps(agent_name, tree)
-			if not gaps:
-				return
-
-			candidate_tools = sorted({t for g in gaps for t in tools_for_subtest(g["id"])})
-			target_props = self.shared_context.get("tech_stack") or {}
-
-			loop = self._ensure_event_loop()
-			try:
-				result = loop.run_until_complete(
-					asyncio.wait_for(
-						summarizer.propose_subtest_directive(
-							agent_name=agent_name,
-							gap_subtests=gaps,
-							candidate_tools=candidate_tools,
-							target_props=target_props,
-						),
-						timeout=90,
-					)
-				)
-			except Exception as e:
-				print(f"[Orchestrator] Coverage audit failed for {agent_name}: {e}")
-				return
-
-			if not result or not result.get("focus_instructions"):
-				return
-
-			directive = OrchestratorDirective()
-			directive.focus_instructions[agent_name] = result["focus_instructions"]
-			if result.get("preferred_tools"):
-				directive.inject_tools[agent_name] = [
-					{"tool": t, "arguments": {}} for t in result["preferred_tools"]
-				]
-			self._accumulated_directive = merge_directives(self._accumulated_directive, directive)
-			self._audit_attempted.add(agent_name)
-			self.context_manager.write(
-				"coverage_audit_directive",
-				{
-					"agent": agent_name,
-					"gaps": [g["id"] for g in gaps],
-					"focus_instructions": result["focus_instructions"],
-					"preferred_tools": result.get("preferred_tools", []),
-				},
-			)
-			print(
-				f"[Orchestrator] Coverage audit: {len(gaps)} gaps for {agent_name}; "
-				f"directive emitted ({len(result['focus_instructions'])} chars)"
-			)
-		except Exception as e:
-			print(f"[Orchestrator] Coverage audit failed for {agent_name}: {e}")
-			return
 
 	def _gather_agent_checkpoint_data(self, agent_name: str) -> Dict[str, Any]:
 		"""Collect summary data for an agent checkpoint."""
@@ -1062,10 +881,6 @@ class Orchestrator:
 			if inject_specs:
 				ctx["llm_orchestrator_inject_tools"] = inject_specs
 
-		# DETA: inject per-agent TestSlots
-		if agent_name:
-			ctx = self._inject_test_slots_for_agent(ctx, agent_name)
-
 		return ctx
 
 	def _run_phases_4_5(self) -> None:
@@ -1235,8 +1050,6 @@ class Orchestrator:
 					continue
 
 			self._run_step_sync(step, tool_plan)
-			if self.execution_id:
-				self.context_manager.touch_execution_lease(self.execution_id)
 
 			# ── LLM Active Orchestrator: generate directive after agent ──
 			if isinstance(step, str) and step != "ReportGenerationAgent":
@@ -1245,85 +1058,78 @@ class Orchestrator:
 					if isinstance(s, str) and s not in skip_agents_set
 				]
 				if step == "ReconnaissanceAgent":
-					# Post-recon strategic plan for resume path (normal path uses run() directly)
+					# Post-recon: comprehensive strategic plan for all remaining agents
 					self._generate_post_recon_strategic_plan(remaining_for_directive)
-					self._refresh_shared_context_cache()
-					self._build_and_persist_test_slots()
 				else:
 					# Per-agent: tactical directive for next agent
 					self._generate_and_merge_directive(step, remaining_for_directive)
 
-				# ── Agent-Level HITL Checkpoint ──────────────────────────────
-				# After each agent completes + summarization, pause for user review
-				# (skip for ReportGenerationAgent, and if user chose "auto")
-				if (
-					not agent_hitl_auto
-					and isinstance(step, str)
-					and step != "ReportGenerationAgent"
-					and getattr(self.hitl_manager, "hitl_enabled", True)
-					and getattr(settings, "hitl_mode", "off") == "agent"
-				):
-					remaining = [s for s in plan[idx + 1:] if isinstance(s, str) and s not in skip_agents_set]
-					next_agent = remaining[0] if remaining else None
-					cp_data = self._gather_agent_checkpoint_data(agent_name)
-					recommendations = self._generate_checkpoint_recommendations(agent_name, remaining, cp_data)
+			# ── Agent-Level HITL Checkpoint ──────────────────────────────
+			# After each agent completes + summarization, pause for user review
+			# (skip for ReportGenerationAgent, and if user chose "auto")
+			if (
+				not agent_hitl_auto
+				and isinstance(step, str)
+				and step != "ReportGenerationAgent"
+				and getattr(settings, "hitl_mode", "off") == "agent"
+			):
+				remaining = [s for s in plan[idx + 1:] if isinstance(s, str) and s not in skip_agents_set]
+				next_agent = remaining[0] if remaining else None
+				cp_data = self._gather_agent_checkpoint_data(agent_name)
+				recommendations = self._generate_checkpoint_recommendations(agent_name, remaining, cp_data)
 
-					loop = self._ensure_event_loop()
-					try:
-						result = loop.run_until_complete(
-							self.hitl_manager.request_agent_checkpoint(
-								completed_agent=agent_name,
-								agent_index=idx,
-								findings_count=cp_data["findings_count"],
-								findings_by_severity=cp_data["findings_by_severity"],
-								agent_summary=self.cumulative_summary[-1500:] if self.cumulative_summary else "",
-								cumulative_summary=self.cumulative_summary,
-								key_findings=cp_data["key_findings"],
-								next_agent=next_agent,
-								remaining_agents=remaining,
-								recommendations=recommendations,
-							)
+				loop = self._ensure_event_loop()
+				try:
+					result = loop.run_until_complete(
+						self.hitl_manager.request_agent_checkpoint(
+							completed_agent=agent_name,
+							agent_index=idx,
+							findings_count=cp_data["findings_count"],
+							findings_by_severity=cp_data["findings_by_severity"],
+							agent_summary=self.cumulative_summary[-1500:] if self.cumulative_summary else "",
+							cumulative_summary=self.cumulative_summary,
+							key_findings=cp_data["key_findings"],
+							next_agent=next_agent,
+							remaining_agents=remaining,
+							recommendations=recommendations,
 						)
-					except Exception as e:
-						print(f"[Orchestrator] WARNING: Agent checkpoint failed: {e}, auto-proceeding")
-						result = {"action": "proceed"}
+					)
+				except Exception as e:
+					print(f"[Orchestrator] WARNING: Agent checkpoint failed: {e}, auto-proceeding")
+					result = {"action": "proceed"}
 
-					action = result.get("action", "proceed")
+				action = result.get("action", "proceed")
 
-					if action == "auto":
-						agent_hitl_auto = True
-						print("[Orchestrator] User chose AUTO — disabling checkpoints for remaining agents")
-					elif action == "abort":
-						print("[Orchestrator] User ABORTED scan at checkpoint")
-						break
-					elif action == "skip_next":
-						if next_agent:
-							skip_agents_set.add(next_agent)
-							print(f"[Orchestrator] User chose to skip next agent: {next_agent}")
-					elif action == "reorder":
-						override = result.get("next_agent_override")
-						if override and override in remaining and override != next_agent:
-							# Move the overridden agent to front of remaining
-							remaining_copy = list(plan[idx + 1:])
-							if override in remaining_copy:
-								remaining_copy.remove(override)
-								remaining_copy.insert(0, override)
-								plan[idx + 1:] = remaining_copy
-								print(f"[Orchestrator] User reordered: next agent is now {override}")
+				if action == "auto":
+					agent_hitl_auto = True
+					print("[Orchestrator] User chose AUTO — disabling checkpoints for remaining agents")
+				elif action == "abort":
+					print("[Orchestrator] User ABORTED scan at checkpoint")
+					break
+				elif action == "skip_next":
+					if next_agent:
+						skip_agents_set.add(next_agent)
+						print(f"[Orchestrator] User chose to skip next agent: {next_agent}")
+				elif action == "reorder":
+					override = result.get("next_agent_override")
+					if override and override in remaining and override != next_agent:
+						# Move the overridden agent to front of remaining
+						remaining_copy = list(plan[idx + 1:])
+						if override in remaining_copy:
+							remaining_copy.remove(override)
+							remaining_copy.insert(0, override)
+							plan[idx + 1:] = remaining_copy
+							print(f"[Orchestrator] User reordered: next agent is now {override}")
 
-					# Apply any skip_agents from user
-					user_skips = result.get("skip_agents")
-					if isinstance(user_skips, list):
-						skip_agents_set.update(user_skips)
+				# Apply any skip_agents from user
+				user_skips = result.get("skip_agents")
+				if isinstance(user_skips, list):
+					skip_agents_set.update(user_skips)
 			# ── End checkpoint ───────────────────────────────────────────
 
 		return False
 
 	def run(self) -> None:
-		with get_db() as db:
-			_job = db.query(Job).get(self.job_id)
-			if _job and _job.status == JobStatus.cancelled:
-				return
 		self._update_job_status(JobStatus.running)
 		# Record actual scan start time (not queue time) for accurate duration
 		with get_db() as db:
@@ -1358,28 +1164,16 @@ class Orchestrator:
 				scan_creds = self.context_manager.read("scan_credentials")
 				provided_credentials = None
 				if scan_creds and isinstance(scan_creds, dict):
-					secret = self.context_manager.read_secret(scan_creds.get("credential_ref"))
-					if isinstance(secret, dict) and secret.get("username") and secret.get("password"):
-						provided_credentials = [(secret["username"], secret["password"])]
+					provided_credentials = [(scan_creds["username"], scan_creds["password"])]
 
 				success, auth_session = loop.run_until_complete(
-					create_authenticated_session(
-						target_url,
-						credentials=provided_credentials,
-						allow_default_fallback=bool(settings.allow_default_auto_login),
-					)
+					create_authenticated_session(target_url, credentials=provided_credentials)
 				)
 				if success:
-					session_ref = self.context_manager.write_secret("authenticated-session", auth_session)
-					self.context_manager.write("authenticated_session", {
-						"logged_in": True,
-						"username_masked": _mask_identity(auth_session.get("username")),
-						"auth_method": auth_session.get("auth_method"),
-						"login_endpoint": auth_session.get("login_endpoint"),
-						"session_ref": session_ref,
-					})
+					self.context_manager.write("authenticated_session", auth_session)
 					warnings.warn(f"[Orchestrator] ✓ Auto-login successful as: {auth_session.get('username')}")
 					warnings.warn(f"[Orchestrator]   Auth method: {auth_session.get('auth_method')}")
+					warnings.warn(f"[Orchestrator]   JWT token: {'Present' if auth_session.get('jwt_token') else 'None'}")
 					self._timing_autologin_detail = f"Logged in as {auth_session.get('username', 'unknown')}"
 					# Extract links from authenticated home page and seed SharedContext
 					# Helps when Katana fails on target (e.g. old PHP/Apache apps like DVWA)
@@ -1391,9 +1185,6 @@ class Orchestrator:
 							"cookies": auth_session.get("cookies", {}),
 							"headers": auth_session.get("headers", {}),
 							"jwt_token": auth_session.get("jwt_token"),
-							"username": auth_session.get("username"),
-							"auth_method": auth_session.get("auth_method"),
-							"login_endpoint": auth_session.get("login_endpoint"),
 						})
 						auth_links = loop.run_until_complete(_svc.extract_authenticated_links())
 						if auth_links:
@@ -1422,23 +1213,18 @@ class Orchestrator:
 
 		# Populate shared_context from recon results for other agents
 		self._populate_shared_context_from_recon()
-		self._refresh_shared_context_cache()
-
+		
 		plan = self._remove_recon(plan_with_recon)
-
-		# PHASE 2: Execution plan — strategic planning + DETA slot build run post-recon
+		
+		# PHASE 2: Execution plan — strategic planning runs post-recon
 		plan = self._remove_recon(list(DEFAULT_PLAN))
 		print(f"[Orchestrator] Phase 2: execution plan = {plan}")
-		self._generate_post_recon_strategic_plan(plan)
-		self._build_and_persist_test_slots()
 
 		self._update_plan_sequence(["ReconnaissanceAgent", *plan])
-
-		# Wait for target to be responsive before Phase 3 (guards against crash/restart mid-scan)
-		self._wait_for_target_ready()
 
 		# PHASE 3: Execute agent loop (returns True if paused mid-phase)
 		if self._run_phase_3(plan, start_idx=0):
 			return  # Paused; Phase 4/5 will run after resume completes Phase 3
 
 		self._run_phases_4_5()
+
