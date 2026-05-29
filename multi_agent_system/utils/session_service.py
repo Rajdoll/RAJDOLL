@@ -15,7 +15,24 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, urljoin
 
+from ..core.config import settings
+
 logger = logging.getLogger(__name__)
+
+
+def _mask_identity(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return value
+    if "@" in value:
+        name, _, domain = value.partition("@")
+        if len(name) <= 2:
+            masked_name = "*" * len(name)
+        else:
+            masked_name = f"{name[:1]}***{name[-1:]}"
+        return f"{masked_name}@{domain}"
+    if len(value) <= 2:
+        return "*" * len(value)
+    return f"{value[:1]}***{value[-1:]}"
 
 
 class SessionService:
@@ -278,21 +295,30 @@ class SessionService:
             "token": self.session_data.get("jwt_token"),
             "username": self.session_data.get("username"),
             "auth_method": self.session_data.get("auth_method"),
+            "login_endpoint": self.session_data.get("login_endpoint"),
         }
-    
-    def to_shared_context(self) -> Dict[str, Any]:
-        """
-        Convert session data to format suitable for shared_context storage.
-        """
+
+    def export_runtime_auth_session(self) -> Dict[str, Any]:
+        """Return the full in-memory session payload for live tool execution."""
+        return {
+            "logged_in": self.session_data.get("logged_in", False),
+            "username": self.session_data.get("username"),
+            "auth_method": self.session_data.get("auth_method"),
+            "jwt_token": self.session_data.get("jwt_token"),
+            "cookies": self.session_data.get("cookies", {}),
+            "headers": self.session_data.get("headers", {}),
+            "login_endpoint": self.session_data.get("login_endpoint"),
+        }
+
+    def to_shared_context(self, secret_ref: Optional[str] = None) -> Dict[str, Any]:
+        """Return a safe shared-context summary without raw secret material."""
         return {
             "authenticated_session": {
                 "logged_in": self.session_data.get("logged_in", False),
-                "username": self.session_data.get("username"),
+                "username_masked": _mask_identity(self.session_data.get("username")),
                 "auth_method": self.session_data.get("auth_method"),
-                "jwt_token": self.session_data.get("jwt_token"),
-                "cookies": self.session_data.get("cookies", {}),
-                "headers": self.session_data.get("headers", {}),
                 "login_endpoint": self.session_data.get("login_endpoint"),
+                "session_ref": secret_ref,
             }
         }
 
@@ -342,7 +368,8 @@ class SessionService:
 
 async def create_authenticated_session(
     target_url: str,
-    credentials: Optional[List[Tuple[str, str]]] = None
+    credentials: Optional[List[Tuple[str, str]]] = None,
+    allow_default_fallback: Optional[bool] = None,
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Convenience function to create an authenticated session.
@@ -360,11 +387,14 @@ async def create_authenticated_session(
         for username, password in credentials:
             success, session = await service.attempt_login(username, password)
             if success:
-                return True, service.to_shared_context()["authenticated_session"]
+                return True, service.export_runtime_auth_session()
     
     # Fallback to auto-login
-    success, session = await service.auto_login()
-    if success:
-        return True, service.to_shared_context()["authenticated_session"]
+    if allow_default_fallback is None:
+        allow_default_fallback = bool(settings.allow_default_auto_login)
+    if allow_default_fallback:
+        success, session = await service.auto_login()
+        if success:
+            return True, service.export_runtime_auth_session()
     
     return False, {}

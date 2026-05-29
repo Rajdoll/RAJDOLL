@@ -10,9 +10,9 @@ from typing import Any, Dict, List
 
 from ..agents.base_agent import BaseAgent, AgentRegistry
 from ..core.db import get_db
-from ..models.models import Finding, Job
+from ..models.models import Job
 # 🆕 Sensitive data redaction integration
-from ..core.security_guards import data_redactor
+from ..utils.report_service import final_report_mode, serialize_findings_for_job
 
 @AgentRegistry.register("ReportGenerationAgent")
 class ReportGenerationAgent(BaseAgent):
@@ -80,42 +80,35 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 		return {"status": "success", "report": report}
 	
 	async def _collect_findings(self, job_id: int) -> List[Dict[str, Any]]:
-		"""Collect all findings from database for this job"""
+		"""Collect manually validated findings from database for this final report."""
 		findings = []
 		
 		with get_db() as db:
-			db_findings = db.query(Finding).filter(Finding.job_id == job_id).all()
-			
-			for f in db_findings:
-				evidence_str = ""
-				if f.evidence is not None:
-					try:
-						evidence_str = json.dumps(f.evidence, ensure_ascii=False)
-					except Exception:
-						evidence_str = str(f.evidence)
-
-				# 🔒 REDACT SENSITIVE DATA: Remove passwords, API keys, PII before export
-				redacted_title = data_redactor.redact(f.title or "")
-				redacted_description = data_redactor.redact(f.details or "")
-				redacted_evidence = data_redactor.redact(evidence_str)
-				redacted_location = None
-				
+			for serialized in serialize_findings_for_job(
+				db,
+				job_id,
+				mode=final_report_mode(),
+				include_evidence=True,
+				include_internal_evidence=False,
+				uppercase_severity=True,
+				for_report=True,
+			):
 				findings.append({
-					"id": f.id,
-					"title": redacted_title,
-					"description": redacted_description,
-					"severity": (
-						"INFORMATIONAL"
-						if (getattr(f.severity, "value", str(f.severity)) in ("info", "INFORMATIONAL", "informational"))
-						else str(getattr(f.severity, "value", f.severity)).upper()
-					),
-					"category": f.category,
-					"location": redacted_location,
-					"evidence": redacted_evidence,
-					"remediation": None,
-					"references": None,
-					"cvss_score": None,
-					"agent_name": f.agent_name,
+					"id": serialized["id"],
+					"title": serialized["title"],
+					"description": serialized["details"],
+					"severity": "INFORMATIONAL" if serialized["severity"] == "INFO" else serialized["severity"],
+					"category": serialized["category"],
+					"location": None,
+					"evidence": serialized["evidence"],
+					"remediation": serialized.get("remediation") or None,
+					"references": serialized.get("references") or None,
+					"cvss_score": serialized.get("cvss_score_v4"),
+					"agent_name": serialized["agent_name"],
+					"confidence_score": serialized.get("confidence_score"),
+					"confidence_level": serialized.get("confidence_level"),
+					"finding_state": serialized.get("finding_state"),
+					"reportability_status": serialized.get("reportability_status"),
 				})
 		
 		return findings
@@ -337,7 +330,6 @@ Focus on: business impact, clear remediation steps, risk prioritization, and pro
 					"InputValidationAgent - Input Validation Testing",
 					"BusinessLogicAgent - Business Logic Testing",
 					"ClientSideAgent - Client-side Testing",
-					"APITestingAgent - API Security Testing",
 					"ErrorHandlingAgent - Error Handling Testing",
 					"WeakCryptographyAgent - Cryptography Testing",
 					"ConfigDeploymentAgent - Configuration Testing",

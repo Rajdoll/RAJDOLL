@@ -46,3 +46,4 @@ class ScanStatusResponse(BaseModel):
     status: str
     agents: List[JobAgentState]
     summary: Optional[str] = None
+    target: Optional[str] = None

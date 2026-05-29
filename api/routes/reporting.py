@@ -4,7 +4,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from multi_agent_system.core.db import get_db
-from multi_agent_system.models.models import Job, Finding
+from multi_agent_system.models.models import Job
+from multi_agent_system.utils.report_service import final_report_mode, serialize_findings_for_job
 import json
 
 
@@ -17,12 +18,12 @@ def get_compliance_report(job_id: int):
         job = db.query(Job).get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        findings = db.query(Finding).filter(Finding.job_id == job_id).all()
+        findings = serialize_findings_for_job(db, job_id, mode=final_report_mode(), for_report=True)
 
     # Build a simple markdown summary suitable for compliance attachments
     counts = {}
     for f in findings:
-        key = (f.severity.value if hasattr(f.severity, 'value') else str(f.severity), f.category)
+        key = (f.get("severity", "info"), f.get("category", "Uncategorized"))
         counts[key] = counts.get(key, 0) + 1
 
     lines = [
@@ -45,29 +46,29 @@ def get_compliance_report(job_id: int):
     else:
         # Sort by severity (High->Low->Info) then by created time
         order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-        def sev_key(f: Finding):
-            sev = (f.severity.value if hasattr(f.severity, 'value') else str(f.severity)).lower()
-            return (order.get(sev, 9), getattr(f, 'created_at', None) or 0)
+        def sev_key(f: dict):
+            sev = f.get("severity", "info").lower()
+            return (order.get(sev, 9), f.get("created_at") or 0)
         for f in sorted(findings, key=sev_key):
-            sev = (f.severity.value if hasattr(f.severity, 'value') else str(f.severity)).upper()
-            title = f.title or "Untitled Finding"
-            agent = getattr(f, 'agent_name', 'Unknown')
-            created = getattr(f, 'created_at', None)
+            sev = f.get("severity", "info").upper()
+            title = f.get("title") or "Untitled Finding"
+            agent = f.get("agent_name") or "Unknown"
+            created = f.get("created_at")
             created_s = created.isoformat() if created else ""
-            lines.append(f"- [{sev}] {f.category} — {title} (Agent: {agent}, ID: {f.id})")
+            lines.append(f"- [{sev}] {f.get('category')} - {title} (Agent: {agent}, ID: {f.get('id')})")
             if created_s:
                 lines.append(f"  - When: {created_s}")
-            if f.details:
-                lines.append(f"  - Details: {f.details}")
-            if f.evidence is not None:
+            if f.get("details"):
+                lines.append(f"  - Details: {f.get('details')}")
+            if f.get("evidence") is not None:
                 try:
-                    ev = f.evidence if isinstance(f.evidence, dict) else json.loads(str(f.evidence))
+                    ev = f.get("evidence") if isinstance(f.get("evidence"), dict) else json.loads(str(f.get("evidence")))
                     lines.append("  - Evidence:")
                     lines.append("\n".join(["    " + l for l in ("```json\n" + json.dumps(ev, indent=2) + "\n```").splitlines()]))
                 except Exception:
                     # Fallback to raw string block
                     lines.append("  - Evidence (raw):")
-                    lines.append("\n".join(["    " + l for l in ("```\n" + str(f.evidence) + "\n```").splitlines()]))
+                    lines.append("\n".join(["    " + l for l in ("```\n" + str(f.get("evidence")) + "\n```").splitlines()]))
 
     return "\n".join(lines)
 

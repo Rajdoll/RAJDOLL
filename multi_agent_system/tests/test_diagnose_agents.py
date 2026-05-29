@@ -47,7 +47,7 @@ def test_categorize_result_auth_required():
 
 def test_agent_config_has_five_zero_agents():
     from multi_agent_system.tools.diagnose_agents import ZERO_AGENTS
-    expected = {"ClientSideAgent", "FileUploadAgent", "APITestingAgent",
+    expected = {"ClientSideAgent", "FileUploadAgent",
                 "ErrorHandlingAgent", "BusinessLogicAgent"}
     assert set(ZERO_AGENTS.keys()) == expected
     for name, cfg in ZERO_AGENTS.items():

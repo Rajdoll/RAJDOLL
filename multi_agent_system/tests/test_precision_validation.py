@@ -67,6 +67,16 @@ class TestPrecisionCalculation:
         findings = [self._make_finding(True), self._make_finding(True), self._make_finding(None)]
         assert m.calculate_precision(findings) == 100.0
 
+    def test_pending_f1_is_not_acceptable_gate(self):
+        import inspect
+        from api.routes.evaluation import get_metrics
+
+        source = inspect.getsource(get_metrics)
+        assert "f1_ok = metrics.f1_score is not None and metrics.f1_score >= 85.0" in source
+        assert "raw_findings_count = summary[\"raw_count\"]" in source
+        assert "leads_to_validated_conversion_rate" in source
+        assert "duplicate_suppression_rate" in source
+
 
 class TestRecallCalculation:
     def _make_finding(self, title, category):

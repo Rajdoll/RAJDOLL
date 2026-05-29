@@ -29,10 +29,6 @@ ZERO_AGENTS: Dict[str, Dict[str, Any]] = {
         "server": "file-upload-testing",
         "tools_sample": ["test_unrestricted_upload", "test_mime_type_bypass"],
     },
-    "APITestingAgent": {
-        "server": "api-testing",
-        "tools_sample": ["test_graphql_introspection", "test_rest_api_abuse", "test_rate_limiting"],
-    },
     "ErrorHandlingAgent": {
         "server": "error-handling-testing",
         "tools_sample": ["probe_for_error_leaks", "check_generic_error_pages"],
@@ -88,7 +84,6 @@ def categorize_result(result: Dict[str, Any], elapsed_s: float) -> Dict[str, str
 _FALLBACK_URLS: Dict[str, str] = {
     "client-side-testing":    "http://client-mcp:9008/jsonrpc",
     "file-upload-testing":    "http://fileupload-mcp:9012/jsonrpc",
-    "api-testing":            "http://api-testing-mcp:9013/jsonrpc",
     "error-handling-testing": "http://error-mcp:9006/jsonrpc",
     "business-logic-testing": "http://biz-mcp:9009/jsonrpc",
 }

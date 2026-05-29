@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from multi_agent_system.core.db import get_db
 from multi_agent_system.models.models import Finding
+from multi_agent_system.utils.finding_policy import apply_manual_validation, classify_finding
 
 router = APIRouter()
 
@@ -22,12 +23,14 @@ def _require_admin(x_admin_token: str = Header(default="")):
 class ValidateBody(BaseModel):
     is_true_positive: bool
     notes: Optional[str] = None
+    source: str = "admin_review"
 
 
 class BulkValidation(BaseModel):
     finding_id: int
     is_true_positive: bool
     notes: Optional[str] = None
+    source: str = "admin_review"
 
 
 class BulkValidateBody(BaseModel):
@@ -44,10 +47,18 @@ def validate_finding(
         finding = db.query(Finding).filter(Finding.id == finding_id).first()
         if not finding:
             raise HTTPException(status_code=404, detail="Finding not found")
-        finding.is_true_positive = body.is_true_positive
-        finding.validation_notes = body.notes
+        classification = apply_manual_validation(
+            finding,
+            is_true_positive=body.is_true_positive,
+            notes=body.notes,
+            source=body.source,
+        )
         db.commit()
-        return {"finding_id": finding_id, "is_true_positive": body.is_true_positive}
+        return {
+            "finding_id": finding_id,
+            "is_true_positive": body.is_true_positive,
+            "classification": classification,
+        }
 
 
 @router.post("/jobs/{job_id}/findings/validate-bulk")
@@ -64,8 +75,21 @@ def bulk_validate_findings(
                 Finding.job_id == job_id,
             ).first()
             if finding:
-                finding.is_true_positive = v.is_true_positive
-                finding.validation_notes = v.notes
+                apply_manual_validation(
+                    finding,
+                    is_true_positive=v.is_true_positive,
+                    notes=v.notes,
+                    source=v.source,
+                )
                 updated += 1
         db.commit()
-        return {"updated": updated, "job_id": job_id}
+        reviewed = db.query(Finding).filter(Finding.job_id == job_id).all()
+        return {
+            "updated": updated,
+            "job_id": job_id,
+            "summary": {
+                "validated_true_positive": len([f for f in reviewed if f.is_true_positive is True]),
+                "validated_false_positive": len([f for f in reviewed if f.is_true_positive is False]),
+                "reportable_count": len([f for f in reviewed if classify_finding(f).get("reportability_status") == "reportable"]),
+            },
+        }

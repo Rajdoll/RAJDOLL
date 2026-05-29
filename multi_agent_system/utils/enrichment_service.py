@@ -344,15 +344,6 @@ class EnrichmentService:
             "4. Configure error pages to return generic messages without framework, path, or version details.\n"
             "5. Review the application's information disclosure surface regularly using automated scanners.",
         ),
-        "WSTG-APIT": (
-            "WSTG-APIT",
-            "CWE-285",
-            "1. Authenticate all API endpoints — require valid tokens for every operation, including read-only ones.\n"
-            "2. Validate API input strictly: enforce schema validation and reject unexpected fields.\n"
-            "3. Implement API rate limiting and per-consumer quotas.\n"
-            "4. Return 401/403 rather than 404 for unauthorized access to avoid endpoint enumeration.\n"
-            "5. Document and version all API endpoints; deprecate older versions with known vulnerabilities.",
-        ),
     }
 
     @staticmethod

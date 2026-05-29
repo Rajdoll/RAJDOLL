@@ -112,7 +112,6 @@ DEFAULT_CLUSTERS = [
         agents=[
             "BusinessLogicAgent",
             "FileUploadAgent",
-            "APITestingAgent",
             "ClientSideAgent",
             "ConfigDeploymentAgent",
             "ErrorHandlingAgent",

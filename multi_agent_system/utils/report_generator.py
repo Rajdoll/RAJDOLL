@@ -26,7 +26,6 @@ class OWASPReportGenerator:
         "WSTG-CRYP": "Weak Cryptography Testing",
         "WSTG-BUSL": "Business Logic Testing",
         "WSTG-CLNT": "Client-side Testing",
-        "WSTG-APIT": "API Testing"
     }
     
     SEVERITY_COLORS = {
@@ -585,7 +584,6 @@ See full OWASP WSTG checklist: https://github.com/OWASP/wstg/tree/master/checkli
             "AuthorizationAgent": "OWASP WSTG-ATHZ specialist (Authorization Testing)",
             "SessionManagementAgent": "OWASP WSTG-SESS specialist (Session Management)",
             "InputValidationAgent": "OWASP WSTG-INPV specialist (SQL, XSS, XXE, SSRF)",
-            "APITestingAgent": "OWASP WSTG-APIT specialist (GraphQL, REST, Rate Limiting)",
             "FileUploadAgent": "OWASP WSTG-BUSL specialist (Unrestricted Upload)",
             "ClientSideAgent": "OWASP WSTG-CLNT specialist (XSS, Clickjacking, DOM-based)",
             "ErrorHandlingAgent": "OWASP WSTG-ERRH specialist (Stack Traces, Info Leaks)",

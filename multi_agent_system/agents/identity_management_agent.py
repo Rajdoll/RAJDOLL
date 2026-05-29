@@ -63,7 +63,18 @@ You are IdentityManagementAgent, OWASP WSTG-IDNT expert specializing in identity
         profile_eps = read_tag(inventory, "user_profile")
         recovery_eps = read_tag(inventory, "password_recovery")
         if not (register_eps or profile_eps or recovery_eps):
-            self.log("info", "no endpoints classified as user_registration/user_profile/password_recovery, skipping")
+            self.log("info", "no identity-relevant tags found, emitting inventory-gap lead")
+            self.add_finding(
+                "WSTG-IDNT",
+                "IdentityManagementAgent skipped: no registration/profile/recovery endpoints in inventory",
+                severity="info",
+                evidence={
+                    "target": target,
+                    "missing_tags": ["user_registration", "user_profile", "password_recovery"],
+                    "proof_type": "inventory_only",
+                },
+                details="Recon did not classify any endpoint with identity-management-relevant tags. Rerun with broader discovery or extend the endpoint tagger.",
+            )
             return {"findings": []}
         # Map legacy login_eps to user_login tag; data_eps fallback to register + profile
         login_eps = read_tag(inventory, "user_login")

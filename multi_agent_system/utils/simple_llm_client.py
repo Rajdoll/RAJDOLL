@@ -523,47 +523,45 @@ class SimpleLLMClient:
         ]
 
         json_schema = {
-            "name": "agent_analysis",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "summary": {
-                        "type": "string",
-                        "description": "Concise summary of findings (under 300 words, bullet points)"
-                    },
-                    "root_causes": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "finding": {"type": "string"},
-                                "root_cause": {"type": "string"},
-                                "why_it_exists": {"type": "string"}
-                            },
-                            "required": ["finding", "root_cause", "why_it_exists"],
-                            "additionalProperties": False
-                        }
-                    },
-                    "impact_chains": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "finding": {"type": "string"},
-                                "steps": {
-                                    "type": "array",
-                                    "items": {"type": "string"}
-                                },
-                                "worst_case": {"type": "string"}
-                            },
-                            "required": ["finding", "steps", "worst_case"],
-                            "additionalProperties": False
-                        }
+            "title": "agent_analysis",
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Concise summary of findings (under 300 words, bullet points)"
+                },
+                "root_causes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "finding": {"type": "string"},
+                            "root_cause": {"type": "string"},
+                            "why_it_exists": {"type": "string"}
+                        },
+                        "required": ["finding", "root_cause", "why_it_exists"],
+                        "additionalProperties": False
                     }
                 },
-                "required": ["summary", "root_causes", "impact_chains"],
-                "additionalProperties": False
-            }
+                "impact_chains": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "finding": {"type": "string"},
+                            "steps": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            },
+                            "worst_case": {"type": "string"}
+                        },
+                        "required": ["finding", "steps", "worst_case"],
+                        "additionalProperties": False
+                    }
+                }
+            },
+            "required": ["summary", "root_causes", "impact_chains"],
+            "additionalProperties": False
         }
 
         fallback = {"summary": raw_outputs[:1000], "root_causes": [], "impact_chains": []}
@@ -573,7 +571,7 @@ class SimpleLLMClient:
                 messages,
                 max_tokens=1000,
                 temperature=0.3,
-                response_format={"type": "json_schema", "json_schema": json_schema}
+                response_schema=json_schema
             )
             text = self._strip_thinking_tags(response)
             import json as _json

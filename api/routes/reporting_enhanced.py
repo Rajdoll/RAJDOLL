@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Response
 from multi_agent_system.core.db import get_db
 from multi_agent_system.models.models import Job, Finding, AgentEvent
+from multi_agent_system.utils.report_service import final_report_mode, serialize_findings_for_job
 import json
 from datetime import datetime
 
@@ -211,7 +212,8 @@ def get_enhanced_report(job_id: int):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         
-        findings = db.query(Finding).filter(Finding.job_id == job_id).order_by(Finding.severity.desc(), Finding.created_at.desc()).all()
+        raw_findings = db.query(Finding).filter(Finding.job_id == job_id).all()
+        findings = serialize_findings_for_job(db, job_id, mode=final_report_mode(), for_report=True)
         events = db.query(AgentEvent).join(AgentEvent.job_agent).filter(AgentEvent.job_agent.has(job_id=job_id)).order_by(AgentEvent.created_at.asc()).all()
         
         # Group findings by category and severity
@@ -219,8 +221,8 @@ def get_enhanced_report(job_id: int):
         findings_by_severity = {"critical": [], "high": [], "medium": [], "low": [], "info": []}
         
         for f in findings:
-            cat = f.category or "GENERAL"
-            sev = f.severity.value if hasattr(f.severity, 'value') else str(f.severity)
+            cat = f.get("category") or "GENERAL"
+            sev = f.get("severity", "info")
             
             if cat not in findings_by_category:
                 findings_by_category[cat] = []
@@ -230,9 +232,9 @@ def get_enhanced_report(job_id: int):
         
         # Calculate risk
         findings_data = [{
-            "severity": f.severity.value if hasattr(f.severity, 'value') else str(f.severity),
-            "category": f.category,
-            "title": f.title
+            "severity": f.get("severity", "info"),
+            "category": f.get("category"),
+            "title": f.get("title"),
         } for f in findings]
         
         risk_assessment = calculate_risk_score(findings_data)
@@ -248,6 +250,11 @@ def get_enhanced_report(job_id: int):
         report_lines.append(f"Started: {job.created_at}")
         report_lines.append(f"Completed: {job.updated_at}")
         report_lines.append("")
+        if len(findings) != len(raw_findings):
+            report_lines.append(
+                f"Report Gate: {len(findings)} reportable findings included, {len(raw_findings) - len(findings)} suppressed pending validation or excluded as low-confidence."
+            )
+            report_lines.append("")
         
         # Executive Summary
         report_lines.append("=" * 80)
@@ -270,18 +277,18 @@ def get_enhanced_report(job_id: int):
             report_lines.append("PRIORITY ACTION ITEMS (CRITICAL & HIGH SEVERITY)")
             report_lines.append("=" * 80)
             for idx, f in enumerate(critical_high[:10], 1):
-                report_lines.append(f"\n{idx}. [{f.severity.value if hasattr(f.severity, 'value') else str(f.severity)}] {f.title}")
-                report_lines.append(f"   Category: {f.category}")
-                report_lines.append(f"   Agent: {f.agent_name}")
+                report_lines.append(f"\n{idx}. [{f.get('severity', 'info')}] {f.get('title')}")
+                report_lines.append(f"   Category: {f.get('category')}")
+                report_lines.append(f"   Agent: {f.get('agent_name')}")
                 
-                if f.evidence:
+                if f.get("evidence"):
                     report_lines.append(f"   Evidence:")
                     report_lines.append(f"   ```json")
-                    report_lines.append(f"   {json.dumps(f.evidence, indent=2)}")
+                    report_lines.append(f"   {json.dumps(f.get('evidence'), indent=2)}")
                     report_lines.append(f"   ```")
                 
                 # Add remediation
-                remediation = get_remediation(f.category, f.title, f.evidence or {})
+                remediation = get_remediation(f.get("category", ""), f.get("title", ""), f.get("evidence") or {})
                 if remediation:
                     report_lines.append(f"\n   REMEDIATION:")
                     report_lines.append(f"   {remediation.get('remediation', 'See OWASP guidelines')}")
@@ -304,26 +311,26 @@ def get_enhanced_report(job_id: int):
             report_lines.append("-" * 80)
             
             for f in cat_findings:
-                sev = f.severity.value if hasattr(f.severity, 'value') else str(f.severity)
+                sev = f.get("severity", "info")
                 cvss_info = CVSS_SCORES.get(sev.lower(), {"score": 0, "rating": "UNKNOWN"})
                 
-                report_lines.append(f"\n### {f.title}")
+                report_lines.append(f"\n### {f.get('title')}")
                 report_lines.append(f"Severity: {sev.upper()} (CVSS {cvss_info['score']})")
-                report_lines.append(f"Agent: {f.agent_name}")
-                report_lines.append(f"Detected: {f.created_at}")
+                report_lines.append(f"Agent: {f.get('agent_name')}")
+                report_lines.append(f"Detected: {f.get('created_at')}")
                 
-                if f.details:
-                    report_lines.append(f"Details: {f.details}")
+                if f.get("details"):
+                    report_lines.append(f"Details: {f.get('details')}")
                 
-                if f.evidence:
+                if f.get("evidence"):
                     report_lines.append(f"\nEvidence:")
                     report_lines.append("```json")
-                    report_lines.append(json.dumps(f.evidence, indent=2))
+                    report_lines.append(json.dumps(f.get("evidence"), indent=2))
                     report_lines.append("```")
                 
                 # Add remediation for MEDIUM+ findings
                 if sev.lower() in ["critical", "high", "medium"]:
-                    remediation = get_remediation(f.category, f.title, f.evidence or {})
+                    remediation = get_remediation(f.get("category", ""), f.get("title", ""), f.get("evidence") or {})
                     if remediation:
                         report_lines.append(f"\n🛠️  REMEDIATION:")
                         report_lines.append(f"{remediation.get('remediation', 'See OWASP guidelines')}")
@@ -346,13 +353,14 @@ def get_enhanced_report(job_id: int):
         subdomains = []
         
         for f in findings:
-            if f.evidence:
-                if "param_urls" in str(f.evidence):
-                    url_params.extend(f.evidence.get("param_urls", [])[:5])
-                if "forms" in str(f.evidence):
-                    forms_found.extend(f.evidence.get("forms", [])[:3])
-                if "subdomains" in str(f.evidence):
-                    subdomains.extend(f.evidence.get("subdomains", [])[:5])
+            evidence = f.get("evidence") or {}
+            if evidence:
+                if "param_urls" in str(evidence):
+                    url_params.extend(evidence.get("param_urls", [])[:5])
+                if "forms" in str(evidence):
+                    forms_found.extend(evidence.get("forms", [])[:3])
+                if "subdomains" in str(evidence):
+                    subdomains.extend(evidence.get("subdomains", [])[:5])
         
         report_lines.append(f"Parameterized URLs: {len(set(url_params))}")
         report_lines.append(f"Forms Identified: {len(forms_found)}")

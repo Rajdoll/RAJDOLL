@@ -867,14 +867,5 @@
     "applicability": [
       "always"
     ]
-  },
-  "WSTG-APIT-01": {
-    "title": "Testing GraphQL",
-    "category": "WSTG-APIT",
-    "owasp_agent": "APITestingAgent",
-    "high_risk": true,
-    "applicability": [
-      "has_graphql"
-    ]
   }
 }

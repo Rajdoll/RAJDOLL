@@ -9,7 +9,7 @@ def test_catalog_has_all_categories():
     cats = {st.category for st in cat.values()}
     assert {"WSTG-INFO", "WSTG-CONF", "WSTG-IDNT", "WSTG-ATHN",
             "WSTG-ATHZ", "WSTG-SESS", "WSTG-INPV", "WSTG-ERRH",
-            "WSTG-CRYP", "WSTG-BUSL", "WSTG-CLNT", "WSTG-APIT"} <= cats
+            "WSTG-CRYP", "WSTG-BUSL", "WSTG-CLNT"} <= cats
 
 
 def test_catalog_total_size():

@@ -7,6 +7,8 @@ import os
 import json
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from ..core.security_guards import data_redactor
+from .finding_policy import classify_finding, filter_findings
 import subprocess
 
 
@@ -26,7 +28,6 @@ class OWASPReportGenerator:
         "WSTG-CRYP": "Cryptography Testing",
         "WSTG-BUSL": "Business Logic Testing",
         "WSTG-CLNT": "Client-side Testing",
-        "WSTG-APIT": "API Testing",
     }
     
     # CVSS v3.1 Severity Ratings
@@ -110,7 +111,8 @@ class OWASPReportGenerator:
         """Fetch all findings for a job"""
         cursor = self.db.cursor()
         cursor.execute("""
-            SELECT id, agent_name, category, title, severity, details, evidence
+            SELECT id, agent_name, category, title, severity, details, evidence,
+                   confidence_score, confidence_level, is_true_positive, validation_notes
             FROM findings 
             WHERE job_id = %s
             ORDER BY 
@@ -134,7 +136,7 @@ class OWASPReportGenerator:
                 except:
                     evidence_data = {"raw": evidence_data}
             
-            findings.append({
+            finding = {
                 "id": row[0],
                 "agent_name": row[1],
                 "category": row[2],
@@ -142,15 +144,21 @@ class OWASPReportGenerator:
                 "severity": row[4],
                 "details": row[5] or "No description provided",
                 "evidence": evidence_data,
+                "confidence_score": row[7],
+                "confidence_level": row[8],
+                "is_true_positive": row[9],
+                "validation_notes": row[10],
                 "recommendation": "Review and remediate this vulnerability",
                 "cvss_score": None,  # Not in current schema
                 "cvss_vector": None,
                 "cwe_id": None,
                 "owasp_category": self._map_category_to_owasp(row[2]),
                 "created_at": None,
-            })
+            }
+            finding.update(classify_finding(finding))
+            findings.append(finding)
         
-        return findings
+        return filter_findings(findings, "raw")
     
     def _map_category_to_owasp(self, category: str) -> str:
         """Map agent category to OWASP WSTG category"""
@@ -166,7 +174,6 @@ class OWASPReportGenerator:
             "Cryptography": "WSTG-CRYP",
             "Business Logic": "WSTG-BUSL",
             "Client-side": "WSTG-CLNT",
-            "API Testing": "WSTG-APIT",
         }
         return mapping.get(category, "WSTG-MISC")
     
@@ -270,7 +277,6 @@ class OWASPReportGenerator:
         md.append("3. **AuthorizationAgent** - Authorization testing (WSTG-ATHZ)")
         md.append("4. **SessionManagementAgent** - Session management (WSTG-SESS)")
         md.append("5. **InputValidationAgent** - Input validation (WSTG-INPV)")
-        md.append("6. **APITestingAgent** - API security testing (WSTG-APIT)")
         md.append("7. **FileUploadAgent** - File upload testing (WSTG-BUSL)")
         md.append("8. **ClientSideAgent** - Client-side testing (WSTG-CLNT)")
         md.append("9. **ErrorHandlingAgent** - Error handling (WSTG-ERRH)")
@@ -317,11 +323,11 @@ class OWASPReportGenerator:
                 md.append(f"**Detected by:** {finding['agent_name']}  \n")
                 
                 md.append("**Description:**  ")
-                md.append(finding.get('details', 'No description provided.') + "\n")
+                md.append(data_redactor.redact(finding.get('details', 'No description provided.')) + "\n")
                 
                 md.append("**Evidence:**  ")
                 md.append("```")
-                evidence = finding.get('evidence', 'No evidence available.')
+                evidence = data_redactor.redact_any(finding.get('evidence', 'No evidence available.'))
                 if isinstance(evidence, dict):
                     # Convert dict to pretty JSON string
                     evidence = json.dumps(evidence, indent=2, ensure_ascii=False)
@@ -329,7 +335,7 @@ class OWASPReportGenerator:
                 md.append("```\n")
                 
                 md.append("**Recommendation:**  ")
-                md.append(finding.get('recommendation', 'No recommendation provided.') + "\n")
+                md.append(data_redactor.redact(finding.get('recommendation', 'No recommendation provided.')) + "\n")
                 
                 md.append("---\n")
                 finding_counter += 1

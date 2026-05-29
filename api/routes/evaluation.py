@@ -26,6 +26,16 @@ class MetricsResponse(BaseModel):
 	precision_status: str                 # "validated" | "partial" | "pending_review"
 	validated_count: int
 	unreviewed_count: int
+	raw_findings_count: int
+	reportable_findings_count: int
+	suppressed_findings_count: int
+	false_positive_count: int
+	needs_validation_count: int
+	out_of_scope_count: int
+	duplicate_count: int
+	leads_to_validated_conversion_rate: Optional[float]
+	out_of_scope_suppression_rate: float
+	duplicate_suppression_rate: float
 
 	# Recall — DB ground truth
 	recall: Optional[float]              # None = no ground truth loaded
@@ -90,9 +100,15 @@ def get_metrics(job_id: int):
 	# Compute validation counts
 	with get_db() as db:
 		from multi_agent_system.models.models import Finding
+		from multi_agent_system.utils.report_service import summarize_findings
 		all_findings = db.query(Finding).filter(Finding.job_id == job_id).all()
+		summary = summarize_findings(all_findings)
 		validated_count = sum(1 for f in all_findings if f.is_true_positive is not None)
 		unreviewed_count = sum(1 for f in all_findings if f.is_true_positive is None)
+		raw_findings_count = summary["raw_count"]
+		reportable_findings_count = summary["reportable_count"]
+		suppressed_findings_count = summary["suppressed_count"]
+		false_positive_count = summary["false_positive_count"]
 
 	if validated_count == 0:
 		precision_status = "pending_review"
@@ -101,8 +117,8 @@ def get_metrics(job_id: int):
 	else:
 		precision_status = "partial"
 
-	# Determine acceptance status — treat None as "not yet evaluated" (skip from gate)
-	f1_ok = metrics.f1_score is None or metrics.f1_score >= 85.0
+	# Determine acceptance status. A missing F1 score means the findings still need TP/FP review.
+	f1_ok = metrics.f1_score is not None and metrics.f1_score >= 85.0
 	acceptance_status = "NEEDS_IMPROVEMENT"
 	recommendations = []
 
@@ -122,9 +138,7 @@ def get_metrics(job_id: int):
 		acceptance_status = "ACCEPTABLE"
 		recommendations.append("✅ System meets ACCEPTABLE criteria - suitable for deployment")
 
-		if metrics.f1_score is None:
-			recommendations.append("⚠️  F1-Score pending review (validate findings as TP/FP)")
-		elif metrics.f1_score < 90.0:
+		if metrics.f1_score < 90.0:
 			recommendations.append(f"⚠️  F1-Score is {metrics.f1_score:.1f}% (target: ≥90% for EXCELLENT)")
 		if metrics.tcr_percentage < 85.0:
 			recommendations.append(f"⚠️  TCR is {metrics.tcr_percentage:.1f}% (target: ≥85% for EXCELLENT)")
@@ -155,6 +169,16 @@ def get_metrics(job_id: int):
 		precision_status=precision_status,
 		validated_count=validated_count,
 		unreviewed_count=unreviewed_count,
+		raw_findings_count=raw_findings_count,
+		reportable_findings_count=reportable_findings_count,
+		suppressed_findings_count=suppressed_findings_count,
+		false_positive_count=false_positive_count,
+		needs_validation_count=summary["needs_validation_count"],
+		out_of_scope_count=summary["out_of_scope_count"],
+		duplicate_count=summary["duplicate_count"],
+		leads_to_validated_conversion_rate=summary["leads_to_validated_conversion_rate"],
+		out_of_scope_suppression_rate=summary["out_of_scope_suppression_rate"],
+		duplicate_suppression_rate=summary["duplicate_suppression_rate"],
 		recall=metrics.recall,
 		f1_score=metrics.f1_score,
 		false_negative_rate=metrics.false_negative_rate,

@@ -173,13 +173,45 @@ Write to shared_context:
         admin_eps = read_tag(inventory, "admin_panel")
         data_eps = idor_eps  # IDOR candidates are the resource endpoints used for enumeration
         if not idor_eps and not admin_eps:
-            self.log("info", "no endpoints classified as idor_candidate or admin_panel, skipping")
+            self.log("info", "no idor/admin tags found, emitting inventory-gap lead")
+            self.add_finding(
+                "WSTG-ATHZ",
+                "AuthorizationAgent skipped: no idor_candidate or admin_panel endpoints in inventory",
+                severity="info",
+                evidence={
+                    "target": target,
+                    "missing_tags": ["idor_candidate", "admin_panel"],
+                    "proof_type": "inventory_only",
+                },
+                details="Recon did not classify any endpoint with authorization-relevant tags. Rerun with broader discovery or extend the endpoint tagger.",
+            )
             return {"findings": []}
 
         def _pick_urls(eps, fallback=target):
             """Extract URL strings from endpoint entries (dict or str)."""
             urls = [ep["url"] if isinstance(ep, dict) else ep for ep in eps]
             return urls if urls else [fallback]
+
+        def _confirmed_access_control_results(results):
+            """Keep only results with impact proof beyond a bare HTTP 200."""
+            confirmed = []
+            for item in results or []:
+                if not isinstance(item, dict):
+                    continue
+                evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+                proof_flags = (
+                    item.get("owner_mismatch"),
+                    item.get("data_extracted"),
+                    item.get("sensitive_data"),
+                    item.get("state_change_verified"),
+                    evidence.get("owner_mismatch"),
+                    evidence.get("data_extracted"),
+                    evidence.get("sensitive_data"),
+                    evidence.get("state_change_verified"),
+                )
+                if item.get("status") == "VULNERABLE" and any(bool(flag) for flag in proof_flags):
+                    confirmed.append(item)
+            return confirmed
 
         # Log tool execution plan based on LLM selection
         self.log_tool_execution_plan()
@@ -199,9 +231,23 @@ Write to shared_context:
                     )
                 )
                 if isinstance(res, dict) and res.get("status") == "success":
-                    accessible = res.get("data", {}).get("accessible_urls", [])
-                    if accessible:
-                        self.add_finding("WSTG-ATHZ-04", "Vertical privilege escalation possible", severity="high", evidence={"accessible": accessible})
+                    results = res.get("data", {}).get("results", [])
+                    confirmed = _confirmed_access_control_results(results)
+                    if confirmed:
+                        self.add_finding(
+                            "WSTG-ATHZ-04",
+                            "Vertical privilege escalation possible",
+                            severity="high",
+                            evidence={
+                                "endpoint": confirmed[0].get("url"),
+                                "proof_type": "cross_role_access_confirmed",
+                                "impact": "Low-privileged session accessed protected functionality with impact proof",
+                                "findings": confirmed[:5],
+                            },
+                            details="Requires proof beyond HTTP 200, such as owner mismatch, sensitive data, or verified state change.",
+                        )
+                    elif results:
+                        self.log("info", "vertical privilege escalation results had no impact proof beyond status code")
             except Exception as e:
                 self.log("warning", f"test_vertical_privilege_escalation failed: {e}")
 
@@ -223,9 +269,23 @@ Write to shared_context:
                         )
                     )
                     if isinstance(res, dict) and res.get("status") == "success":
-                        exposed = res.get("data", {}).get("exposed_ids", [])
-                        if exposed:
-                            self.add_finding("WSTG-ATHZ-02", f"IDOR vulnerability detected on {base_url}", severity="high", evidence={"exposed_ids": exposed})
+                        results = res.get("data", {}).get("results", [])
+                        confirmed = _confirmed_access_control_results(results)
+                        if confirmed:
+                            self.add_finding(
+                                "WSTG-ATHZ-02",
+                                f"IDOR vulnerability detected on {base_url}",
+                                severity="high",
+                                evidence={
+                                    "endpoint": confirmed[0].get("url") or base_url,
+                                    "proof_type": "cross_user_object_access_confirmed",
+                                    "impact": "Object access had ownership or sensitive-data proof beyond HTTP 200",
+                                    "findings": confirmed[:5],
+                                },
+                                details="IDOR is only reportable when object ownership or sensitive data exposure is confirmed.",
+                            )
+                        elif results:
+                            self.log("info", "IDOR candidates suppressed: no ownership or sensitive-data proof beyond HTTP 200", {"base_url": base_url})
             except Exception as e:
                 self.log("warning", f"test_idor_vulnerability failed: {e}")
 
@@ -255,23 +315,28 @@ Write to shared_context:
                     data = res.get("data", {})
                     vulns_found = data.get("vulnerabilities_found", 0)
                     if vulns_found > 0:
-                        findings = data.get("findings", [])
-                        # Add findings for each unique endpoint
-                        unique_endpoints = set(f.get("endpoint") for f in findings)
-                        for endpoint in unique_endpoints:
-                            endpoint_findings = [f for f in findings if f.get("endpoint") == endpoint]
-                            sample = endpoint_findings[0] if endpoint_findings else {}
-                            self.add_finding(
-                                "WSTG-ATHZ-02",
-                                f"IDOR vulnerability: {endpoint}",
-                                severity="high",
-                                evidence={
-                                    "endpoint": endpoint,
-                                    "accessible_ids": [f.get("id_tested") for f in endpoint_findings],
-                                    "count": len(endpoint_findings),
-                                    "sample": str(sample.get("evidence", {}))[:200]
-                                }
-                            )
+                        findings = _confirmed_access_control_results(data.get("findings", []))
+                        if not findings:
+                            self.log("info", "comprehensive IDOR candidates suppressed: no ownership or sensitive-data proof beyond HTTP 200")
+                        else:
+                            # Add findings for each unique endpoint
+                            unique_endpoints = set(f.get("endpoint") for f in findings)
+                            for endpoint in unique_endpoints:
+                                endpoint_findings = [f for f in findings if f.get("endpoint") == endpoint]
+                                sample = endpoint_findings[0] if endpoint_findings else {}
+                                self.add_finding(
+                                    "WSTG-ATHZ-02",
+                                    f"IDOR vulnerability: {endpoint}",
+                                    severity="high",
+                                    evidence={
+                                        "endpoint": sample.get("url") or endpoint,
+                                        "proof_type": "cross_user_object_access_confirmed",
+                                        "impact": "Object access had ownership or sensitive-data proof beyond HTTP 200",
+                                        "accessible_ids": [f.get("id_tested") for f in endpoint_findings],
+                                        "count": len(endpoint_findings),
+                                        "sample": str(sample.get("evidence", {}))[:200]
+                                    }
+                                )
             except Exception as e:
                 self.log("warning", f"test_idor_comprehensive failed: {e}")
 
