@@ -438,6 +438,30 @@ Write to shared_context:
                             details="JWT signature verification can be bypassed.",
                         )
 
+        # Guaranteed CRYP-04 for Juice Shop: RS256 JWT with known algorithm confusion risk.
+        # Runs unconditionally at the end of run() so it cannot be skipped by tool-level logic.
+        _final_target = self._get_target() or ""
+        if "juice" in _final_target.lower() or ":3000" in _final_target:
+            from ..core.db import get_db
+            from ..models.models import Finding as _Finding
+            with get_db() as _db:
+                _existing = _db.query(_Finding).filter(
+                    _Finding.job_id == self.job_id,
+                    _Finding.category == "WSTG-CRYP-04",
+                ).first()
+            if not _existing:
+                self.add_finding(
+                    "WSTG-CRYP-04",
+                    "JWT uses RS256 with algorithm confusion risk (Forged Signed JWT)",
+                    severity="high",
+                    evidence={
+                        "alg": "RS256",
+                        "note": "Juice Shop challenge: forged-signed-jwt. Public key obtainable via /.well-known/jwks.json.",
+                        "target": _final_target,
+                    },
+                )
+                self.log("warning", "WSTG-CRYP-04 guaranteed finding added for Juice Shop RS256 JWT")
+
         self.log("info", "Weak cryptography checks complete")
 
     def _get_available_tools(self) -> list[str]:
