@@ -653,16 +653,20 @@ async def test_cors_misconfiguration(url: str, auth_session: Optional[Dict[str, 
                 req_kwargs['headers'] = auth_session.get('headers', {})
             elif 'token' in auth_session:
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+        any_wildcard_found = False
         async with httpx.AsyncClient(**req_kwargs) as client:
             # Test each origin
             for origin, attack_type in test_origins:
                 try:
                     headers = {'Origin': origin}
                     response = await client.get(url, headers=headers)
-                    
+
                     acao = response.headers.get('Access-Control-Allow-Origin', '')
                     acac = response.headers.get('Access-Control-Allow-Credentials', '')
-                    
+
+                    if acao == '*':
+                        any_wildcard_found = True
+
                     # Check for wildcard with credentials (CRITICAL)
                     if acao == '*' and acac.lower() == 'true':
                         findings.append({
@@ -725,7 +729,16 @@ async def test_cors_misconfiguration(url: str, auth_session: Optional[Dict[str, 
                     })
             except Exception:
                 pass
-        
+
+        # ACAO: * without credentials = Cross-Site Imaging vulnerability (WSTG-CLNT-07)
+        if not findings and any_wildcard_found:
+            findings.append({
+                "type": "CORS_WILDCARD",
+                "severity": "MEDIUM",
+                "description": "ACAO: * allows any origin to read responses (Cross-Site Imaging risk)",
+                "recommendation": "Restrict Access-Control-Allow-Origin to trusted origins only",
+            })
+
         if findings:
             return {
                 "status": "success",
