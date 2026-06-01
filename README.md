@@ -9,6 +9,14 @@
 
 ---
 
+## Demo
+
+[![Demo RAJDOLL - Multi-Agent Penetration Testing](https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg)](https://youtu.be/YOUR_VIDEO_ID)
+
+> Ganti `YOUR_VIDEO_ID` dengan ID video YouTube setelah upload (contoh: `https://youtu.be/dQw4w9WgXcQ` → ID-nya adalah `dQw4w9WgXcQ`)
+
+---
+
 ## Overview
 
 **RAJDOLL** (Reconnaissance And Joint Dynamic Offensive LLM-based) is a multi-agent penetration testing system that automates comprehensive web application security assessments based on the OWASP Web Security Testing Guide (WSTG) 4.2.
