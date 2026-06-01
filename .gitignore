@@ -111,3 +111,4 @@ docs/
 .github/
 pytest.ini
 scripts/
+cache/
