@@ -11,9 +11,7 @@
 
 ## Demo
 
-[![Demo RAJDOLL - Multi-Agent Penetration Testing](https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg)](https://youtu.be/YOUR_VIDEO_ID)
-
-> Ganti `YOUR_VIDEO_ID` dengan ID video YouTube setelah upload (contoh: `https://youtu.be/dQw4w9WgXcQ` → ID-nya adalah `dQw4w9WgXcQ`)
+[![Demo RAJDOLL - Multi-Agent Penetration Testing](https://img.youtube.com/vi/AOQ6WJfRzKw/maxresdefault.jpg)](https://youtu.be/AOQ6WJfRzKw)
 
 ---
 
