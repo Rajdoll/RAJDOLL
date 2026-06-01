@@ -11,7 +11,7 @@
 
 ## Demo
 
-[![Demo RAJDOLL - Multi-Agent Penetration Testing](assets/demo-thumbnail.jpg)](https://youtu.be/AOQ6WJfRzKw)
+https://github.com/user-attachments/assets/e58255f3-b9d9-4217-ba0b-acd2a1c7156d
 
 ---
 
