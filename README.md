@@ -30,7 +30,7 @@ Built as a D4 thesis project at **Politeknik Siber dan Sandi Negara** using the 
 - **Real-time Monitoring** — WebSocket updates, per-agent status, live findings
 - **Professional Reports** — OWASP-compliant PDF/Markdown with cross-agent correlation
 - **Ethical Safeguards** — Domain whitelist, rate limiting, HITL confirmation, audit logging
-- **Validated Metrics** — Precision 90.41%, Recall 91.23%, F1 90.82%, TCR 88.89% on OWASP Juice Shop (4 benchmark runs, std dev ~0%)
+- **Validated Metrics** — Precision 90.55%, Recall 91.23%, F1 90.89%, TCR 88.89% on OWASP Juice Shop (10 benchmark runs)
 
 ---
 
@@ -164,15 +164,15 @@ curl -X POST http://localhost:8000/api/scans \
   }'
 ```
 
-**Expected Results (4 benchmark runs, Qwen3-4B, May 2026):**
+**Expected Results (10 benchmark runs, Qwen3-4B, May 2026):**
 
 | Metric | Result | Target | Status |
 |--------|--------|--------|--------|
-| Precision | 90.41% (±0.00%) | >= 90% | PASS |
+| Precision | 90.55% (±0.27%) | >= 90% | PASS |
 | Recall | 91.23% (±0.00%) | >= 80% | PASS |
-| F1-Score | 90.82% (±0.00%) | >= 85% | PASS |
+| F1-Score | 90.89% (±0.14%) | >= 85% | PASS |
 | TCR | 88.89% (24/27 WSTG) | >= 70% | PASS |
-| Scan Time | ~63 minutes | <= 4h | PASS |
+| Scan Time | ~62 minutes | <= 4h | PASS |
 
 Ground truth: 57 Juice Shop challenge entries across 27 WSTG sub-categories.
 Near-zero std dev confirms deterministic behavior with `json_schema` enforcement.
