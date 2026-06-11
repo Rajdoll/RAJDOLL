@@ -755,7 +755,7 @@ class Orchestrator:
 		preserved by _apply_reorder's permutation check; any failure leaves the
 		plan untouched.
 		"""
-		if not getattr(settings, "adaptive_replan", False):
+		if not getattr(settings, "adaptive_reorder", False):
 			return
 		tail = plan[current_idx + 1:]
 		reorderable = [

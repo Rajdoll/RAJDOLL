@@ -84,7 +84,7 @@ def test_replan_noop_when_flag_off():
     orch = Orchestrator.__new__(Orchestrator)
     plan = ["Recon", "A", "B", "ReportGenerationAgent"]
     with patch("multi_agent_system.orchestrator.settings") as s:
-        s.adaptive_replan = False
+        s.adaptive_reorder = False
         orch._replan_remaining_agents(plan, 0)
     assert plan == ["Recon", "A", "B", "ReportGenerationAgent"]
 
@@ -99,7 +99,7 @@ def test_replan_applies_when_flag_on():
     with patch("multi_agent_system.orchestrator.settings") as s, \
          patch.object(Orchestrator, "_get_llm_summarizer", return_value=summarizer), \
          patch.object(Orchestrator, "_ensure_event_loop", return_value=loop):
-        s.adaptive_replan = True
+        s.adaptive_reorder = True
         orch._replan_remaining_agents(plan, 0)
     loop.close()
     assert plan == ["Recon", "C", "A", "B", "ReportGenerationAgent"]
@@ -111,6 +111,6 @@ def test_replan_noop_when_summarizer_none():
     plan = ["Recon", "A", "B", "ReportGenerationAgent"]
     with patch("multi_agent_system.orchestrator.settings") as s, \
          patch.object(Orchestrator, "_get_llm_summarizer", return_value=None):
-        s.adaptive_replan = True
+        s.adaptive_reorder = True
         orch._replan_remaining_agents(plan, 0)
     assert plan == ["Recon", "A", "B", "ReportGenerationAgent"]

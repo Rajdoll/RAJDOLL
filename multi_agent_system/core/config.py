@@ -98,6 +98,8 @@ class Settings:
     use_active_flow: bool = field(default_factory=lambda: _env_flag("USE_ACTIVE_FLOW", False))
     use_semantic_classifier: bool = field(default_factory=lambda: _env_flag("USE_SEMANTIC_CLASSIFIER", False))
     adaptive_replan: bool = field(default_factory=lambda: _env_flag("ADAPTIVE_REPLAN", False))
+    adaptive_reorder: bool = field(default_factory=lambda: _env_flag("ADAPTIVE_REORDER", False))
+    max_followup_probes: int = _get_env_int("MAX_FOLLOWUP_PROBES", 4)
 
     def __post_init__(self):
         base_hitl = _env_flag("HITL_ENABLED", True)
