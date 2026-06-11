@@ -97,6 +97,7 @@ class Settings:
     use_js_analyzer: bool = field(default_factory=lambda: _env_flag("USE_JS_ANALYZER", False))
     use_active_flow: bool = field(default_factory=lambda: _env_flag("USE_ACTIVE_FLOW", False))
     use_semantic_classifier: bool = field(default_factory=lambda: _env_flag("USE_SEMANTIC_CLASSIFIER", False))
+    adaptive_replan: bool = field(default_factory=lambda: _env_flag("ADAPTIVE_REPLAN", False))
 
     def __post_init__(self):
         base_hitl = _env_flag("HITL_ENABLED", True)
