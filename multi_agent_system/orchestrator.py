@@ -1119,6 +1119,10 @@ class Orchestrator:
 					# Per-agent: tactical directive for next agent
 					self._generate_and_merge_directive(step, remaining_for_directive)
 
+			# ── L0 Structural Replan: reorder remaining agents (adaptive) ──
+			if isinstance(step, str) and step != "ReportGenerationAgent":
+				self._replan_remaining_agents(plan, idx)
+
 			# ── Agent-Level HITL Checkpoint ──────────────────────────────
 			# After each agent completes + summarization, pause for user review
 			# (skip for ReportGenerationAgent, and if user chose "auto")
