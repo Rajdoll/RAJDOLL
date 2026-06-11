@@ -749,6 +749,41 @@ class Orchestrator:
 		plan[current_idx + 1:] = new_tail
 		return True
 
+	def _replan_remaining_agents(self, plan: List[Any], current_idx: int) -> None:
+		"""L0 structural replan: ask the LLM to reorder not-yet-run agents to chase
+		the strongest leads. No-op unless ADAPTIVE_REPLAN is enabled. Coverage is
+		preserved by _apply_reorder's permutation check; any failure leaves the
+		plan untouched.
+		"""
+		if not getattr(settings, "adaptive_replan", False):
+			return
+		tail = plan[current_idx + 1:]
+		reorderable = [
+			s for s in tail
+			if isinstance(s, str) and s != "ReportGenerationAgent"
+		]
+		if len(reorderable) < 2:
+			return
+		summarizer = self._get_llm_summarizer()
+		if not summarizer:
+			return
+		loop = self._ensure_event_loop()
+		try:
+			proposed = loop.run_until_complete(
+				asyncio.wait_for(
+					summarizer.propose_agent_reorder(
+						remaining_agents=reorderable,
+						findings_summary=self.cumulative_summary[-3000:] if self.cumulative_summary else "",
+					),
+					timeout=60,
+				)
+			)
+		except Exception as e:
+			print(f"[Orchestrator] Replan failed at step {current_idx}: {e}")
+			return
+		if proposed and self._apply_reorder(plan, current_idx, proposed):
+			print(f"[Orchestrator] Replan applied: remaining order -> {plan[current_idx + 1:]}")
+
 	def _generate_and_merge_directive(
 		self, completed_agent: str, remaining_agents: List[str]
 	) -> None:
