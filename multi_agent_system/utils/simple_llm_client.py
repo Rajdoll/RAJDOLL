@@ -1010,6 +1010,62 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
             print(f"[SimpleLLMClient] propose_subtest_directive failed: {e}")
             return None
 
+    async def propose_agent_reorder(
+        self,
+        *,
+        remaining_agents: List[str],
+        findings_summary: str,
+        attack_signals: Optional[Dict[str, Any]] = None,
+    ) -> Optional[List[str]]:
+        """Reorder not-yet-run specialist agents to chase the strongest leads first.
+
+        Returns a permutation of `remaining_agents` (same set, reordered) or None
+        on failure / non-permutation output. All agents must still run - this only
+        changes order, never drops an agent (full WSTG coverage is preserved).
+        """
+        import re
+        if len(remaining_agents) < 2:
+            return None
+        agents_str = ", ".join(remaining_agents)
+        signals_str = json.dumps(attack_signals or {}, default=str)[:600]
+        prompt = (
+            "You are orchestrating a sequential web security assessment. "
+            "EVERY listed agent MUST still run (full WSTG coverage) - you may only "
+            "REORDER them to prioritize chasing the strongest leads first.\n\n"
+            f"Remaining agents: {agents_str}\n"
+            f"Findings so far:\n{findings_summary[:2000]}\n"
+            f"Attack-chain signals: {signals_str}\n\n"
+            "Emit JSON only:\n"
+            '{ "order": [<every remaining agent exactly once, reordered>] }\n'
+            "Constraint: the array MUST contain the same agents as the list above - "
+            "no additions, no removals, no duplicates."
+        )
+        messages = [
+            {"role": "system", "content": "You are a security testing strategist. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            raw = await self.chat_completion(messages, max_tokens=400, temperature=0.3)
+            raw = self._strip_thinking_tags(raw)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not match:
+                return None
+            order = json.loads(match.group()).get("order", [])
+            if not isinstance(order, list):
+                return None
+            seen = set()
+            cleaned = []
+            for a in order:
+                if isinstance(a, str) and a in remaining_agents and a not in seen:
+                    seen.add(a)
+                    cleaned.append(a)
+            if set(cleaned) != set(remaining_agents):
+                return None
+            return cleaned
+        except Exception as e:
+            print(f"[SimpleLLMClient] propose_agent_reorder failed: {e}")
+            return None
+
     async def tag_endpoints_with_subtests(
         self,
         *,
