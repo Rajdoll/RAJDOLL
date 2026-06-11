@@ -1010,6 +1010,13 @@ class Orchestrator:
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
+		# PHASE 4b: Bounded post-pass follow-up wave (adaptive; re-tests lead surfaces)
+		if not self._is_job_cancelled():
+			try:
+				self._run_followup_wave()
+			except Exception as e:
+				print(f"[Orchestrator] WARNING: Follow-up wave failed: {e}")
+
 		# Write scan timing breakdown to SharedContext for PDF report
 		try:
 			with get_db() as db:
