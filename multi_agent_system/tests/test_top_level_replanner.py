@@ -43,3 +43,34 @@ def test_propose_agent_reorder_none_on_unparseable():
     out = asyncio.run(c.propose_agent_reorder(
         remaining_agents=["A", "B"], findings_summary="x"))
     assert out is None
+
+
+from multi_agent_system.orchestrator import Orchestrator
+
+
+def test_apply_reorder_permutes_tail():
+    orch = Orchestrator.__new__(Orchestrator)
+    plan = ["Recon", "A", "B", "C", "ReportGenerationAgent"]
+    assert orch._apply_reorder(plan, 0, ["B", "C", "A"]) is True
+    assert plan == ["Recon", "B", "C", "A", "ReportGenerationAgent"]
+
+
+def test_apply_reorder_pins_report_last():
+    orch = Orchestrator.__new__(Orchestrator)
+    plan = ["Recon", "A", "B", "ReportGenerationAgent"]
+    orch._apply_reorder(plan, 0, ["B", "A"])
+    assert plan[-1] == "ReportGenerationAgent"
+
+
+def test_apply_reorder_rejects_dropped_agent():
+    orch = Orchestrator.__new__(Orchestrator)
+    plan = ["Recon", "A", "B", "C", "ReportGenerationAgent"]
+    assert orch._apply_reorder(plan, 0, ["B", "A"]) is False  # C dropped
+    assert plan == ["Recon", "A", "B", "C", "ReportGenerationAgent"]
+
+
+def test_apply_reorder_rejects_added_agent():
+    orch = Orchestrator.__new__(Orchestrator)
+    plan = ["Recon", "A", "B", "ReportGenerationAgent"]
+    assert orch._apply_reorder(plan, 0, ["A", "B", "X"]) is False
+    assert plan == ["Recon", "A", "B", "ReportGenerationAgent"]

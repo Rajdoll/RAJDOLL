@@ -729,6 +729,26 @@ class Orchestrator:
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
+	def _apply_reorder(self, plan: List[Any], current_idx: int, proposed: List[str]) -> bool:
+		"""Replace the not-yet-run tail of `plan` with `proposed` order.
+
+		Coverage-preserving: `proposed` must be a permutation of the reorderable
+		tail (ReportGenerationAgent stays pinned last). Returns True if applied,
+		False if the proposal was invalid (plan left untouched).
+		"""
+		tail = plan[current_idx + 1:]
+		if not tail or not all(isinstance(s, str) for s in tail):
+			return False
+		report = "ReportGenerationAgent"
+		reorderable = [s for s in tail if s != report]
+		if sorted(proposed) != sorted(reorderable):
+			return False
+		new_tail = list(proposed)
+		if report in tail:
+			new_tail.append(report)
+		plan[current_idx + 1:] = new_tail
+		return True
+
 	def _generate_and_merge_directive(
 		self, completed_agent: str, remaining_agents: List[str]
 	) -> None:
