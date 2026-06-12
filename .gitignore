@@ -113,3 +113,9 @@ pytest.ini
 scripts/
 cache/
 multi_agent_system/evaluation/runs/
+
+# Generated artifacts (knowledge-graph cache, runtime DBs, benchmark outputs)
+graphify-out/
+multi_agent_system/data/*.db
+multi_agent_system/evaluation/reports/
+multi_agent_system/evaluation/benchmark_job_ids.txt
