@@ -175,6 +175,7 @@ async function handleScanSubmit(e) {
     const targetUrl = document.getElementById('targetUrl').value.trim();
     const credUsername = document.getElementById('credUsername').value.trim();
     const credPassword = document.getElementById('credPassword').value;
+    const enableHitl = document.getElementById('enableHitl')?.checked || false;
 
     if (!targetUrl) {
         addLog('[ERROR] Target URL is required', 'error');
@@ -199,7 +200,9 @@ async function handleScanSubmit(e) {
         const payload = {
             target: targetUrl,
             full_wstg_coverage: true,
-            hitl_mode: 'off',            // HITL off by default for lab/benchmark runs
+            // When the toggle is on, request agent-level checkpoints; when off,
+            // omit the field so the server resolves from env (HITL_MODE).
+            ...(enableHitl ? { hitl_mode: 'agent' } : {}),
             ...(credentials && { credentials }),
         };
 
@@ -754,34 +757,30 @@ function validateDirectiveText(text) {
 
 async function _respondPreAgent(action, directiveText) {
     if (!_preAgentCheckpointId) return;
+    const id = _preAgentCheckpointId;
+    _preAgentCheckpointId = null;
     const body = { action };
     if (directiveText) body.directive_text = directiveText;
     try {
-        const resp = await fetch(`/api/hitl/pre-agent-checkpoint/${_preAgentCheckpointId}/respond`, {
+        const resp = await fetch(`/api/hitl/pre-agent-checkpoint/${id}/respond`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
         if (resp.ok) {
             if (directiveText) addLog(`[HITL] Directive sent — agent will adjust its plan`, 'success');
-            _showHitlOverlay(false);
-            _flashTabTitle(false);
-            _cancelCountdown();
-            document.getElementById('pre-agent-panel').style.display = 'none';
-            _preAgentCheckpointId = null;
         } else {
             const err = await resp.json();
             document.getElementById('pre-agent-directive-errors').textContent =
                 'Error: ' + (err.detail || JSON.stringify(err));
-            _showHitlOverlay(false);
-            _flashTabTitle(false);
-            _cancelCountdown();
         }
     } catch (e) {
         addLog(`[HITL] Pre-agent respond error: ${e.message}`, 'error');
+    } finally {
         _showHitlOverlay(false);
         _flashTabTitle(false);
         _cancelCountdown();
+        document.getElementById('pre-agent-panel').style.display = 'none';
     }
 }
 
@@ -896,32 +895,28 @@ function cpSendTell() {
 
 async function _respondCheckpoint(action, notes) {
     if (!currentCheckpointId) return;
+    const id = currentCheckpointId;
+    currentCheckpointId = null;
     const body = { action, user_notes: notes };
     try {
-        const resp = await fetch(`/api/hitl/agent-checkpoint/${currentCheckpointId}/respond`, {
+        const resp = await fetch(`/api/hitl/agent-checkpoint/${id}/respond`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
         if (resp.ok) {
             if (notes) addLog(`[HITL] Notes sent for next agent`, 'success');
-            _showHitlOverlay(false);
-            _flashTabTitle(false);
-            _cancelCountdown();
-            document.getElementById('checkpointPanel').style.display = 'none';
-            currentCheckpointId = null;
         } else {
             const err = await resp.json();
             addLog(`[HITL] Error: ${err.detail || 'Unknown error'}`, 'error');
-            _showHitlOverlay(false);
-            _flashTabTitle(false);
-            _cancelCountdown();
         }
     } catch (err) {
         addLog(`[HITL] Network error: ${err.message}`, 'error');
+    } finally {
         _showHitlOverlay(false);
         _flashTabTitle(false);
         _cancelCountdown();
+        document.getElementById('checkpointPanel').style.display = 'none';
     }
 }
 
