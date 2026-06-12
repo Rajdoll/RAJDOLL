@@ -41,6 +41,21 @@ CIRCUIT_BREAKER_FAILURES = 3    # Max failures before circuit opens
 URL_ARG_NAMES = ("url", "target_url", "target", "base_url", "domain", "host")
 
 
+def _strip_nul_bytes(value):
+	"""Recursively remove NUL (0x00) bytes from strings.
+
+	PostgreSQL text/varchar columns reject U+0000, which crashes finding INSERTs
+	when a tool produces payload titles like 'malicious.php\\x00.jpg'.
+	"""
+	if isinstance(value, str):
+		return value.replace("\x00", "")
+	if isinstance(value, dict):
+		return {k: _strip_nul_bytes(v) for k, v in value.items()}
+	if isinstance(value, list):
+		return [_strip_nul_bytes(v) for v in value]
+	return value
+
+
 class AgentRegistry:
 	_registry: ClassVar[dict[str, Type["BaseAgent"]]] = {}
 
@@ -657,6 +672,10 @@ class BaseAgent:
 		confidence: ConfidenceScore | None = None,
 	) -> None:
 		import json, sys
+		# Strip NUL bytes — Postgres text columns reject U+0000 and abort the INSERT
+		title = _strip_nul_bytes(title)
+		details = _strip_nul_bytes(details)
+		evidence = _strip_nul_bytes(evidence)
 		# Normalize severity to DB enum values (info/low/medium/high/critical)
 		_SEV_NORM = {"informational": "info", "information": "info", "none": "info",
 		             "warn": "low", "warning": "low"}
