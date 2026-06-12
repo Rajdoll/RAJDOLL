@@ -424,7 +424,7 @@ Write to shared_context:
 				for reg_url in register_targets:
 					self.log("info", f"🔍 Testing password policy at: {reg_url}")
 					result = await self.execute_tool(
-						server="auth-mcp",
+						server="authentication-testing",
 						tool="test_password_policy",
 						args={
 							"register_url": reg_url,
