@@ -85,6 +85,29 @@ AGENT_NAME_CORRECTION_MAP = {
 }
 
 
+def _resolve_scan_credentials(context_manager):
+	"""Read per-scan credentials (set by POST /api/scans) from SharedContext.
+
+	The plaintext credentials live in an encrypted secret referenced by
+	scan_credentials['credential_ref']; the scan_credentials record itself only
+	holds a masked username. Returns a [(username, password)] list or None.
+	"""
+	scan_creds = context_manager.read("scan_credentials")
+	if not isinstance(scan_creds, dict):
+		return None
+	credential_ref = scan_creds.get("credential_ref")
+	if not credential_ref:
+		return None
+	secret = context_manager.read_secret(credential_ref)
+	if not isinstance(secret, dict):
+		return None
+	username = secret.get("username")
+	password = secret.get("password")
+	if username and password:
+		return [(username, password)]
+	return None
+
+
 class Orchestrator:
 	def __init__(self, job_id: int, resume_from_step_idx: int | None = None, execution_id: str | None = None):
 		self.job_id = job_id
@@ -1296,11 +1319,9 @@ class Orchestrator:
 			target_url = self._get_target()
 			if target_url:
 				loop = self._ensure_event_loop()
-				# Read per-scan credentials from SharedContext (set by POST /api/scans)
-				scan_creds = self.context_manager.read("scan_credentials")
-				provided_credentials = None
-				if scan_creds and isinstance(scan_creds, dict):
-					provided_credentials = [(scan_creds["username"], scan_creds["password"])]
+				# Read per-scan credentials from SharedContext (set by POST /api/scans).
+				# Real creds are behind an encrypted secret ref, not the masked record.
+				provided_credentials = _resolve_scan_credentials(self.context_manager)
 
 				success, auth_session = loop.run_until_complete(
 					create_authenticated_session(target_url, credentials=provided_credentials)
