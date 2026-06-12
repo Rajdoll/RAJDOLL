@@ -21,6 +21,41 @@ REACT_MAX_ITERATIONS = int(os.getenv("REACT_MAX_ITERATIONS", "3"))
 MAX_PRIORITY_URLS = int(os.getenv("MAX_PRIORITY_URLS", "20"))
 MAX_TESTS_PER_URL = int(os.getenv("MAX_TESTS_PER_URL", "3"))
 
+import json as _json
+import re as _re
+
+
+def _safe_parse_test_plan(text):
+    """Best-effort parse of an LLM JSON object.
+
+    Handles: plain JSON, ```json fenced blocks, surrounding prose, and trailing
+    commas. Returns the parsed dict, or None if nothing parseable is found.
+    """
+    if not text or not str(text).strip():
+        return None
+    candidate = str(text).strip()
+
+    # 1) Strip a ```json ... ``` or ``` ... ``` fence if present.
+    fence = _re.search(r"```(?:json)?\s*(.*?)```", candidate, _re.DOTALL)
+    if fence:
+        candidate = fence.group(1).strip()
+
+    # 2) Narrow to the outermost {...} span if there is surrounding prose.
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = candidate[start:end + 1]
+
+    # 3) Try strict parse, then a trailing-comma repair.
+    try:
+        return _json.loads(candidate)
+    except _json.JSONDecodeError:
+        repaired = _re.sub(r",(\s*[}\]])", r"\1", candidate)
+        try:
+            return _json.loads(repaired)
+        except _json.JSONDecodeError:
+            return None
+
 
 @AgentRegistry.register("InputValidationAgent")
 class InputValidationAgent(BaseAgent):
@@ -1613,7 +1648,9 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
             elif response_text.startswith("```"):
                 response_text = response_text.split("```")[1].split("```")[0].strip()
 
-            test_plan = json.loads(response_text)
+            test_plan = _safe_parse_test_plan(response_text)
+            if test_plan is None:
+                raise ValueError("LLM returned no parseable JSON test plan")
             print(f"🔍 LLM-PLAN-DEBUG-10: JSON parsed successfully, {len(test_plan.get('priority_urls', []))} URLs in plan", file=sys.stderr, flush=True)
 
             # Log LLM's autonomous decisions
