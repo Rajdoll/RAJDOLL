@@ -107,7 +107,8 @@ RUN git clone --depth=1 https://github.com/commixproject/commix.git /opt/commix 
 RUN git clone --depth=1 https://github.com/swisskyrepo/SSRFmap.git /opt/ssrfmap && \
     pip install --no-cache-dir -r /opt/ssrfmap/requirements.txt && \
     chmod +x /opt/ssrfmap/ssrfmap.py && \
-    ln -sf /opt/ssrfmap/ssrfmap.py /usr/local/bin/ssrfmap
+    printf '#!/bin/sh\nexec python3 /opt/ssrfmap/ssrfmap.py "$@"\n' > /usr/local/bin/ssrfmap && \
+    chmod +x /usr/local/bin/ssrfmap
 
 EXPOSE 9001-9011
 

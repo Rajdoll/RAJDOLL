@@ -776,9 +776,10 @@ body {
 }
 
 /* Evaluation View panel */
-.eval-summary { margin: 8px 0 16px; font-size: 14px; }
+.eval-summary { margin: 8px 0 16px; font-size: 14px; color: var(--text-white); }
 .eval-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
-.eval-table th, .eval-table td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-.eval-table th { background: #f5f5f5; }
-.eval-table tr.status-tp td { background: #e8f5e9; }
-.eval-table tr.status-fn td { background: #ffebee; }
+.eval-table th, .eval-table td { border: 1px solid #444; padding: 6px 8px; text-align: left; color: var(--text-white); }
+.eval-table th { background: #2a2a2a; color: #f0d8d8; font-weight: 600; }
+.eval-table td { background: #1a1a1a; }
+.eval-table tr.status-tp td { background: #1b3a1b; color: #a5d6a7; }
+.eval-table tr.status-fn td { background: #3a1a1a; color: #ef9a9a; }

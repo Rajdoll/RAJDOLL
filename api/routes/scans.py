@@ -40,9 +40,13 @@ def _mask_identity(value: Optional[str]) -> Optional[str]:
 
 
 def _resolve_hitl_mode(request_hitl: Optional[str]) -> str:
-	"""Resolve HITL mode: per-scan explicit > SCAN_PROFILE > fallback."""
+	"""Resolve HITL mode: per-scan explicit > HITL_MODE env > SCAN_PROFILE > off."""
 	if request_hitl:
 		return request_hitl
+	# Respect HITL_MODE env var if explicitly set to non-off value
+	env_mode = _config.settings.hitl_mode
+	if env_mode and env_mode != "off":
+		return env_mode
 	profile = _config.settings.scan_profile
 	return SCAN_PROFILE_DEFAULTS.get(profile, {}).get("hitl_mode", "off")
 
@@ -252,7 +256,7 @@ def cancel_scan(job_id: int):
 			raise HTTPException(status_code=404, detail="Job not found")
 		
 		# Allow cancelling queued, running, or paused jobs
-		if job.status not in [JobStatus.queued, JobStatus.running, JobStatus.paused]:
+		if job.status not in [JobStatus.queued, JobStatus.running, JobStatus.paused, JobStatus.waiting_checkpoint]:
 			raise HTTPException(
 				status_code=400,
 				detail=f"Cannot cancel job with status: {job.status}"
