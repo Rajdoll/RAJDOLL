@@ -61,8 +61,6 @@ def test_followup_probes_empty_when_no_available_agents():
 from unittest.mock import MagicMock, AsyncMock, patch
 from multi_agent_system.orchestrator import Orchestrator
 
-_REG = "multi_agent_system.agents.base_agent.AgentRegistry._registry"
-
 
 def _wave_orch(probes):
     orch = Orchestrator.__new__(Orchestrator)
@@ -99,8 +97,8 @@ def test_wave_runs_each_probe_then_reanalyzes():
     final = MagicMock()
     loop = asyncio.new_event_loop()
     with patch("multi_agent_system.orchestrator.settings") as s, \
-         patch.dict(_REG, {"ClientSideAgent": object(), "InputValidationAgent": object(),
-                           "ReportGenerationAgent": object(), "ReconnaissanceAgent": object()}, clear=True), \
+         patch.object(Orchestrator, "_followup_available_agents",
+                      return_value=["ClientSideAgent", "InputValidationAgent"]), \
          patch.object(Orchestrator, "_get_llm_summarizer", return_value=summarizer), \
          patch.object(Orchestrator, "_ensure_event_loop", return_value=loop), \
          patch.object(Orchestrator, "_run_agent_sync", ran), \
@@ -120,7 +118,8 @@ def test_wave_caps_probe_count():
     ran = MagicMock()
     loop = asyncio.new_event_loop()
     with patch("multi_agent_system.orchestrator.settings") as s, \
-         patch.dict(_REG, {"ClientSideAgent": object(), "ReportGenerationAgent": object()}, clear=True), \
+         patch.object(Orchestrator, "_followup_available_agents",
+                      return_value=["ClientSideAgent"]), \
          patch.object(Orchestrator, "_get_llm_summarizer", return_value=summarizer), \
          patch.object(Orchestrator, "_ensure_event_loop", return_value=loop), \
          patch.object(Orchestrator, "_run_agent_sync", ran), \
@@ -145,7 +144,8 @@ def test_wave_one_probe_failure_does_not_stop_others():
             raise RuntimeError("boom")
     loop = asyncio.new_event_loop()
     with patch("multi_agent_system.orchestrator.settings") as s, \
-         patch.dict(_REG, {"ClientSideAgent": object(), "InputValidationAgent": object()}, clear=True), \
+         patch.object(Orchestrator, "_followup_available_agents",
+                      return_value=["ClientSideAgent", "InputValidationAgent"]), \
          patch.object(Orchestrator, "_get_llm_summarizer", return_value=summarizer), \
          patch.object(Orchestrator, "_ensure_event_loop", return_value=loop), \
          patch.object(Orchestrator, "_run_agent_sync", side_effect=run_side) as ran, \
@@ -156,3 +156,41 @@ def test_wave_one_probe_failure_does_not_stop_others():
     loop.close()
     assert ran.call_count == 2
     final.assert_called_once()
+
+
+def test_followup_available_agents_excludes_recon_report():
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.job_id = 1
+    rows = [MagicMock(agent_name=n) for n in
+            ["ClientSideAgent", "InputValidationAgent", "ReconnaissanceAgent", "ReportGenerationAgent"]]
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = rows
+    cm = MagicMock()
+    cm.__enter__.return_value = db
+    cm.__exit__.return_value = False
+    with patch("multi_agent_system.orchestrator.get_db", return_value=cm):
+        out = orch._followup_available_agents()
+    assert out == ["ClientSideAgent", "InputValidationAgent"]
+
+
+def test_wave_skips_agent_not_completed_this_scan():
+    import asyncio
+    probes = [
+        {"agent": "ClientSideAgent", "focus": "xss", "reason": "r"},
+        {"agent": "FileUploadAgent", "focus": "upload", "reason": "r"},  # never completed this scan
+    ]
+    orch, summarizer = _wave_orch(probes)
+    ran = MagicMock()
+    loop = asyncio.new_event_loop()
+    with patch("multi_agent_system.orchestrator.settings") as s, \
+         patch.object(Orchestrator, "_followup_available_agents",
+                      return_value=["ClientSideAgent"]), \
+         patch.object(Orchestrator, "_get_llm_summarizer", return_value=summarizer), \
+         patch.object(Orchestrator, "_ensure_event_loop", return_value=loop), \
+         patch.object(Orchestrator, "_run_agent_sync", ran), \
+         patch.object(Orchestrator, "_run_final_analysis", MagicMock()):
+        s.adaptive_replan = True
+        s.max_followup_probes = 4
+        orch._run_followup_wave()
+    loop.close()
+    assert [c.args[0] for c in ran.call_args_list] == ["ClientSideAgent"]

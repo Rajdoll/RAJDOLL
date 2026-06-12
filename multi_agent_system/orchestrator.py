@@ -784,6 +784,22 @@ class Orchestrator:
 		if proposed and self._apply_reorder(plan, current_idx, proposed):
 			print(f"[Orchestrator] Replan applied: remaining order -> {plan[current_idx + 1:]}")
 
+	def _followup_available_agents(self) -> List[str]:
+		"""Specialist agents that actually completed in this job (excludes Recon/Report).
+
+		The follow-up wave re-runs only agents that ran this scan - never one the
+		user skipped or one merely registered in AgentRegistry.
+		"""
+		with get_db() as db:
+			rows = db.query(JobAgent).filter(
+				JobAgent.job_id == self.job_id,
+				JobAgent.status == AgentStatus.completed,
+			).all()
+		return [
+			ja.agent_name for ja in rows
+			if ja.agent_name not in ("ReportGenerationAgent", "ReconnaissanceAgent")
+		]
+
 	def _run_followup_wave(self) -> None:
 		"""Bounded post-pass replan: ask the LLM to turn the final analysis into a
 		short list of targeted probes, re-run each probe's agent with a lead-scoped
@@ -792,15 +808,11 @@ class Orchestrator:
 		"""
 		if not getattr(settings, "adaptive_replan", False):
 			return
-		from .agents.base_agent import AgentRegistry
 		from .utils.orchestrator_directive import OrchestratorDirective, merge_directives
 		summarizer = self._get_llm_summarizer()
 		if not summarizer:
 			return
-		available = [
-			name for name in AgentRegistry._registry.keys()
-			if name not in ("ReportGenerationAgent", "ReconnaissanceAgent")
-		]
+		available = self._followup_available_agents()
 		if not available:
 			return
 		analysis = self.context_manager.read("final_analysis") or ""
