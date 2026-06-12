@@ -14,7 +14,6 @@ from bs4 import BeautifulSoup
 
 from .base_agent import AgentRegistry, BaseAgent
 from ..utils.mcp_client import MCPClient
-from ..utils.session_manager import SessionManager
 from .modules.directory_scanner import DirectoryScanner
 
 
@@ -1958,49 +1957,44 @@ Operate autonomously without human guidance.
         self.log("warning", "🔐 [PHASE 4 DEBUG] _attempt_auto_login STARTED")
         self.log("warning", f"🔐 [PHASE 4 DEBUG] Target: {target}")
 
-        try:
-            print("🟣 [AUTOLOGIN TRACE] About to initialize SessionManager...", file=sys.stderr, flush=True)
-            self.log("warning", "🔐 [PHASE 4 DEBUG] Initializing SessionManager...")
-            session_mgr = SessionManager(target)
-            print(f"🟣 [AUTOLOGIN TRACE] SessionManager created: {type(session_mgr)}", file=sys.stderr, flush=True)
-            self.log("warning", f"🔐 [PHASE 4 DEBUG] SessionManager created: {type(session_mgr)}")
-        except Exception as exc:
-            self.log("error", f"🔐 [PHASE 4 DEBUG] SessionManager init FAILED: {exc}")
-            import traceback
-            self.log("error", f"🔐 [PHASE 4 DEBUG] Traceback: {traceback.format_exc()}")
+        # 1) Reuse a session already created by the orchestrator Phase 1.5 auto-login.
+        existing = self.read_context("authenticated_session")
+        if isinstance(existing, dict) and (existing.get("jwt_token") or existing.get("logged_in")):
+            baseline_snapshot["auth"] = {"reused": True, "username": existing.get("username")}
+            self.log("info", f"Reusing authenticated session (user: {existing.get('username', 'unknown')})")
+            return
+
+        # 2) Otherwise, attempt login with the per-scan credentials via the capable
+        #    SessionService path (handles JSON APIs like Juice Shop /rest/user/login).
+        from ..utils.session_service import create_authenticated_session
+        from ..orchestrator import _resolve_scan_credentials
+
+        provided = _resolve_scan_credentials(self.context_manager)
+        if not provided:
+            self.log("info", "Auto-login skipped: no per-scan credentials provided")
             return
 
         try:
-            print("🟣 [AUTOLOGIN TRACE] About to call session_mgr.auto_login() with 120s timeout...", file=sys.stderr, flush=True)
-            self.log("warning", "🔐 [PHASE 4 DEBUG] Calling session_mgr.auto_login()...")
-            results = await self.run_tool_with_timeout(session_mgr.auto_login(), timeout=120)
-            print(f"🟣 [AUTOLOGIN TRACE] auto_login() returned: {type(results)}", file=sys.stderr, flush=True)
-            self.log("warning", f"🔐 [PHASE 4 DEBUG] Auto-login returned: {type(results)}, keys: {results.keys() if isinstance(results, dict) else 'N/A'}")
+            success, session = await self.run_tool_with_timeout(
+                create_authenticated_session(target, credentials=provided),
+                timeout=60,
+            )
         except Exception as exc:
-            self.log("error", f"🔐 [PHASE 4 DEBUG] Auto-login coroutine FAILED: {exc}")
-            import traceback
-            self.log("error", f"🔐 [PHASE 4 DEBUG] Traceback: {traceback.format_exc()}")
+            self.log("warning", f"Auto-login attempt errored: {exc}")
             return
 
-        if not isinstance(results, dict):
-            return
-
-        baseline_snapshot["auth"] = results
-        if results.get("successful_logins"):
-            payload = {
-                "app_type": results.get("app_type"),
-                "sessions": session_mgr.get_session_info(),
-                "successful_logins": results["successful_logins"],
-            }
-            self.write_context("authenticated_sessions", payload)
+        if success and isinstance(session, dict):
+            self.write_context("authenticated_session", session)
+            baseline_snapshot["auth"] = session
             self.add_finding(
                 "WSTG-ATHN",
-                f"Auto-login succeeded for {len(results['successful_logins'])} account(s)",
+                f"Auto-login succeeded as {session.get('username', provided[0][0])}",
                 severity="info",
-                evidence={"users": [acct.get("username") for acct in results["successful_logins"]]}
+                evidence={"username": session.get("username", provided[0][0])},
             )
+            self.log("info", f"Auto-login succeeded as {session.get('username', provided[0][0])}")
         else:
-            self.log("warning", f"Auto-login failed ({results.get('failed_attempts', 0)} attempts)")
+            self.log("warning", "Auto-login failed with provided credentials")
 
     async def _post_baseline_analysis(self, baseline_snapshot: Dict[str, Any], client: MCPClient) -> None:
         if not getattr(self, "_llm_client", None):
