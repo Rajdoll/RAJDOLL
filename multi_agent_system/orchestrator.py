@@ -24,6 +24,40 @@ from .core.task_tree import build_task_tree
 from . import agents  # noqa: F401  # ensure agent classes are registered
 
 
+_AUTH_TOOL_MARKERS = ("sqlmap", "dalfox", "ffuf", "nmap", "nikto")
+
+
+def _finding_source(evidence, details, agent_name) -> str:
+	"""tool-confirmed if the finding references an authoritative scanner, else heuristic."""
+	import json as _json
+	blob = " ".join(filter(None, [
+		_json.dumps(evidence) if isinstance(evidence, (dict, list)) else str(evidence or ""),
+		str(details or ""),
+		str(agent_name or ""),
+	])).lower()
+	return "tool-confirmed" if any(m in blob for m in _AUTH_TOOL_MARKERS) else "heuristic"
+
+
+def _resolve_triage_verdict(source: str, verdict: dict) -> dict:
+	"""Map an LLM verdict onto Finding column updates. Protects tool-confirmed
+	findings from false-positive suppression (recall safety)."""
+	v = (verdict.get("verdict") or "needs_review").lower()
+	out = {"confidence_score": verdict.get("confidence"),
+		   "validation_notes": f"LLM-triaged: {verdict.get('reason', '')}"[:480]}
+	sev = verdict.get("severity")
+	if sev:
+		out["severity"] = sev
+	if v == "false_positive" and source != "tool-confirmed":
+		out["is_true_positive"] = False
+	elif v == "true_positive":
+		out["is_true_positive"] = True
+	elif v == "false_positive" and source == "tool-confirmed":
+		out["is_true_positive"] = True   # protected: keep as valid, severity may still change
+	else:  # needs_review
+		out["is_true_positive"] = None
+	return out
+
+
 DEFAULT_PLAN: List[Any] = [
 	# ===== FULL SEQUENTIAL EXECUTION =====
 	# Planner-Summarizer architecture: each:
