@@ -47,11 +47,39 @@ def recover_stuck_jobs(sender, **kwargs):
 
     try:
         from ..core.db import get_db
-        from ..models.models import Job, JobStatus
+        from ..models.models import Job, JobAgent, JobStatus, AgentStatus
         from ..models.hitl_models import AgentCheckpoint, CheckpointAction
         from datetime import datetime
 
         with get_db() as db:
+            now = datetime.utcnow()
+
+            # ── Zombie reaper: jobs stuck in 'running' whose worker died ──────────
+            # With task_acks_late a recently-dead task may still be redelivered and
+            # resume, so only reap clearly-stale ones (well past a normal scan and the
+            # 2h agent timeout). The 14-16 day zombies are caught; active/resuming
+            # scans are left untouched.
+            reaped = 0
+            for job in db.query(Job).filter(Job.status == JobStatus.running).all():
+                age_hours = (now - job.updated_at).total_seconds() / 3600 if job.updated_at else 99
+                if age_hours <= 3:
+                    continue
+                job.status = JobStatus.failed
+                job.updated_at = now
+                for ja in db.query(JobAgent).filter(
+                    JobAgent.job_id == job.id,
+                    JobAgent.status.in_([AgentStatus.running, AgentStatus.pending]),
+                ).all():
+                    ja.status = AgentStatus.failed
+                    if not ja.finished_at:
+                        ja.finished_at = now
+                    ja.error = "Orphaned: worker died (startup reconcile)"
+                reaped += 1
+            if reaped:
+                db.commit()
+                print(f"[Recovery] Reaped {reaped} zombie 'running' job(s) as failed")
+
+            # ── waiting_checkpoint recovery (existing) ───────────────────────────
             stuck_jobs = db.query(Job).filter(
                 Job.status == JobStatus.waiting_checkpoint
             ).all()
@@ -61,7 +89,6 @@ def recover_stuck_jobs(sender, **kwargs):
 
             print(f"[Recovery] Found {len(stuck_jobs)} stuck job(s) in waiting_checkpoint")
 
-            now = datetime.utcnow()
             for job in stuck_jobs:
                 age_hours = (now - job.updated_at).total_seconds() / 3600 if job.updated_at else 99
 

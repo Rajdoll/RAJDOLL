@@ -25,11 +25,55 @@ import json as _json
 import re as _re
 
 
+def _recover_array(text, key):
+    """Salvage the complete objects of a JSON array the LLM truncated at max_tokens.
+    Returns {key: [...]} of the objects fully emitted before the cut-off, or None.
+    """
+    marker = text.find(f'"{key}"')
+    if marker == -1:
+        return None
+    bracket = text.find("[", marker)
+    if bracket == -1:
+        return None
+    s = text[bracket + 1:]
+    objs = []
+    depth = 0
+    in_str = False
+    esc = False
+    start = None
+    for i, ch in enumerate(s):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    try:
+                        objs.append(_json.loads(s[start:i + 1]))
+                    except _json.JSONDecodeError:
+                        pass
+                    start = None
+    return {key: objs} if objs else None
+
+
 def _safe_parse_test_plan(text):
     """Best-effort parse of an LLM JSON object.
 
-    Handles: plain JSON, ```json fenced blocks, surrounding prose, and trailing
-    commas. Returns the parsed dict, or None if nothing parseable is found.
+    Handles: plain JSON, ```json fenced blocks, surrounding prose, trailing
+    commas, and arrays the LLM truncated at max_tokens. Returns the parsed dict,
+    or None if nothing parseable is found.
     """
     if not text or not str(text).strip():
         return None
@@ -54,7 +98,7 @@ def _safe_parse_test_plan(text):
         try:
             return _json.loads(repaired)
         except _json.JSONDecodeError:
-            return None
+            return _recover_array(candidate, "selections") or _recover_array(candidate, "priority_urls")
 
 
 @AgentRegistry.register("InputValidationAgent")
@@ -343,6 +387,13 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             # Enhance test strategy based on previous discoveries
             discovered_urls = self._enhance_targets_from_findings(discovered_urls, previous_findings)
 
+        # 🧹 DEDUP: collapse crawler junk variants (same endpoint, different param
+        # suffixes) so we test each real endpoint once instead of 4-5 duplicates.
+        _before_dedup = len(discovered_urls)
+        discovered_urls = self._dedup_endpoints(discovered_urls)
+        if len(discovered_urls) != _before_dedup:
+            self.log("info", f"🧹 Deduped: {_before_dedup} URLs → {len(discovered_urls)} unique endpoints (testing all)")
+
         # 🔥 DEBUG CHECKPOINT: About to enter LLM planning phase
         print(f"🔍 DEBUG-10: About to call _create_intelligent_test_plan with {len(discovered_urls)} URLs", file=sys.stderr, flush=True)
         self.log("info", f"🧠 PHASE 2: LLM Autonomous URL Analysis - analyzing {len(discovered_urls)} URLs")
@@ -351,14 +402,15 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         test_plan = await self._create_intelligent_test_plan(discovered_urls, authenticated)
 
         # 🔀 HYBRID MERGE: Combine LLM priorities with rule-based coverage
-        # Strategy: LLM provides intelligent ranking, Rules ensure comprehensive coverage (80%+)
+        # Strategy: LLM ranks; rules fill in any endpoint the LLM missed so the
+        # deduped endpoint set is tested in full (100% of unique endpoints).
         llm_url_count = len(test_plan.get('priority_urls', []))
-        min_required = int(len(discovered_urls) * 0.8)  # 80% coverage target
+        min_required = len(discovered_urls)  # test every unique endpoint (post-dedup)
 
         self.log("info", f"🔀 HYBRID MODE: LLM prioritized {llm_url_count}/{len(discovered_urls)} URLs ({llm_url_count*100//len(discovered_urls) if llm_url_count > 0 else 0}% coverage)")
 
         if llm_url_count < min_required:
-            self.log("info", f"🔧 Merging LLM priorities with rule-based coverage to reach 80%+ target")
+            self.log("info", f"🔧 Merging LLM priorities with rule-based coverage to cover all {len(discovered_urls)} unique endpoints")
             print(f"🔀 HYBRID-MERGE: Combining LLM priorities + rule-based coverage", file=sys.stderr, flush=True)
 
             # Get rule-based comprehensive plan
@@ -428,7 +480,8 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
 
         auth_bucket = [u for u in priority_urls if u.get("url", "") in auth_link_urls]
         speculative_bucket = [u for u in priority_urls if u.get("url", "") not in auth_link_urls]
-        capped_speculative = speculative_bucket[:MAX_PRIORITY_URLS]
+        spec_budget = self._speculative_budget(len(discovered_urls), len(auth_bucket))
+        capped_speculative = speculative_bucket[:spec_budget]
 
         capped_urls = auth_bucket + capped_speculative
         self.log("info",
@@ -1300,6 +1353,32 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 details=f"LLM-driven testing found {len(all_findings['nosql_injection'])} NoSQL injection vulnerabilities"
             )
 
+    @staticmethod
+    def _dedup_endpoints(urls: list[str]) -> list[str]:
+        """Collapse crawler-generated variants of the same endpoint so each real
+        endpoint is tested once. Identity = (scheme, host, path, set of query-param
+        NAMES) — param values don't change what we test (the tools inject their own
+        payloads), so '?current=/query', '?current=/filter', '?current=' all map to
+        the same endpoint. Order preserved; first occurrence kept."""
+        from urllib.parse import urlsplit, parse_qsl
+        seen, out = set(), []
+        for u in urls:
+            try:
+                p = urlsplit(u)
+                names = tuple(sorted(k for k, _ in parse_qsl(p.query, keep_blank_values=True)))
+                key = (p.scheme, p.netloc, p.path.rstrip("/") or "/", names)
+            except Exception:
+                key = u
+            if key not in seen:
+                seen.add(key)
+                out.append(u)
+        return out
+
+    def _speculative_budget(self, discovered_count: int, auth_count: int) -> int:
+        """Cap for speculative URLs. After dedup the list is real endpoints, so we test
+        them ALL (100% coverage). MAX_PRIORITY_URLS stays as a floor for tiny targets."""
+        return max(MAX_PRIORITY_URLS, discovered_count - auth_count)
+
     def _merge_llm_and_rule_plans(self, llm_plan: dict, rule_plan: dict, discovered_urls: list[str]) -> dict:
         """
         🔀 HYBRID MERGE: Combine LLM intelligent prioritization with rule-based coverage.
@@ -1348,11 +1427,13 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         }
         auth_merged = [u for u in merged_urls if u.get("url", "") in auth_link_urls]
         spec_merged = [u for u in merged_urls if u.get("url", "") not in auth_link_urls]
-        merged_urls = auth_merged + spec_merged[:MAX_PRIORITY_URLS]
+        spec_budget = self._speculative_budget(len(discovered_urls), len(auth_merged))
+        merged_urls = auth_merged + spec_merged[:spec_budget]
 
-        # Calculate statistics
-        llm_count = len(llm_plan.get('priority_urls', []))
-        rule_added_count = len(merged_urls) - llm_count
+        # Statistics counted from what actually survives the cap, by origin (so the
+        # numbers always add up and rule_contribution is never negative).
+        rule_added_count = sum(1 for u in merged_urls if u.get('source') == 'rule-based')
+        llm_count = len(merged_urls) - rule_added_count
         coverage_pct = int(len(merged_urls) * 100 / len(discovered_urls)) if discovered_urls else 0
 
         return {
@@ -1586,49 +1667,27 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         # 🔀 HYBRID APPROACH: LLM provides intelligent prioritization, Rules ensure coverage
         # Research claim: "Hybrid LLM+Rule-Based System" (Path C - budget-friendly)
         # LLM role: Analyze URLs and assign priority scores (NOT filter URLs - that's Rule layer's job)
+        # COMPACT OUTPUT: reference each URL by its number (n) instead of echoing the full
+        # URL string + reason/parameters. Keeps the response far below max_tokens so the local
+        # model never truncates mid-array. The number maps back to shown_urls below.
+        shown_urls = discovered_urls[:50]
         planning_prompt = f"""
-You are analyzing {len(discovered_urls)} web application endpoints for penetration testing prioritization.
+You are prioritizing {len(shown_urls)} web application endpoints for penetration testing.
 
-**YOUR TASK**: For each URL, assign:
-1. **Priority score** (0-100): Higher = more likely to have vulnerabilities
-2. **Test types**: Which tests to run (sqli, xss, lfi, xxe, etc.)
-3. **Reasoning**: Brief explanation
+For each relevant URL, output its number (n), a priority score (0-100), and which tests to run.
+Skip pure static assets (.css/.js/.png/.woff/.ico).
 
-**URLs to analyze**:
-{chr(10).join(f"{i+1}. {url}" for i, url in enumerate(discovered_urls[:50]))}
-{"... and " + str(len(discovered_urls) - 50) + " more URLs" if len(discovered_urls) > 50 else ""}
+**URLs**:
+{chr(10).join(f"{i+1}. {url}" for i, url in enumerate(shown_urls))}
+{"... and " + str(len(discovered_urls) - 50) + " more URLs (not shown)" if len(discovered_urls) > 50 else ""}
 
-**Prioritization guidelines**:
-- 100: Search/query endpoints (/search?q=, /find?keyword=)
-- 95: Authentication endpoints (/login, /auth, /signin)
-- 90: Admin/privileged paths (/admin, /dashboard)
-- 85: API/REST endpoints (/api/*, /rest/*)
-- 70: CRUD operations (/products, /users)
-- 60: Standard pages
-- 30: Static-looking files (.html, .php)
-- 0: Pure static assets (.css, .js, .png)
+**Score guide**: 100 search/query (/search?q=, /find?keyword=), 95 auth (/login,/auth), 90 admin/dashboard, 85 api/rest (/api/*,/rest/*), 70 crud (/products,/users), 60 standard pages, 30 static-looking (.html,.php), 0 pure static.
+**Tests**: search→["sqli","xss"], auth→["sqli"], api→["sqli","xss"], file upload→["lfi","xxe"], default→["sqli"].
 
-**Test type selection**:
-- Search/query → ["sqli", "xss"]
-- Auth/login → ["sqli"]
-- API/REST → ["sqli", "xss"]
-- File upload → ["lfi", "xxe"]
-- Default → ["sqli"]
+**Output compact JSON only, no markdown, no prose**:
+{{"selections":[{{"n":1,"score":95,"tests":["sqli"]}},{{"n":2,"score":100,"tests":["sqli","xss"]}}]}}
 
-**Output JSON** (no markdown):
-{{
-    "priority_urls": [
-        {{
-            "url": "http://target/search?q=test",
-            "priority_score": 100,
-            "tests": ["sqli", "xss"],
-            "parameters": ["q"],
-            "reason": "Search endpoint - high injection risk"
-        }}
-    ]
-}}
-
-**NOTE**: Include AS MANY URLs as you can analyze. If unsure, include it with lower priority.
+Include as many URLs as are worth testing. If unsure, include with a lower score.
 """
 
         print(f"🔍 LLM-PLAN-DEBUG-6: Entering try block", file=sys.stderr, flush=True)
@@ -1648,9 +1707,29 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
             elif response_text.startswith("```"):
                 response_text = response_text.split("```")[1].split("```")[0].strip()
 
-            test_plan = _safe_parse_test_plan(response_text)
-            if test_plan is None:
+            parsed = _safe_parse_test_plan(response_text)
+            if parsed is None:
                 raise ValueError("LLM returned no parseable JSON test plan")
+
+            # Compact format: map each {n, score, tests} back to its URL. Fall back to
+            # the legacy priority_urls format if the model emitted that instead.
+            selections = parsed.get("selections")
+            if selections is not None:
+                priority_urls = []
+                for sel in selections:
+                    n = sel.get("n")
+                    if not isinstance(n, int) or n < 1 or n > len(shown_urls):
+                        continue
+                    priority_urls.append({
+                        "url": shown_urls[n - 1],
+                        "priority_score": sel.get("score", sel.get("priority_score", 50)),
+                        "tests": sel.get("tests") or ["sqli"],
+                    })
+                if not priority_urls:
+                    raise ValueError("LLM selections empty after mapping to URLs")
+                test_plan = {"priority_urls": priority_urls}
+            else:
+                test_plan = parsed
             print(f"🔍 LLM-PLAN-DEBUG-10: JSON parsed successfully, {len(test_plan.get('priority_urls', []))} URLs in plan", file=sys.stderr, flush=True)
 
             # Log LLM's autonomous decisions
@@ -1793,50 +1872,15 @@ You are analyzing {len(discovered_urls)} web application endpoints for penetrati
             ]
         }
 
-        self.log("info", "🙋 HITL: Requesting user approval for test plan...")
-        self.log("info", f"   Plan summary: {json.dumps(approval_summary['test_plan_summary'], indent=2)}")
-
-        # TODO: Integrate with actual HITL approval system
-        # For now, log the request and auto-approve in development mode
-        # In production, this would call HITLManager.request_approval()
-
-        try:
-            # Placeholder: In real implementation, this would block until user responds
-            # For now, check for approval file or environment variable
-            approval_file = f"/tmp/hitl_approval_{self.job_id}.json"
-
-            if os.path.exists(approval_file):
-                with open(approval_file, 'r') as f:
-                    user_response = json.load(f)
-                os.remove(approval_file)  # Clear after reading
-
-                self.log("info", f"✅ HITL: User response received - {user_response.get('decision', 'unknown')}")
-
-                return {
-                    "approved": user_response.get('decision') == 'approve',
-                    "modified_plan": user_response.get('modified_plan', test_plan),
-                    "user_feedback": user_response.get('feedback', '')
-                }
-            else:
-                # No approval file - auto-approve with warning
-                self.log("warning", "⚠️  HITL: No user response file found - auto-approving (development mode)")
-                self.log("warning", f"   To approve manually, create: {approval_file}")
-                self.log("warning", f"   Format: {{'decision': 'approve|modify|reject', 'feedback': 'text'}}")
-
-                return {
-                    "approved": True,
-                    "modified_plan": test_plan,
-                    "user_feedback": "Auto-approved (no HITL response)"
-                }
-
-        except Exception as e:
-            self.log("error", f"HITL approval failed: {e}")
-            # Fail-safe: auto-approve on error
-            return {
-                "approved": True,
-                "modified_plan": test_plan,
-                "user_feedback": f"Auto-approved due to HITL error: {e}"
-            }
+        # HITL is handled by the orchestrator's agent-level checkpoints (HITLManager),
+        # not per-agent here. The old file-based placeholder (/tmp/hitl_approval_*.json)
+        # only emitted misleading "development mode" warnings and always auto-approved,
+        # so the test plan proceeds directly.
+        return {
+            "approved": True,
+            "modified_plan": test_plan,
+            "user_feedback": "Auto-approved (HITL handled at agent checkpoints)",
+        }
 
     async def _query_llm(self, prompt: str, max_tokens: int = 1500) -> str:
         """

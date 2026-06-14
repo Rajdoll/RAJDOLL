@@ -11,6 +11,80 @@ from typing import Dict, Any, List, Optional
 _MAX_GAP_SUBTESTS_IN_PROMPT = 10
 
 
+def _recover_json_objects(text: str, key: str) -> list:
+    """Salvage the complete objects of a JSON array `key` the local LLM truncated
+    at max_tokens. Skips the cut-off trailing object."""
+    marker = text.find(f'"{key}"')
+    if marker == -1:
+        return []
+    bracket = text.find("[", marker)
+    if bracket == -1:
+        return []
+    s = text[bracket + 1:]
+    objs, depth, in_str, esc, start = [], 0, False, False, None
+    for i, ch in enumerate(s):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    try:
+                        objs.append(json.loads(s[start:i + 1]))
+                    except Exception:
+                        pass
+                    start = None
+        elif ch == "]" and depth == 0:
+            break
+    return objs
+
+
+def _salvage_agent_analysis(text: str) -> Optional[dict]:
+    """Best-effort recovery of a truncated summarize_agent_findings JSON: pulls the
+    'summary' string (even when the trailing arrays are cut off) plus any complete
+    root_causes / impact_chains objects. Returns None if nothing usable."""
+    import re
+    summary = ""
+    m = re.search(r'"summary"\s*:\s*"', text)
+    if m:
+        i, buf, esc = m.end(), [], False
+        while i < len(text):
+            ch = text[i]
+            if esc:
+                buf.append(ch)
+                esc = False
+            elif ch == "\\":
+                buf.append(ch)
+                esc = True
+            elif ch == '"':
+                break
+            else:
+                buf.append(ch)
+            i += 1
+        raw = "".join(buf)
+        try:
+            summary = json.loads('"' + raw + '"')
+        except Exception:
+            summary = raw
+    root_causes = _recover_json_objects(text, "root_causes")
+    impact_chains = _recover_json_objects(text, "impact_chains")
+    if not summary and not root_causes and not impact_chains:
+        return None
+    return {"summary": summary, "root_causes": root_causes, "impact_chains": impact_chains}
+
+
 class SimpleLLMClient:
     """
     Direct HTTP-based LLM client for OpenAI/Anthropic
@@ -395,9 +469,21 @@ class SimpleLLMClient:
                     starts = [m.start() for m in re.finditer(re.escape(opener), s)]
                     for st in starts:
                         depth = 0
+                        in_str = False
+                        esc = False
                         for i in range(st, len(s)):
                             ch = s[i]
-                            if ch == opener:
+                            if in_str:
+                                if esc:
+                                    esc = False
+                                elif ch == "\\":
+                                    esc = True
+                                elif ch == '"':
+                                    in_str = False
+                                continue
+                            if ch == '"':
+                                in_str = True
+                            elif ch == opener:
                                 depth += 1
                             elif ch == closer:
                                 depth -= 1
@@ -409,6 +495,49 @@ class SimpleLLMClient:
                                     except Exception:
                                         pass
                 return None
+
+            def _recover_tools(text: str) -> list:
+                """Salvage complete objects from a 'tools' array the LLM corrupted
+                (a malformed entry mid-stream) or truncated (cut-off tail). Local
+                models occasionally emit a broken entry like '"tool":: ...' which
+                makes json.loads fail and _extract_first_json grab only the first
+                object — silently dropping every valid tool. This skips the bad/
+                truncated entries and keeps the rest."""
+                marker = text.find('"tools"')
+                if marker == -1:
+                    return []
+                bracket = text.find("[", marker)
+                if bracket == -1:
+                    return []
+                s = text[bracket + 1:]
+                objs, depth, in_str, esc, start = [], 0, False, False, None
+                for i, ch in enumerate(s):
+                    if in_str:
+                        if esc:
+                            esc = False
+                        elif ch == "\\":
+                            esc = True
+                        elif ch == '"':
+                            in_str = False
+                        continue
+                    if ch == '"':
+                        in_str = True
+                    elif ch == "{":
+                        if depth == 0:
+                            start = i
+                        depth += 1
+                    elif ch == "}":
+                        if depth > 0:
+                            depth -= 1
+                            if depth == 0 and start is not None:
+                                try:
+                                    objs.append(json.loads(s[start:i + 1]))
+                                except Exception:
+                                    pass
+                                start = None
+                    elif ch == "]" and depth == 0:
+                        break
+                return objs
 
             candidates = [response]
             stripped = _strip_code_fences(response)
@@ -435,8 +564,14 @@ class SimpleLLMClient:
                 snippet = (response[:200] + ('…' if len(response) > 200 else '')).replace("\n", " ")
                 print(f"[SimpleLLMClient] Tool selection failed: Failed to parse LLM JSON: {last_err}; snippet={snippet}")
                 raise ValueError(f"Failed to parse LLM JSON: {last_err}; snippet={snippet}")
+            # Robust tools extraction: if the parsed object lacks a usable "tools"
+            # array (e.g. _extract_first_json grabbed a single inner tool object
+            # from corrupted/truncated JSON), salvage the array from the raw text.
+            tools_list = plan.get("tools") if isinstance(plan, dict) else None
+            if not tools_list:
+                tools_list = _recover_tools(response)
             selections = []
-            for entry in plan.get("tools", []) or []:
+            for entry in tools_list or []:
                 if isinstance(entry, str):
                     selections.append({
                         "tool": entry,
@@ -453,6 +588,14 @@ class SimpleLLMClient:
                     if isinstance(entry.get("arguments"), dict):
                         selection["arguments"] = entry.get("arguments")
                     selections.append(selection)
+            if not selections:
+                # Parsed OK but yielded no tools — log the FULL response and parsed
+                # keys so the real structure (wrong key? prose prefix?) is visible.
+                print(
+                    f"[SimpleLLMClient] Tool selection empty after parse for {agent_name}. "
+                    f"plan_keys={list(plan.keys()) if isinstance(plan, dict) else type(plan).__name__}; "
+                    f"full_response={response!r}"
+                )
             return selections
         except Exception as e:
             print(f"[SimpleLLMClient] Tool selection failed: {e}")
@@ -566,10 +709,11 @@ class SimpleLLMClient:
 
         fallback = {"summary": raw_outputs[:1000], "root_causes": [], "impact_chains": []}
 
+        response = ""
         try:
             response = await self.chat_completion(
                 messages,
-                max_tokens=1000,
+                max_tokens=2000,  # 1000 was too tight for summary+root_causes+impact_chains; salvage still covers the rest
                 temperature=0.3,
                 response_schema=json_schema
             )
@@ -581,6 +725,16 @@ class SimpleLLMClient:
             parsed.setdefault("summary", "")
             return parsed
         except Exception as e:
+            # Local models often truncate this JSON at max_tokens (Unterminated string).
+            # Salvage the summary + any complete objects before degrading to raw output.
+            salvaged = _salvage_agent_analysis(self._strip_thinking_tags(response)) if response else None
+            if salvaged:
+                print(
+                    f"[SimpleLLMClient] summarize_agent_findings salvaged after {type(e).__name__} "
+                    f"(summary {len(salvaged['summary'])} chars, {len(salvaged['root_causes'])} root_causes, "
+                    f"{len(salvaged['impact_chains'])} impact_chains)"
+                )
+                return salvaged
             print(f"[SimpleLLMClient] summarize_agent_findings failed: {e}")
             return fallback
 

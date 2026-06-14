@@ -778,6 +778,28 @@ async def respond_to_agent_checkpoint(checkpoint_id: int, body: AgentCheckpointR
         }
 
 
+class AllowAllRequest(BaseModel):
+    enabled: bool = True
+
+
+@router.post("/api/hitl/{job_id}/allow-all")
+async def set_allow_all(job_id: int, body: AllowAllRequest = AllowAllRequest()):
+    """Persist 'Allow all this session' server-side so remaining checkpoints are
+    skipped even if the dashboard tab closes or the WebSocket drops. Sending
+    enabled=false clears it so the next checkpoint blocks again.
+    """
+    with get_db() as db:
+        job = db.query(Job).get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        plan = job.plan if isinstance(job.plan, dict) else {}
+        opts = dict(plan.get("options", {}) or {})
+        opts["hitl_allow_all"] = bool(body.enabled)
+        job.plan = {**plan, "options": opts}
+        db.commit()
+    return {"status": "success", "job_id": job_id, "hitl_allow_all": bool(body.enabled)}
+
+
 # ============================================================================
 # Director Mode Endpoints (HITL v3)
 # ============================================================================

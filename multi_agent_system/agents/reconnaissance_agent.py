@@ -67,7 +67,7 @@ You are ReconnaissanceAgent, an autonomous OWASP WSTG-INFO practitioner. Your sc
 Operate autonomously without human guidance.
 """
 
-    ENDPOINT_DISCOVERY_TIMEOUT: ClassVar[int] = int(os.getenv("RECON_ENDPOINT_TIMEOUT", "240"))
+    ENDPOINT_DISCOVERY_TIMEOUT: ClassVar[int] = int(os.getenv("RECON_ENDPOINT_TIMEOUT", "600"))
     MAX_ENDPOINTS: ClassVar[int] = 120
     MAX_JS_FILES: ClassVar[int] = 15
 
@@ -259,7 +259,7 @@ Operate autonomously without human guidance.
             "priority": "HIGH",  # Still important for JavaScript endpoint mining
             "arg_builder": lambda target, domain: {"target": target},
             "handler": "_handle_endpoint_discovery",
-            "timeout": 240,
+            "timeout": int(os.getenv("RECON_ENDPOINT_TIMEOUT", "600")),
         },
         "rest_endpoint_discovery": {
             "server": "information-gathering",
@@ -362,8 +362,10 @@ Operate autonomously without human guidance.
             try:
                 await asyncio.wait_for(self._perform_endpoint_discovery(target, baseline_snapshot), timeout=timeout)
             except asyncio.TimeoutError:
+                # Timeout still yields partial inventory and we return success below,
+                # so this is not a hard failure — don't record it (would inflate the
+                # circuit-breaker count and contradict the success status).
                 self.log("warning", f"discover_endpoints timed out after {timeout}s; continuing with partial endpoint inventory")
-                self.record_tool_failure("discover_endpoints", f"timeout after {timeout}s")
             inventory = self.shared_context.get("endpoint_inventory") or self.shared_context.get("discovered_endpoints")
             return {"status": "success", "data": inventory or {"endpoints": [], "count": 0}}
         else:
@@ -410,8 +412,8 @@ Operate autonomously without human guidance.
         try:
             await asyncio.wait_for(self._perform_endpoint_discovery(target, baseline_snapshot), timeout=3600)
         except asyncio.TimeoutError:
-            self.log("warning", "Endpoint discovery timed out after 600s; continuing with partial endpoint inventory")
-            self.record_tool_failure("perform_endpoint_discovery", "timeout after 600s")
+            # Partial inventory is still usable downstream — not a hard failure.
+            self.log("warning", "Endpoint discovery timed out; continuing with partial endpoint inventory")
         self.log("warning", "🔐 [PHASE 4 DEBUG] Endpoint discovery COMPLETE")
         print("🔴 [STDERR TRACE] _perform_endpoint_discovery() COMPLETED", file=sys.stderr, flush=True)
 
@@ -529,13 +531,16 @@ Operate autonomously without human guidance.
                         self.record_tool_failure(tool_name, str(exc))
                         continue
 
-            if not isinstance(result, dict) or result.get("status") != "success":
+            if not isinstance(result, dict) or result.get("status") not in ("success", "partial_success"):
                 self.log(
                     "warning",
                     f"{tool_name} returned non-success: {self._brief_tool_result(result)}",
                     {"result": result},
                 )
                 continue
+
+            if result.get("status") == "partial_success":
+                self.log("info", f"{tool_name} partial success: {result.get('message', 'using partial data')}")
 
             data = result.get("data", result)
             baseline_snapshot["baseline_results"][tool_name] = data
@@ -2143,13 +2148,28 @@ Operate autonomously without human guidance.
         return trimmed
 
     def _extract_first_json_block(self, text: str) -> str | None:
+        # String/escape-aware brace matching: braces inside string literals (e.g. an
+        # SSTI payload "{{7*7}}") must not affect depth, otherwise the wrong span is
+        # extracted and parsing fails.
         for opener, closer in (("{", "}"), ("[", "]")):
             starts = [idx for idx, ch in enumerate(text) if ch == opener]
             for start in starts:
                 depth = 0
+                in_str = False
+                esc = False
                 for idx in range(start, len(text)):
                     char = text[idx]
-                    if char == opener:
+                    if in_str:
+                        if esc:
+                            esc = False
+                        elif char == "\\":
+                            esc = True
+                        elif char == '"':
+                            in_str = False
+                        continue
+                    if char == '"':
+                        in_str = True
+                    elif char == opener:
                         depth += 1
                     elif char == closer:
                         depth -= 1
@@ -2198,7 +2218,7 @@ Operate autonomously without human guidance.
                 self.record_tool_failure(tool_key, str(e))
                 continue
 
-            if not isinstance(result, dict) or result.get("status") != "success":
+            if not isinstance(result, dict) or result.get("status") not in ("success", "partial_success"):
                 self.log("warning", f"Follow-up tool {tool_key} returned non-success status", {"status": result})
                 continue
 

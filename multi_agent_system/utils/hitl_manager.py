@@ -14,7 +14,7 @@ from sqlalchemy import or_
 
 from ..core.config import settings
 from ..core.db import get_db
-from ..models.models import Job, Finding
+from ..models.models import Job, Finding, JobStatus
 from ..models.hitl_models import (
     PlanApproval,
     FindingApproval,
@@ -100,11 +100,12 @@ class HITLManager:
             db.refresh(approval)
             approval_id = approval.id
         
-        # Update job status to waiting_approval
+        # Update job status to waiting_checkpoint (valid JobStatus member;
+        # "waiting_approval" is not in the enum and would raise on commit).
         with get_db() as db:
             job = db.query(Job).get(self.job_id)
             if job:
-                job.status = "waiting_approval"
+                job.status = JobStatus.waiting_checkpoint
                 db.commit()
         
         # Wait for user response (polling)
@@ -219,9 +220,11 @@ class HITLManager:
         elapsed = 0
         
         while elapsed < timeout:
+            if self._job_cancelled():
+                return True
             with get_db() as db:
                 approval = db.query(FindingApproval).get(approval_id)
-                
+
                 if approval.status == ApprovalStatus.approved:
                     return not approval.is_false_positive
                 
@@ -292,9 +295,11 @@ class HITLManager:
         elapsed = 0
         
         while elapsed < timeout:
+            if self._job_cancelled():
+                return False
             with get_db() as db:
                 approval = db.query(RiskApproval).get(approval_id)
-                
+
                 if approval.status == ApprovalStatus.approved:
                     return not approval.skip_this_test
                 
@@ -325,6 +330,14 @@ class HITLManager:
     ) -> Dict[str, Any]:
         """Request confirmation before executing a specific MCP tool."""
         if not self.hitl_enabled or not self.enable_tool_hitl:
+            return {"approved": True, "arguments": arguments}
+
+        # Per-tool prompts only make sense in explicit 'tool' mode and when the user
+        # hasn't chosen Allow All. In 'agent' mode the agent-level checkpoints govern
+        # HITL; surfacing per-tool prompts the dashboard never renders just stalls
+        # every tool for the full timeout (~10 min each). Short-circuit those cases.
+        hitl_mode = getattr(settings, "hitl_mode", "off")
+        if hitl_mode != "tool" or self._job_allow_all():
             return {"approved": True, "arguments": arguments}
 
         batch_key = self._compute_batch_key(agent_name, tool_name, server, arguments)
@@ -409,6 +422,9 @@ class HITLManager:
         elapsed = 0
 
         while elapsed < timeout:
+            if self._job_cancelled():
+                print(f"🛑 [HITL] Job {self.job_id}: cancelled while awaiting tool decision for {tool_name}")
+                return {"approved": False}
             with get_db() as db:
                 approval = db.query(ToolApproval).get(approval_id)
                 if not approval:
@@ -1148,6 +1164,9 @@ RESPONSE FORMAT (JSON):
         while elapsed < timeout:
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
+            if self._job_cancelled():
+                print(f"🛑 [HITL Director] Job {self.job_id}: cancelled — skipping HIGH_RISK tool '{tool_name}'")
+                return {"approved": False, "arguments": generated_args}
             with get_db() as db:
                 ap = db.query(ToolApproval).get(approval_id)
                 if not ap:
@@ -1173,6 +1192,21 @@ RESPONSE FORMAT (JSON):
                 db.commit()
         return {"approved": True, "arguments": generated_args}
 
+    def _job_cancelled(self) -> bool:
+        """True if the user cancelled this job — lets blocking HITL waits bail out
+        immediately instead of hanging until their timeout."""
+        with get_db() as db:
+            job = db.query(Job).get(self.job_id)
+            return bool(job and job.status == JobStatus.cancelled)
+
+    def _job_allow_all(self) -> bool:
+        """True if the user chose 'Allow all' for this job (persisted on the job)."""
+        with get_db() as db:
+            job = db.query(Job).get(self.job_id)
+            if job and isinstance(job.plan, dict):
+                return bool(job.plan.get("options", {}).get("hitl_allow_all"))
+        return False
+
     async def _wait_for_agent_checkpoint(
         self,
         checkpoint_id: int,
@@ -1187,6 +1221,9 @@ RESPONSE FORMAT (JSON):
         elapsed = 0
 
         while elapsed < timeout:
+            if self._job_cancelled():
+                print(f"🛑 [HITL] Job {self.job_id}: cancelled while waiting on checkpoint after {agent_name}")
+                return {"action": "abort"}
             with get_db() as db:
                 cp = db.query(AgentCheckpoint).get(checkpoint_id)
                 if not cp:
