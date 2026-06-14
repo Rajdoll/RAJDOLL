@@ -43,9 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
     downloadBtn.addEventListener('click', handleDownloadReport);
     downloadPdfBtn.addEventListener('click', handleDownloadPdfReport);
     clearLogsBtn.addEventListener('click', clearLogs);
-    document.getElementById('evalViewBtn').addEventListener('click', () => {
-        if (currentJobId) loadEvaluationView(currentJobId);
-    });
 
     // Live Monitor: skip URL / skip agent
     document.getElementById('hitlSkipUrl').addEventListener('click', () => sendIntervention('skip_url'));
@@ -115,10 +112,6 @@ async function restoreLastScan() {
         agentsPanel.style.display = 'block';
         monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
-        document.getElementById('btnValidateFindings').style.display = 'inline-block';
-        document.getElementById('evalViewBtn').style.display = 'inline-block';
-        _findingsLoaded = false;
-        document.getElementById('findingsValidationPanel').style.display = 'none';
 
         const status = lastScan.status || 'unknown';
         if (['queued', 'running', 'waiting_checkpoint'].includes(status)) {
@@ -173,6 +166,7 @@ async function handleScanSubmit(e) {
     e.preventDefault();
 
     const targetUrl = document.getElementById('targetUrl').value.trim();
+    const scanName = document.getElementById('scanName')?.value.trim() || '';
     const credUsername = document.getElementById('credUsername').value.trim();
     const credPassword = document.getElementById('credPassword').value;
     const enableHitl = document.getElementById('enableHitl')?.checked || false;
@@ -199,6 +193,7 @@ async function handleScanSubmit(e) {
 
         const payload = {
             target: targetUrl,
+            ...(scanName && { name: scanName }),
             full_wstg_coverage: true,
             // When the toggle is on, request agent-level checkpoints; when off,
             // omit the field so the server resolves from env (HITL_MODE).
@@ -230,10 +225,6 @@ async function handleScanSubmit(e) {
         agentsPanel.style.display = 'block';
         monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
-        document.getElementById('btnValidateFindings').style.display = 'inline-block';
-        document.getElementById('evalViewBtn').style.display = 'inline-block';
-        _findingsLoaded = false;
-        document.getElementById('findingsValidationPanel').style.display = 'none';
 
         jobIdDisplay.textContent = currentJobId;
         targetDisplay.textContent = targetUrl;
@@ -356,6 +347,93 @@ async function handleDownloadPdfReport() {
     } catch (error) {
         addLog(`[ERROR] PDF download failed: ${error.message}`, 'error');
     }
+}
+
+// ========== SCAN HISTORY ==========
+
+async function _downloadReport(jobId, kind) {
+    const url = kind === 'pdf' ? `${API_BASE}/scans/${jobId}/report/pdf` : `${API_BASE}/scans/${jobId}/report`;
+    const ext = kind === 'pdf' ? 'pdf' : 'json';
+    try {
+        addLog(`[SYSTEM] Downloading ${kind.toUpperCase()} report for job ${jobId}...`, 'info');
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const objUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = `RAJDOLL_Report_Job${jobId}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(objUrl);
+        document.body.removeChild(a);
+        addLog(`[SUCCESS] Report downloaded (job ${jobId})`, 'success');
+    } catch (e) {
+        addLog(`[ERROR] Download failed (job ${jobId}): ${e.message}`, 'error');
+    }
+}
+
+let _historyOffset = 0;
+const _HISTORY_PAGE = 20;
+
+async function loadScanHistory() {
+    const body = document.getElementById('scanHistoryBody');
+    if (!body) return;
+    body.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+    try {
+        const resp = await fetch(`${API_BASE}/scans?limit=${_HISTORY_PAGE}&offset=${_historyOffset}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const scans = await resp.json();
+        const prevBtn = document.getElementById('historyPrevBtn');
+        const nextBtn = document.getElementById('historyNextBtn');
+        const pageInfo = document.getElementById('historyPageInfo');
+        if (prevBtn) prevBtn.disabled = _historyOffset === 0;
+        if (nextBtn) nextBtn.disabled = scans.length < _HISTORY_PAGE;
+        if (pageInfo) pageInfo.textContent = scans.length
+            ? `Showing ${_historyOffset + 1}-${_historyOffset + scans.length}`
+            : (_historyOffset === 0 ? '' : 'End');
+        if (!scans.length) {
+            body.innerHTML = `<tr><td colspan="6">${_historyOffset === 0 ? 'No scans yet.' : 'No more scans.'}</td></tr>`;
+            return;
+        }
+        body.innerHTML = scans.map(s => {
+            const when = s.created_at ? new Date(s.created_at).toLocaleString() : '-';
+            const label = escapeHtml(s.name || `Job #${s.job_id}`);
+            const done = ['completed', 'failed', 'cancelled'].includes((s.status || '').toLowerCase());
+            const dl = done
+                ? `<button class="btn-small" onclick="_downloadReport(${s.job_id},'pdf')">PDF</button> ` +
+                  `<button class="btn-small" onclick="_downloadReport(${s.job_id},'json')">JSON</button>`
+                : '<span style="color:var(--text-muted)">in progress</span>';
+            return `<tr>
+                <td>#${s.job_id}</td>
+                <td>${label}</td>
+                <td>${escapeHtml(s.target || '-')}</td>
+                <td>${escapeHtml(s.status || '-')}</td>
+                <td>${when}</td>
+                <td>${dl}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="6">Failed to load: ${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+function toggleScanHistory() {
+    const panel = document.getElementById('scanHistoryPanel');
+    if (!panel) return;
+    const showing = panel.style.display !== 'none';
+    panel.style.display = showing ? 'none' : 'block';
+    if (!showing) { _historyOffset = 0; loadScanHistory(); }
+}
+
+function historyNextPage() {
+    _historyOffset += _HISTORY_PAGE;
+    loadScanHistory();
+}
+
+function historyPrevPage() {
+    _historyOffset = Math.max(0, _historyOffset - _HISTORY_PAGE);
+    loadScanHistory();
 }
 
 // ========== STATUS POLLING ==========
@@ -537,7 +615,7 @@ function _createWebSocket() {
                 } else if (data.type === 'execution_status') {
                     updateExecutionMonitor(data);
                 } else if (data.type === 'agent_checkpoint') {
-                    showAgentCheckpoint(data);
+                    showAgentCheckpoint(data.data);
                 } else if (data.type === 'pre_agent_checkpoint') {
                     showPreAgentCheckpoint(data.data);
                 } else if (data.type === 'high_risk_tool_approval') {
@@ -707,8 +785,18 @@ function hitlAllow() {
     _respondPreAgent('proceed', null);
 }
 
+function _persistAllowAll(enabled = true) {
+    if (!currentJobId) return;
+    fetch(`/api/hitl/${currentJobId}/allow-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+    }).catch(e => addLog(`[HITL] Could not persist allow-all: ${e.message}`, 'warning'));
+}
+
 function hitlAllowAll() {
     sessionStorage.setItem('hitl_allow_all', '1');
+    _persistAllowAll();
     hitlAllowAllStatusUpdate();
     addLog('[HITL] Allow all this session activated — all remaining checkpoints will be auto-approved', 'info');
     _respondPreAgent('proceed', null);
@@ -873,6 +961,7 @@ function cpAllow() { _respondCheckpoint('proceed', null); }
 
 function cpAllowAll() {
     sessionStorage.setItem('hitl_allow_all', '1');
+    _persistAllowAll();
     hitlAllowAllStatusUpdate();
     addLog('[HITL] Allow all this session activated — all remaining checkpoints will be auto-approved', 'info');
     _respondCheckpoint('proceed', null);
@@ -985,62 +1074,10 @@ async function respondHighRisk(action) {
     }
 }
 
-// ========== FINDINGS VALIDATION ==========
-
-let _findingsLoaded = false;
-
-function toggleFindingsPanel() {
-    const panel = document.getElementById('findingsValidationPanel');
-    if (panel.style.display === 'none') {
-        panel.style.display = 'block';
-        if (!_findingsLoaded) loadFindings();
-    } else {
-        panel.style.display = 'none';
-    }
-}
-
-async function loadFindings() {
-    if (!currentJobId) return;
-    const resp = await fetch(`${API_BASE}/scans/${currentJobId}/findings`);
-    if (!resp.ok) return;
-    const findings = await resp.json();
-    renderFindingsList(findings);
-    _findingsLoaded = true;
-}
-
-function renderFindingsList(findings) {
-    const container = document.getElementById('findingsList');
-    const total = findings.length;
-    const reviewed = findings.filter(f => f.is_true_positive !== null && f.is_true_positive !== undefined).length;
-    document.getElementById('validationProgress').textContent = `${reviewed}/${total} reviewed`;
-
-    container.innerHTML = findings.map(f => {
-        const sevColor = {critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#22c55e', info:'#6b7280'}[f.severity] || '#6b7280';
-        const tpActive = f.is_true_positive === true  ? 'background:#16a34a;color:#fff;' : '';
-        const fpActive = f.is_true_positive === false ? 'background:#dc2626;color:#fff;' : '';
-        return `
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border-color);" data-finding-id="${f.id}">
-          <span style="font-size:10px;font-weight:700;color:${sevColor};min-width:56px;">${f.severity.toUpperCase()}</span>
-          <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(f.title)}">${escapeHtml(f.title)}</span>
-          <button onclick="markFinding(${f.id}, true)"  style="font-size:11px;padding:2px 8px;border:1px solid #16a34a;border-radius:4px;cursor:pointer;${tpActive}">TP</button>
-          <button onclick="markFinding(${f.id}, false)" style="font-size:11px;padding:2px 8px;border:1px solid #dc2626;border-radius:4px;cursor:pointer;${fpActive}">FP</button>
-        </div>`;
-    }).join('');
-}
+// ========== UTILITIES ==========
 
 function escapeHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-async function markFinding(findingId, isTP) {
-    const token = localStorage.getItem('adminToken') || '';
-    const resp = await fetch(`${API_BASE}/findings/${findingId}/validate`, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json', 'X-Admin-Token': token},
-        body: JSON.stringify({is_true_positive: isTP}),
-    });
-    if (resp.ok) { _findingsLoaded = false; loadFindings(); }
-    else alert('Validation failed — check admin token in browser localStorage (key: adminToken)');
 }
 
 // ========== CLEANUP ==========
@@ -1153,45 +1190,8 @@ function hitlAllowAllStatusUpdate() {
 
 function hitlClearAllowAll() {
     sessionStorage.removeItem('hitl_allow_all');
+    _persistAllowAll(false);
     hitlAllowAllStatusUpdate();
     addLog('[HITL] Allow all this session — DISABLED. Next checkpoint will block again.', 'info');
 }
 
-async function loadEvaluationView(jobId) {
-    const panel = document.getElementById('evaluationPanel');
-    try {
-        const resp = await fetch(`${API_BASE}/scans/${jobId}/evaluation?target_profile=juiceshop`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-
-        const s = data.summary;
-        document.getElementById('evalSummary').innerHTML =
-            `<strong>Precision:</strong> ${s.precision}% &nbsp; ` +
-            `<strong>Recall:</strong> ${s.recall}% &nbsp; ` +
-            `<strong>F1:</strong> ${s.f1}% &nbsp; ` +
-            `(${s.detected_gt}/${s.total_gt} ground-truth detected, ${s.fp_findings} false positives)`;
-
-        const body = document.getElementById('evalTableBody');
-        body.innerHTML = data.ground_truth_rows.map((r, i) => {
-            const mark = r.detected ? '✓' : '✗';
-            const cls = r.status === 'TP' ? 'status-tp' : 'status-fn';
-            return `<tr class="${cls}"><td>${i + 1}</td><td>${r.wstg}</td>` +
-                   `<td>${r.vuln_category} (${r.challenge})</td><td>${mark}</td>` +
-                   `<td>${r.status}</td></tr>`;
-        }).join('');
-
-        const fpBody = document.getElementById('evalFpBody');
-        fpBody.innerHTML = data.false_positives.length
-            ? data.false_positives.map(f =>
-                `<tr><td>${f.wstg}</td><td>${f.title}</td><td>${f.agent_name}</td><td>${f.severity}</td></tr>`
-              ).join('')
-            : '<tr><td colspan="4">None</td></tr>';
-
-        panel.style.display = 'block';
-        panel.scrollIntoView({ behavior: 'smooth' });
-    } catch (err) {
-        panel.style.display = 'block';
-        document.getElementById('evalSummary').innerHTML =
-            `<span style="color:#c62828">Failed to load evaluation: ${err.message}</span>`;
-    }
-}

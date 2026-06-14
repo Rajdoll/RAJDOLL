@@ -62,6 +62,7 @@ class Job(Base):
 
     id: Mapped[int] = Column(Integer, primary_key=True)
     target: Mapped[str] = Column(String(512), nullable=False)
+    name: Mapped[Optional[str]] = Column(String(256), nullable=True)
     created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     started_at: Mapped[Optional[datetime]] = Column(DateTime, nullable=True)

@@ -101,7 +101,8 @@ async def create_scan(req: CreateScanRequest):
 			security_guard.whitelist_domains.append(d)
 
 	with get_db() as db:
-		job = Job(target=str(req.target), status=JobStatus.queued)
+		_name = (req.name or "").strip() or None
+		job = Job(target=str(req.target), name=_name, status=JobStatus.queued)
 		db.add(job)
 		db.commit()
 		db.refresh(job)
@@ -183,10 +184,10 @@ async def create_scan(req: CreateScanRequest):
 
 
 @router.get("/scans", response_model=list[ScanStatusResponse])
-def list_scans(limit: int = 20):
-	"""Return recent scans ordered by newest first (used by frontend auto-restore)."""
+def list_scans(limit: int = 20, offset: int = 0):
+	"""Return recent scans ordered by newest first (paginated via limit/offset)."""
 	with get_db() as db:
-		jobs = db.query(Job).order_by(Job.id.desc()).limit(limit).all()
+		jobs = db.query(Job).order_by(Job.id.desc()).offset(max(0, offset)).limit(limit).all()
 		result = []
 		for job in jobs:
 			agents = db.query(JobAgent).filter(JobAgent.job_id == job.id).all()
@@ -206,6 +207,8 @@ def list_scans(limit: int = 20):
 				agents=agent_states,
 				summary=job.summary,
 				target=job.target,
+				name=job.name,
+				created_at=job.created_at,
 			))
 		return result
 
@@ -244,7 +247,7 @@ def get_status(job_id: int):
 			)
 			for a in agents
 		]
-		return ScanStatusResponse(job_id=job.id, status=job_status_str, agents=agent_states, summary=job.summary, target=job.target)
+		return ScanStatusResponse(job_id=job.id, status=job_status_str, agents=agent_states, summary=job.summary, target=job.target, name=job.name, created_at=job.created_at)
 
 
 @router.post("/scans/{job_id}/cancel")

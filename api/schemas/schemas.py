@@ -13,6 +13,7 @@ class ScanCredentials(BaseModel):
 
 class CreateScanRequest(BaseModel):
     target: HttpUrl
+    name: Optional[str] = None  # Optional human-friendly scan label
     full_wstg_coverage: bool = False
     hitl_enabled: Optional[bool] = None
     enable_tool_hitl: Optional[bool] = None
@@ -47,3 +48,5 @@ class ScanStatusResponse(BaseModel):
     agents: List[JobAgentState]
     summary: Optional[str] = None
     target: Optional[str] = None
+    name: Optional[str] = None
+    created_at: Optional[datetime] = None

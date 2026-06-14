@@ -23,6 +23,7 @@
             <div class="system-status">
                 <span class="status-dot"></span> SYSTEM ONLINE
             </div>
+            <button class="btn btn-small" onclick="toggleScanHistory()" style="margin-top:8px;">🗂 Scan History</button>
             <div id="hitl-allow-all-banner" class="hitl-allow-all-banner">
                 <span>🟢 Allow all this session is ACTIVE</span>
                 <button onclick="hitlClearAllowAll()" class="btn btn-danger btn-small" style="margin-left:12px;">✕ Disable</button>
@@ -31,6 +32,37 @@
 
         <!-- Main Content -->
         <main class="main-content">
+            <!-- Scan History Section -->
+            <section class="panel" id="scanHistoryPanel" style="display:none;">
+                <div class="panel-header">
+                    <span class="panel-icon">🗂</span>
+                    <span>Scan History</span>
+                    <button class="btn btn-small" onclick="loadScanHistory()" style="margin-left:auto;">↻ Refresh</button>
+                </div>
+                <div class="panel-body" style="overflow-x:auto;">
+                    <table class="history-table" style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:6px;">Job</th>
+                                <th style="text-align:left; padding:6px;">Name</th>
+                                <th style="text-align:left; padding:6px;">Target</th>
+                                <th style="text-align:left; padding:6px;">Status</th>
+                                <th style="text-align:left; padding:6px;">Created</th>
+                                <th style="text-align:left; padding:6px;">Report</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scanHistoryBody">
+                            <tr><td colspan="6" style="padding:6px;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                    <div style="display:flex; align-items:center; gap:12px; margin-top:10px;">
+                        <button class="btn btn-small" id="historyPrevBtn" onclick="historyPrevPage()">‹ Prev</button>
+                        <span id="historyPageInfo" style="color:var(--text-muted); font-size:0.85rem;"></span>
+                        <button class="btn btn-small" id="historyNextBtn" onclick="historyNextPage()">Next ›</button>
+                    </div>
+                </div>
+            </section>
+
             <!-- Scan Form Section -->
             <section class="panel scan-panel">
                 <div class="panel-header">
@@ -150,21 +182,6 @@
                             <span class="btn-icon">📄</span>
                             Download PDF Report
                         </button>
-                        <button id="evalViewBtn" class="btn btn-secondary" style="display:none;">
-                            <span class="btn-icon">📊</span> Evaluation View
-                        </button>
-                        <button class="btn btn-secondary" id="btnValidateFindings" style="display:none;" onclick="toggleFindingsPanel()">
-                            <span class="btn-icon">✓</span>
-                            Validate Findings
-                        </button>
-                    </div>
-                    <!-- Findings Validation Panel -->
-                    <div id="findingsValidationPanel" style="display:none; margin-top:16px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <h3 style="margin:0; font-size:14px; color:var(--text-primary);">Finding Validation (TP / FP)</h3>
-                            <span id="validationProgress" style="font-size:12px; color:var(--text-muted);"></span>
-                        </div>
-                        <div id="findingsList" style="max-height:400px; overflow-y:auto;"></div>
                     </div>
                 </div>
             </section>
@@ -382,28 +399,6 @@
                     <div id="logsContainer" class="logs-container">
                         <div class="log-line">[SYSTEM] Waiting for scan initialization...</div>
                     </div>
-                </div>
-            </section>
-
-            <!-- Evaluation View Panel -->
-            <section id="evaluationPanel" class="panel" style="display:none;">
-                <div class="panel-header">
-                    <span class="panel-icon">📊</span>
-                    <h2>Evaluation - Actual vs Predicted</h2>
-                </div>
-                <div class="panel-body">
-                    <div id="evalSummary" class="eval-summary"></div>
-                    <table id="evalTable" class="eval-table">
-                        <thead>
-                            <tr><th>#</th><th>WSTG</th><th>Ground Truth (Actual)</th><th>Detected</th><th>Status</th></tr>
-                        </thead>
-                        <tbody id="evalTableBody"></tbody>
-                    </table>
-                    <h4>False Positives (Predicted, no Actual match)</h4>
-                    <table id="evalFpTable" class="eval-table">
-                        <thead><tr><th>WSTG</th><th>Title</th><th>Agent</th><th>Severity</th></tr></thead>
-                        <tbody id="evalFpBody"></tbody>
-                    </table>
                 </div>
             </section>
         </main>
