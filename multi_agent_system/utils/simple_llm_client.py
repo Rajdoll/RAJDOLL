@@ -819,6 +819,61 @@ class SimpleLLMClient:
             print(f"[SimpleLLMClient] analyze_all_findings failed: {e}")
             return f"Analysis failed: {e}"
 
+    async def triage_findings(self, items: list, target_ctx: dict, chunk_size: int = 15) -> list:
+        """Judge findings (validity + severity) from evidence. Returns one verdict per
+        input id; ids the model omits/truncates default to needs_review."""
+        schema = {
+            "title": "triage", "type": "object",
+            "properties": {"verdicts": {"type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "verdict": {"type": "string", "enum": ["true_positive", "false_positive", "needs_review"]},
+                    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+                    "confidence": {"type": "number"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["id", "verdict", "severity"], "additionalProperties": False,
+            }}},
+            "required": ["verdicts"], "additionalProperties": False,
+        }
+        system = (
+            "You are a senior penetration-test triager. For each finding decide, FROM THE "
+            "EVIDENCE ONLY: verdict (true_positive/false_positive/needs_review) and severity "
+            "(critical/high/medium/low/info by impact x exploitability). Rules: a finding marked "
+            "[tool-confirmed] is from an authoritative scanner (sqlmap/dalfox/ffuf/nmap/nikto) — "
+            "do NOT mark it false_positive unless the evidence is clearly contradictory; you MAY "
+            "adjust its severity. Prefer needs_review over guessing. Do not invent vulnerabilities."
+        )
+        results = []
+        for start in range(0, len(items), chunk_size):
+            chunk = items[start:start + chunk_size]
+            lines = [
+                f'"id": {it["id"]} [{it.get("source","heuristic")}] {it.get("category","")} '
+                f'sev={it.get("current_severity","")} agent={it.get("agent","")}\n'
+                f'  title: {it.get("title","")}\n  evidence: {str(it.get("evidence",""))[:600]}'
+                for it in chunk
+            ]
+            user = (
+                f"Target: {target_ctx.get('target','')}  Tech: {target_ctx.get('tech','')}\n\n"
+                f"Findings (return one verdict object per id):\n" + "\n".join(lines)
+            )
+            try:
+                resp = await self.chat_completion(
+                    [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                    max_tokens=2000, temperature=0.0, response_schema=schema,
+                )
+                results.extend(_parse_triage_verdicts(self._strip_thinking_tags(resp)))
+            except Exception as e:
+                print(f"[SimpleLLMClient] triage chunk failed: {e}")
+        # Fill any id the model omitted with needs_review (never drop a finding).
+        seen = {v["id"] for v in results}
+        for it in items:
+            if it["id"] not in seen:
+                results.append({"id": it["id"], "verdict": "needs_review", "severity": None,
+                                "confidence": None, "reason": "not returned by triage"})
+        return results
+
     def _get_few_shot_examples(self, agent_name: str) -> str:
         """
         Provide few-shot examples for intelligent tool selection based on agent type.
