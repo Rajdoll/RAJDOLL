@@ -787,6 +787,50 @@ class Orchestrator:
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
+	def _run_finding_triage(self) -> None:
+		"""LLM triage pass over all findings before the report: re-rate severity and
+		suppress false positives (tool-confirmed findings are protected)."""
+		summarizer = self._get_llm_summarizer()
+		if not summarizer:
+			print("[Orchestrator] No LLM summarizer — skipping finding triage")
+			return
+		with get_db() as db:
+			rows = db.query(Finding).filter(Finding.job_id == self.job_id).all()
+			items = [{
+				"id": f.id, "category": f.category, "title": f.title,
+				"current_severity": f.severity.value if hasattr(f.severity, "value") else str(f.severity),
+				"source": _finding_source(f.evidence, f.details, f.agent_name),
+				"agent": f.agent_name, "evidence": str(f.evidence or f.details or "")[:600],
+			} for f in rows]
+			source_by_id = {it["id"]: it["source"] for it in items}
+		if not items:
+			return
+		target = self._get_target() or ""
+		loop = self._ensure_event_loop()
+		try:
+			verdicts = loop.run_until_complete(asyncio.wait_for(
+				summarizer.triage_findings(items, {"target": target}), timeout=600))
+		except Exception as e:
+			print(f"[Orchestrator] WARNING: triage failed, findings left untouched: {e}")
+			return
+		applied = 0
+		with get_db() as db:
+			for v in verdicts:
+				f = db.query(Finding).get(v["id"])
+				if not f:
+					continue
+				upd = _resolve_triage_verdict(source_by_id.get(v["id"], "heuristic"), v)
+				if "severity" in upd and upd["severity"]:
+					f.severity = upd["severity"]
+				f.is_true_positive = upd["is_true_positive"]
+				f.confidence_score = upd.get("confidence_score")
+				f.validation_notes = upd.get("validation_notes")
+				applied += 1
+			db.commit()
+		suppressed = sum(1 for v in verdicts if (v.get("verdict") == "false_positive"
+		                 and source_by_id.get(v["id"]) != "tool-confirmed"))
+		print(f"[Orchestrator] Triage applied to {applied} findings ({suppressed} suppressed as FP)")
+
 	def _apply_reorder(self, plan: List[Any], current_idx: int, proposed: List[str]) -> bool:
 		"""Replace the not-yet-run tail of `plan` with `proposed` order.
 
@@ -1086,6 +1130,13 @@ class Orchestrator:
 				self._run_followup_wave()
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: Follow-up wave failed: {e}")
+
+		# PHASE 4c: LLM triage of findings (validity + severity) before the report
+		if not self._is_job_cancelled():
+			try:
+				self._run_finding_triage()
+			except Exception as e:
+				print(f"[Orchestrator] WARNING: Finding triage failed: {e}")
 
 		# Write scan timing breakdown to SharedContext for PDF report
 		try:
