@@ -51,6 +51,37 @@ def _recover_json_objects(text: str, key: str) -> list:
     return objs
 
 
+_VALID_VERDICTS = {"true_positive", "false_positive", "needs_review"}
+_VALID_SEVERITIES = {"critical", "high", "medium", "low", "info"}
+
+
+def _parse_triage_verdicts(text: str) -> list:
+    """Parse the triage LLM response into a list of verdict dicts. Tolerant of
+    truncation: recovers the complete objects from the 'verdicts' array (reuses the
+    same salvage used elsewhere). Invalid/garbage -> []."""
+    if not text:
+        return []
+    try:
+        obj = json.loads(text)
+        raw = obj.get("verdicts", []) if isinstance(obj, dict) else []
+    except Exception:
+        raw = _recover_json_objects(text, "verdicts")
+    out = []
+    for v in raw or []:
+        if not isinstance(v, dict) or "id" not in v:
+            continue
+        verdict = str(v.get("verdict", "")).lower()
+        sev = str(v.get("severity", "")).lower()
+        out.append({
+            "id": v["id"],
+            "verdict": verdict if verdict in _VALID_VERDICTS else "needs_review",
+            "severity": sev if sev in _VALID_SEVERITIES else None,
+            "confidence": v.get("confidence"),
+            "reason": str(v.get("reason", ""))[:500],
+        })
+    return out
+
+
 def _salvage_agent_analysis(text: str) -> Optional[dict]:
     """Best-effort recovery of a truncated summarize_agent_findings JSON: pulls the
     'summary' string (even when the trailing arrays are cut off) plus any complete
