@@ -819,9 +819,11 @@ class SimpleLLMClient:
             print(f"[SimpleLLMClient] analyze_all_findings failed: {e}")
             return f"Analysis failed: {e}"
 
-    async def triage_findings(self, items: list, target_ctx: dict, chunk_size: int = 15) -> list:
+    async def triage_findings(self, items: list, target_ctx: dict, chunk_size: int = 8,
+                              max_rounds: int = 3) -> list:
         """Judge findings (validity + severity) from evidence. Returns one verdict per
-        input id; ids the model omits/truncates default to needs_review."""
+        input id. The local model often closes its array early and omits ids, so unanswered
+        ids are re-sent in shrinking rounds; whatever is still missing defaults to needs_review."""
         schema = {
             "title": "triage", "type": "object",
             "properties": {"verdicts": {"type": "array", "items": {
@@ -846,32 +848,40 @@ class SimpleLLMClient:
             "adjust its severity. Prefer needs_review over guessing. Do not invent vulnerabilities."
         )
         results = []
-        for start in range(0, len(items), chunk_size):
-            chunk = items[start:start + chunk_size]
-            lines = [
-                f'"id": {it["id"]} [{it.get("source","heuristic")}] {it.get("category","")} '
-                f'sev={it.get("current_severity","")} agent={it.get("agent","")}\n'
-                f'  title: {it.get("title","")}\n  evidence: {str(it.get("evidence",""))[:600]}'
-                for it in chunk
-            ]
-            user = (
-                f"Target: {target_ctx.get('target','')}  Tech: {target_ctx.get('tech','')}\n\n"
-                f"Findings (return one verdict object per id):\n" + "\n".join(lines)
-            )
-            try:
-                resp = await self.chat_completion(
-                    [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                    max_tokens=2000, temperature=0.0, response_schema=schema,
+        pending = items
+        for _ in range(max_rounds):
+            if not pending:
+                break
+            round_results = []
+            for start in range(0, len(pending), chunk_size):
+                chunk = pending[start:start + chunk_size]
+                lines = [
+                    f'"id": {it["id"]} [{it.get("source","heuristic")}] {it.get("category","")} '
+                    f'sev={it.get("current_severity","")} agent={it.get("agent","")}\n'
+                    f'  title: {it.get("title","")}\n  evidence: {str(it.get("evidence",""))[:600]}'
+                    for it in chunk
+                ]
+                user = (
+                    f"Target: {target_ctx.get('target','')}  Tech: {target_ctx.get('tech','')}\n\n"
+                    f"Findings (return one verdict object per id):\n" + "\n".join(lines)
                 )
-                results.extend(_parse_triage_verdicts(self._strip_thinking_tags(resp)))
-            except Exception as e:
-                print(f"[SimpleLLMClient] triage chunk failed: {e}")
-        # Fill any id the model omitted with needs_review (never drop a finding).
+                try:
+                    resp = await self.chat_completion(
+                        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                        max_tokens=2000, temperature=0.0, response_schema=schema,
+                    )
+                    round_results.extend(_parse_triage_verdicts(self._strip_thinking_tags(resp)))
+                except Exception as e:
+                    print(f"[SimpleLLMClient] triage chunk failed: {e}")
+            results.extend(round_results)
+            answered = {v["id"] for v in round_results}
+            pending = [it for it in pending if it["id"] not in answered]
+        # Fill any id still missing after all retry rounds (never drop a finding).
         seen = {v["id"] for v in results}
         for it in items:
             if it["id"] not in seen:
                 results.append({"id": it["id"], "verdict": "needs_review", "severity": None,
-                                "confidence": None, "reason": "not returned by triage"})
+                                "confidence": None, "reason": "not returned after retries"})
         return results
 
     def _get_few_shot_examples(self, agent_name: str) -> str:

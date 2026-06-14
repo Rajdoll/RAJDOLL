@@ -149,6 +149,7 @@ def _parse_sqlmap_output(output: str) -> List[Dict[str, Any]]:
             if current and "parameter" in current:
                 if dbms:
                     current.setdefault("dbms", dbms)
+                current["source"] = "sqlmap"
                 findings.append(current.copy())
                 # Clear type/title/payload but preserve parameter for next injection type
                 current = {"parameter": current_parameter} if current_parameter else {}

@@ -23,13 +23,14 @@ def test_parse_garbage_returns_empty():
     assert _parse_triage_verdicts("not json at all") == []
 
 
-def test_triage_findings_chunks_and_fills_missing(monkeypatch):
+def test_triage_findings_retries_recover_omitted_ids(monkeypatch):
     client = SimpleLLMClient()
 
     calls = {"n": 0}
     async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
         calls["n"] += 1
-        # Echo a verdict only for the first item in the chunk -> tests "missing -> needs_review"
+        # Echo a verdict only for the FIRST item in the chunk -> omitted ids must be re-sent
+        # in later rounds (where they eventually become a chunk's first item) and recovered.
         import re as _re
         first_id = _re.search(r'"id":\s*(\d+)', messages[-1]["content"]).group(1)
         return '{"verdicts":[{"id":%s,"verdict":"false_positive","severity":"info","confidence":0.7,"reason":"x"}]}' % first_id
@@ -40,9 +41,34 @@ def test_triage_findings_chunks_and_fills_missing(monkeypatch):
     out = asyncio.get_event_loop().run_until_complete(client.triage_findings(items, {"target": "t"}, chunk_size=2))
     by_id = {v["id"]: v for v in out}
     assert set(by_id) == {1, 2, 3, 4, 5}                    # every input id present
-    assert by_id[1]["verdict"] == "false_positive"          # echoed
-    assert by_id[2]["verdict"] == "needs_review"            # missing -> filled
-    assert calls["n"] == 3                                   # 5 items / chunk_size 2 = 3 calls
+    # Round1 echoes 1,3,5; round2 re-sends [2,4] -> echoes 2; round3 re-sends [4] -> echoes 4.
+    assert all(by_id[i]["verdict"] == "false_positive" for i in range(1, 6))  # all recovered, none fell to fallback
+    assert calls["n"] == 5                                   # 3 (round1) + 1 (round2) + 1 (round3)
+
+
+def test_triage_findings_stubborn_id_falls_to_fallback(monkeypatch):
+    client = SimpleLLMClient()
+
+    calls = {"n": 0}
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        calls["n"] += 1
+        # Answer every id EXCEPT 99 -> 99 is never returned and must end as bounded fallback.
+        import re as _re
+        ids = _re.findall(r'"id":\s*(\d+)', messages[-1]["content"])
+        verdicts = ",".join(
+            '{"id":%s,"verdict":"true_positive","severity":"low"}' % i for i in ids if i != "99")
+        return '{"verdicts":[%s]}' % verdicts
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    items = [{"id": i, "category": "WSTG-INPV-05", "title": f"f{i}", "current_severity": "high",
+              "source": "heuristic", "agent": "X", "evidence": "e"} for i in (1, 2, 99)]
+    out = asyncio.get_event_loop().run_until_complete(
+        client.triage_findings(items, {"target": "t"}, chunk_size=8, max_rounds=3))
+    by_id = {v["id"]: v for v in out}
+    assert set(by_id) == {1, 2, 99}
+    assert by_id[99]["verdict"] == "needs_review"
+    assert by_id[99]["reason"] == "not returned after retries"
+    assert calls["n"] == 3                                   # 1 per round, bounded by max_rounds (no infinite loop)
 
 
 def test_finding_source_detects_authoritative_tools():
@@ -71,3 +97,11 @@ def test_resolve_verdict_needs_review_leaves_validity_none():
                                 {"verdict": "needs_review", "severity": None, "confidence": None, "reason": ""})
     assert r["is_true_positive"] is None
     assert "severity" not in r or r["severity"] is None  # no severity change when None
+
+
+def test_resolve_verdict_fallback_does_not_clobber_confidence():
+    # "not returned by triage" fallback verdict must not overwrite an existing confidence_score
+    r = _resolve_triage_verdict("heuristic",
+                                {"verdict": "needs_review", "severity": None, "confidence": None,
+                                 "reason": "not returned by triage"})
+    assert "confidence_score" not in r

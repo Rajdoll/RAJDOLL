@@ -43,8 +43,10 @@ def _resolve_triage_verdict(source: str, verdict: dict) -> dict:
 	"""Map an LLM verdict onto Finding column updates. Protects tool-confirmed
 	findings from false-positive suppression (recall safety)."""
 	v = (verdict.get("verdict") or "needs_review").lower()
-	out = {"confidence_score": verdict.get("confidence"),
-		   "validation_notes": f"LLM-triaged: {verdict.get('reason', '')}"[:480]}
+	out = {"validation_notes": f"LLM-triaged: {verdict.get('reason', '')}"[:480]}
+	conf = verdict.get("confidence")
+	if conf is not None:
+		out["confidence_score"] = conf
 	sev = verdict.get("severity")
 	if sev:
 		out["severity"] = sev
@@ -823,7 +825,8 @@ class Orchestrator:
 				if "severity" in upd and upd["severity"]:
 					f.severity = upd["severity"]
 				f.is_true_positive = upd["is_true_positive"]
-				f.confidence_score = upd.get("confidence_score")
+				if "confidence_score" in upd:
+					f.confidence_score = upd["confidence_score"]
 				f.validation_notes = upd.get("validation_notes")
 				applied += 1
 			db.commit()
