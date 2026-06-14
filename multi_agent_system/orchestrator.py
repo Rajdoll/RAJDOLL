@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from typing import Any, List, Dict, Optional
 from datetime import datetime
 
@@ -25,17 +26,17 @@ from . import agents  # noqa: F401  # ensure agent classes are registered
 
 
 _AUTH_TOOL_MARKERS = ("sqlmap", "dalfox", "ffuf", "nmap", "nikto")
+_AUTH_TOOL_PATTERN = re.compile(r"\b(?:" + "|".join(_AUTH_TOOL_MARKERS) + r")\b")
 
 
 def _finding_source(evidence, details, agent_name) -> str:
 	"""tool-confirmed if the finding references an authoritative scanner, else heuristic."""
-	import json as _json
 	blob = " ".join(filter(None, [
-		_json.dumps(evidence) if isinstance(evidence, (dict, list)) else str(evidence or ""),
+		json.dumps(evidence) if isinstance(evidence, (dict, list)) else str(evidence or ""),
 		str(details or ""),
 		str(agent_name or ""),
 	])).lower()
-	return "tool-confirmed" if any(m in blob for m in _AUTH_TOOL_MARKERS) else "heuristic"
+	return "tool-confirmed" if _AUTH_TOOL_PATTERN.search(blob) else "heuristic"
 
 
 def _resolve_triage_verdict(source: str, verdict: dict) -> dict:
