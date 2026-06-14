@@ -568,8 +568,13 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                     else:
                         url = f"{base_url.rstrip('/')}{step}"
                     resp = await client.get(url)
-                    
-                    if resp.status_code == 200 and len(resp.text) > 100:
+
+                    # A real out-of-order access returns actual step DATA (JSON API
+                    # response). SPAs return the HTML index.html for every route, which
+                    # flagged every step as accessible (false positive) — so require a
+                    # JSON response, not the HTML shell.
+                    ctype = resp.headers.get("content-type", "").lower()
+                    if resp.status_code == 200 and "json" in ctype and len(resp.text) > 2:
                         findings.append({
                             "type": "out_of_order_access",
                             "step": workflow_steps[i],
@@ -588,7 +593,14 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                         "bypass": True
                     })
 
-                    if resp.status_code in [200, 201]:
+                    # Require evidence the action actually SUCCEEDED: a JSON success
+                    # response, not a 2xx that returns an error/validation body (which
+                    # means the workflow was in fact enforced). 2xx alone was a false
+                    # positive.
+                    _ct = resp.headers.get("content-type", "").lower()
+                    _bl = resp.text.lower()
+                    _is_error_body = any(k in _bl for k in ("error", "invalid", "unauthor", "forbidden", "required", "must "))
+                    if resp.status_code in [200, 201] and "json" in _ct and not _is_error_body:
                         findings.append({
                             "type": "workflow_bypass_post",
                             "severity": "Critical",

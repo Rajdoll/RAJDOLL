@@ -416,12 +416,21 @@ async def test_account_provisioning(base_url: str, auth_session: Optional[Dict[s
                         "password": "TestPass123!"
                     })
                     
-                    if login_resp.status_code in [200, 302] and "dashboard" in login_resp.text.lower():
-                        findings.append({
-                            "type": "no_email_verification",
-                            "severity": "Medium",
-                            "description": "Account is immediately active without email verification"
-                        })
+                    # Confirm the login actually authenticated (issued a token or set
+                    # a session cookie), instead of matching a "dashboard" substring
+                    # that SPA bundles contain regardless of auth state (false positive).
+                    if login_resp.status_code in [200, 302]:
+                        _bl = login_resp.text.lower()
+                        _authenticated = (
+                            '"token"' in _bl or '"authentication"' in _bl
+                            or '"bearer"' in _bl or "set-cookie" in login_resp.headers
+                        )
+                        if _authenticated:
+                            findings.append({
+                                "type": "no_email_verification",
+                                "severity": "Medium",
+                                "description": "Account is immediately active without email verification (login issued a session/token)"
+                            })
             except Exception:
                 pass
             

@@ -83,15 +83,18 @@ async def probe_for_error_leaks(base_url: str, auth_session: Optional[Dict[str, 
                 fuzzed_url = f"{base_url.rstrip('/')}/{payload}"
                 try:
                     resp = await client.get(fuzzed_url)
-                    # Mencari pola error di body respons
+                    # Mencari pola error di body respons. Hanya laporkan bila ADA pola
+                    # error verbose yang bocor (stack trace / pesan framework). Status
+                    # 500 polos tanpa bocoran BUKAN information disclosure (dulu jadi
+                    # false positive).
                     matches = ERROR_PATTERNS.findall(resp.text)
-                    if matches or resp.status_code == 500:
+                    if matches:
                         fuzz_results.append({
                             "payload": payload,
                             "url": fuzzed_url,
                             "status_code": resp.status_code,
                             "error_patterns_found": list(set(matches)),
-                            "description": "Request with this payload triggered a server error or a verbose response."
+                            "description": "Request with this payload leaked a verbose error message."
                         })
                 except httpx.RequestError:
                     continue

@@ -623,17 +623,29 @@ async def test_auth_bypass_schema(url: str, auth_session: Optional[Dict[str, Any
 
         async with httpx.AsyncClient(**unauth_kwargs) as unauth_client:
             for path in protected_paths:
-                full_url = f"{base}{path}"
+                # BASELINE: confirm the endpoint is actually protected. If direct
+                # unauth access is NOT denied (401/403), it is public (e.g. Juice
+                # Shop's /api/Products) — there is nothing to "bypass", so skip it.
+                # This removes the false positives where public JSON endpoints were
+                # reported as Critical auth bypass.
+                try:
+                    direct = await unauth_client.get(f"{base}{path}")
+                except Exception:
+                    continue
+                if direct.status_code not in (401, 403):
+                    continue
+
                 for bypass_name, transform in bypass_patterns:
+                    if bypass_name == "direct_access":
+                        continue  # already covered by the baseline above
                     try:
                         test_path = transform(path)
-                        test_url = f"{base}{test_path}"
-                        resp = await unauth_client.get(test_url)
+                        resp = await unauth_client.get(f"{base}{test_path}")
 
-                        # Check if we got actual data (not redirect to login)
+                        # Real bypass: direct was denied (401/403) but this variant
+                        # returns usable data.
                         if resp.status_code == 200:
                             body = resp.text
-                            # Heuristic: if response has JSON data or significant content
                             if len(body) > 50 and ('login' not in body.lower()[:200]):
                                 try:
                                     data = resp.json()
@@ -645,7 +657,7 @@ async def test_auth_bypass_schema(url: str, auth_session: Optional[Dict[str, Any
                                             "original_path": path,
                                             "status_code": resp.status_code,
                                             "severity": "Critical",
-                                            "description": f"Protected resource accessible without auth via {bypass_name}",
+                                            "description": f"Protected resource (direct={direct.status_code}) accessible without auth via {bypass_name}",
                                             "evidence": str(body[:200])
                                         })
                                 except Exception:

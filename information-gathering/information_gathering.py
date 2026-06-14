@@ -1725,11 +1725,14 @@ async def fingerprint_framework(domain: str) -> Dict[str, Any]:
             # optionally parse technologies
             pass
 
-        # Vulnerability hints
+        # Technology-based hints (informational only). These are NOT confirmed
+        # vulnerabilities — reporting a critical CVE just because a framework was
+        # fingerprinted (without verifying the vulnerable condition, e.g. Laravel
+        # debug mode actually being on) is a false positive.
         if cms == "WordPress":
-            vulns.append({"cve": "Multiple", "description": "Ensure WordPress core/plugins are up-to-date", "severity": "medium"})
+            vulns.append({"cve": "N/A", "description": "WordPress detected — verify core/plugins are up to date", "severity": "info"})
         if backend.get("name") == "Laravel":
-            vulns.append({"cve": "CVE-2021-43617", "description": "Laravel Debug Mode RCE (if debug enabled)", "severity": "critical"})
+            vulns.append({"cve": "CVE-2021-43617", "description": "Laravel detected — RCE only IF debug mode is enabled (NOT verified here)", "severity": "info"})
 
         return {
             "status": "success",

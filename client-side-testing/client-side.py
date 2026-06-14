@@ -1874,12 +1874,16 @@ async def test_csp_bypass(url: str, auth_session: Optional[Dict[str, Any]] = Non
                 for payload, bypass_type in csp_bypass_payloads:
                     try:
                         resp = await client.get(f"{base_url}{endpoint}", params={"q": payload})
+                        # Reflection alone is NOT execution. Without confirming the
+                        # payload runs (headless/DOM), report as informational so it
+                        # does not count as high-severity XSS (was a false positive on
+                        # search endpoints that simply echo the query).
                         if resp.status_code == 200 and payload in resp.text:
                             findings.append({
-                                "type": f"CSP bypass reflected: {bypass_type}",
+                                "type": f"CSP bypass payload reflected (unconfirmed): {bypass_type}",
                                 "endpoint": endpoint,
-                                "severity": "high",
-                                "description": f"CSP bypass payload reflected in response: {bypass_type}",
+                                "severity": "info",
+                                "description": f"Payload reflected but execution NOT confirmed: {bypass_type}",
                                 "evidence": f"Payload: {payload[:100]}"
                             })
                     except Exception:
@@ -1950,12 +1954,15 @@ async def test_open_redirect(url: str, auth_session: Optional[Dict[str, Any]] = 
                     if is_redirect:
                         # Check if redirected to external domain
                         if payload_type == "allowlisted_crypto_redirect":
+                            # Redirecting to an ALLOWLISTED URL is intended behavior,
+                            # not a vulnerability. Record as informational only (was a
+                            # false-positive "medium" finding).
                             findings.append({
-                                "type": f"Allowlisted redirect accepted: {payload_type}",
+                                "type": f"Allowlisted redirect accepted (expected): {payload_type}",
                                 "endpoint": "/redirect",
                                 "payload": payload,
-                                "severity": "medium",
-                                "description": f"Server redirects to allowlisted URL: {location}",
+                                "severity": "info",
+                                "description": f"Server redirects to allowlisted URL (intended): {location}",
                                 "evidence": f"Status {resp.status_code}, Location: {location}"
                             })
                         elif "evil.com" in location or location.startswith("//") or location.startswith("\\"):
@@ -1983,7 +1990,9 @@ async def test_open_redirect(url: str, auth_session: Optional[Dict[str, Any]] = 
                     continue
 
         return {"status": "success", "data": {
-            "vulnerable": len(findings) > 0,  # any redirect behavior (allowlisted or bypassed) is CLNT-04 relevant
+            # Only a redirect to an attacker-controlled domain is a vulnerability;
+            # allowlisted/informational redirects do not count.
+            "vulnerable": any(f.get("severity") in ("high", "critical") for f in findings),
             "findings": findings,
             "vulnerabilities_found": len(findings),
             "payloads_tested": len(all_payloads)

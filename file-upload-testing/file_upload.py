@@ -302,14 +302,16 @@ async def test_xxe_via_svg(
                             "description": "SSRF via XXE - accessed AWS metadata endpoint"
                         })
                     
-                    # Check for DoS vulnerability
-                    if attack_type == "billion_laughs_dos" and len(resp.text) > 10000:
+                    # Check for DoS vulnerability. A 10 KB response is NOT proof of
+                    # entity expansion (normal pages exceed it) — require a massive
+                    # response (>1 MB) that only real billion-laughs expansion produces.
+                    if attack_type == "billion_laughs_dos" and len(resp.text) > 1_000_000:
                         findings.append({
                             "type": "xxe_dos",
                             "attack_type": attack_type,
                             "filename": filename,
                             "severity": "high",
-                            "evidence": f"Response size: {len(resp.text)} bytes",
+                            "evidence": f"Response size: {len(resp.text)} bytes (entity expansion)",
                             "description": "XXE billion laughs attack expanded successfully"
                         })
                     

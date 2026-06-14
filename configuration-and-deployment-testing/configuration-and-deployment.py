@@ -527,14 +527,18 @@ async def test_file_extensions(base_url: str, test_extensions: List[str] = None,
                     content_type = resp.headers.get("content-type", "")
                     content_disposition = resp.headers.get("content-disposition", "")
                     
-                    is_executable = any([
-                        "text/html" in content_type,
-                        "application/x-httpd-php" in content_type,
-                        "application/x-jsp" in content_type,
-                        "download" not in content_disposition.lower()
-                    ])
-                    
-                    if resp.status_code in [200, 500] and is_executable:
+                    # Only an EXECUTABLE content-type or a PHP/JSP X-Powered-By header
+                    # indicates the server maps this extension to a handler. "text/html"
+                    # and "no download disposition" are the SPA/404 fallback and flagged
+                    # every extension as High (false positive) — removed.
+                    powered_by = resp.headers.get("x-powered-by", "").lower()
+                    is_executable = (
+                        "application/x-httpd-php" in content_type
+                        or "application/x-jsp" in content_type
+                        or "php" in powered_by or "jsp" in powered_by or "servlet" in powered_by
+                    )
+
+                    if resp.status_code == 200 and is_executable:
                         findings.append({
                             "extension": ext,
                             "status_code": resp.status_code,
@@ -550,7 +554,9 @@ async def test_file_extensions(base_url: str, test_extensions: List[str] = None,
                 test_url = f"{base_url.rstrip('/')}/test{ext}.jpg"
                 try:
                     resp = await client.get(test_url)
-                    if "php" in resp.headers.get("content-type", "").lower() or resp.status_code == 500:
+                    # Require PHP execution evidence (content-type / X-Powered-By),
+                    # not a bare 500 which is just a server error (was a false positive).
+                    if "php" in resp.headers.get("content-type", "").lower() or "php" in resp.headers.get("x-powered-by", "").lower():
                         findings.append({
                             "extension": f"{ext}.jpg",
                             "type": "double_extension_bypass",

@@ -408,10 +408,23 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
                             "evidence": str(resp_data)[:300],
                         })
                     elif resp.status_code == 200:
+                        # 200 alone does not prove the $ne operator was effective.
+                        # Evidence = a multi-record response (operator matched many
+                        # rows); otherwise report low/unconfirmed instead of high.
+                        _many = False
+                        try:
+                            _d = resp.json()
+                            _many = isinstance(_d, list) and len(_d) > 1
+                        except Exception:
+                            pass
                         findings.append({
                             "type": "nosql_operator_accepted",
-                            "severity": "high",
-                            "description": "Endpoint accepted NoSQL operator ($ne) in id field",
+                            "severity": "high" if _many else "low",
+                            "description": (
+                                "NoSQL $ne returned multiple records (operator effective)"
+                                if _many else
+                                "Endpoint accepted NoSQL operator ($ne) but effect unconfirmed (200 only)"
+                            ),
                             "endpoint": endpoint_url,
                             "evidence": resp.text[:300],
                         })

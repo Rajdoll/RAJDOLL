@@ -1691,21 +1691,24 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_s
                             vulnerable = True
                             evidence.append(f"Pattern match: {evidence_pattern}")
                         
-                        # Response characteristics
-                        if "metadata" in target_url and len(ssrf_resp.text) > 50:
+                        # Concrete cloud-metadata proof — require actual metadata
+                        # tokens in the body, not just the word "metadata" in the URL.
+                        if re.search(
+                            r"ami-id|instance-id|iam/security-credentials|InstanceProfile|"
+                            r"AccessKeyId|SecretAccessKey|computeMetadata|hostname",
+                            ssrf_resp.text,
+                        ) and "metadata" in target_url:
                             vulnerable = True
-                            evidence.append("Metadata endpoint returned content")
-                        
+                            evidence.append("Cloud metadata tokens returned")
+
                         if "/etc/passwd" in target_url and "root:" in ssrf_resp.text:
                             vulnerable = True
                             evidence.append("File system access confirmed")
-                        
-                        # Time-based detection (internal network might respond faster)
-                        if "192.168" in target_url or "10.0" in target_url:
-                            if elapsed < 1 and len(ssrf_resp.text) > 0:
-                                vulnerable = True
-                                evidence.append(f"Fast response from internal IP ({elapsed:.2f}s)")
-                        
+                        # NOTE: removed weak heuristics ("metadata URL returned >50
+                        # chars" and "fast response from internal IP") — they flagged
+                        # ordinary error pages as SSRF (false positives). SSRF is now
+                        # reported only on concrete evidence (pattern/metadata/file).
+
                         if vulnerable:
                             severity = "critical" if ssrf_type in ["aws_metadata", "file_protocol"] else "high"
                             findings.append({
@@ -1718,16 +1721,10 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_s
                             })
                     
                     except asyncio.TimeoutError:
-                        # Timeout on internal network might still indicate vulnerability
-                        if "192.168" in target_url or "10.0" in target_url:
-                            findings.append({
-                                "parameter": param_name,
-                                "target": target_url,
-                                "type": ssrf_type,
-                                "evidence": "Request reached internal network (timeout)",
-                                "severity": "medium",
-                                "note": "Timeout suggests request was processed but target didn't respond"
-                            })
+                        # A timeout is NOT evidence of SSRF — the host may be filtered
+                        # or non-routable and the request never reached anything.
+                        # Previously flagged as medium SSRF (false positive). Skipped.
+                        continue
                     except Exception:
                         continue
         
@@ -2658,11 +2655,14 @@ async def _manual_sqli_detection(url: str, param: Optional[str] = None) -> Dict[
         ("' UNION SELECT NULL--", "union_null"),
     ]
 
-    # SQL error keywords to detect in response
+    # SQL ERROR SIGNATURES (specific) — bare words like "SQL"/"mysql"/"oracle" are
+    # too generic (pages legitimately mention them) and caused false positives.
     sql_error_keywords = [
-        "SQL", "sqlite", "mysql", "postgresql", "oracle", "syntax error",
         "SQLITE_ERROR", "ORA-", "PG::", "mysql_fetch", "unclosed quotation",
-        "pg_query", "pg_exec", "mysqli", "PDOException", "SQLite3::"
+        "pg_query(", "pg_exec(", "mysqli_", "PDOException", "SQLite3::",
+        "you have an error in your sql syntax", "warning: mysql",
+        "unterminated quoted string", "quoted string not properly terminated",
+        "sqlstate", "odbc sql server driver", "microsoft ole db provider for sql",
     ]
 
     findings = []
@@ -2705,22 +2705,32 @@ async def _manual_sqli_detection(url: str, param: Optional[str] = None) -> Dict[
                     # Check for significant response length difference
                     length_diff = abs(len(resp.text) - baseline_length) > 500
 
-                    # Report if: SQL error found, status anomaly, OR error message appeared with payload
-                    if error_found or status_anomaly or error_message_changed:
-                        findings.append({
-                            "parameter": param or "unknown",
-                            "payload": payload,
-                            "type": payload_type,
-                            "evidence": {
-                                "status_code": resp.status_code,
-                                "baseline_status": baseline_status,
-                                "error_detected": error_found,
-                                "response_snippet": resp.text[:500]
-                            },
-                            "url": test_url,
-                            "severity": "critical"
-                        })
-                        logger.info(f"[manual_sqli] Detected SQLi with payload: {payload} (status: {resp.status_code})")
+                    # Report only on a NEW SQL error that the payload introduced
+                    # (baseline-diff), or a status anomaly. Bare keyword presence is
+                    # NOT enough — a page that already contains an error signature
+                    # would otherwise flag every payload as critical.
+                    if error_message_changed:
+                        severity = "critical"   # payload triggered a SQL error → strong evidence
+                    elif status_anomaly:
+                        severity = "medium"     # 400/500 to a quote: weaker, unconfirmed
+                    else:
+                        continue
+
+                    findings.append({
+                        "parameter": param or "unknown",
+                        "payload": payload,
+                        "type": payload_type,
+                        "evidence": {
+                            "status_code": resp.status_code,
+                            "baseline_status": baseline_status,
+                            "error_detected": error_found,
+                            "new_sql_error": error_message_changed,
+                            "response_snippet": resp.text[:500]
+                        },
+                        "url": test_url,
+                        "severity": severity
+                    })
+                    logger.info(f"[manual_sqli] {severity} signal with payload: {payload} (status: {resp.status_code})")
 
                 except Exception as e:
                     logger.warning(f"[manual_sqli] Payload test failed: {e}")
