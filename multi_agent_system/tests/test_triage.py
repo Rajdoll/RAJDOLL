@@ -105,3 +105,29 @@ def test_resolve_verdict_fallback_does_not_clobber_confidence():
                                 {"verdict": "needs_review", "severity": None, "confidence": None,
                                  "reason": "not returned by triage"})
     assert "confidence_score" not in r
+
+
+def test_parse_verdict_with_probe():
+    text = ('{"verdicts":[{"id":7,"verdict":"needs_review","severity":"high","confidence":0.5,'
+            '"reason":"unconfirmed","probe":{"server":"input-validation-testing","tool":"test_sqli",'
+            '"args":{"url":"http://t/login","param":"email"},"hypothesis":"time-based blind"}}]}')
+    out = _parse_triage_verdicts(text)
+    assert len(out) == 1
+    p = out[0]["probe"]
+    assert p["server"] == "input-validation-testing" and p["tool"] == "test_sqli"
+    assert p["args"]["param"] == "email" and p["hypothesis"] == "time-based blind"
+
+
+def test_parse_verdict_without_probe_sets_none():
+    text = '{"verdicts":[{"id":1,"verdict":"true_positive","severity":"low"}]}'
+    out = _parse_triage_verdicts(text)
+    assert out[0]["probe"] is None
+
+
+def test_parse_verdict_drops_invalid_probe_keeps_verdict():
+    # probe missing required server/tool -> probe dropped, verdict still recovered
+    text = ('{"verdicts":[{"id":2,"verdict":"false_positive","severity":"info",'
+            '"probe":{"hypothesis":"no tool named"}}]}')
+    out = _parse_triage_verdicts(text)
+    assert out[0]["id"] == 2 and out[0]["verdict"] == "false_positive"
+    assert out[0]["probe"] is None

@@ -72,12 +72,24 @@ def _parse_triage_verdicts(text: str) -> list:
             continue
         verdict = str(v.get("verdict", "")).lower()
         sev = str(v.get("severity", "")).lower()
+        probe = v.get("probe")
+        if not (isinstance(probe, dict) and probe.get("server") and probe.get("tool")):
+            probe = None
+        else:
+            probe = {
+                "finding_id": v["id"],
+                "server": str(probe["server"]),
+                "tool": str(probe["tool"]),
+                "args": probe.get("args") if isinstance(probe.get("args"), dict) else {},
+                "hypothesis": str(probe.get("hypothesis", ""))[:300],
+            }
         out.append({
             "id": v["id"],
             "verdict": verdict if verdict in _VALID_VERDICTS else "needs_review",
             "severity": sev if sev in _VALID_SEVERITIES else None,
             "confidence": v.get("confidence"),
             "reason": str(v.get("reason", ""))[:500],
+            "probe": probe,
         })
     return out
 
