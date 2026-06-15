@@ -208,3 +208,36 @@ def test_parse_probe_proposals_garbage_returns_empty():
     assert _parse_probe_proposals("not json") == []
     # missing server/tool -> dropped
     assert _parse_probe_proposals('{"probes":[{"finding_id":9,"hypothesis":"x"}]}') == []
+
+
+def test_propose_probes_surfaces_probe_and_validates_id(monkeypatch):
+    client = SimpleLLMClient()
+    seen = {"catalog": False, "fewshot": False}
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        sys = messages[0]["content"]
+        if "Example probe" in sys:
+            seen["fewshot"] = True
+        if "input-validation-testing" in messages[1]["content"]:
+            seen["catalog"] = True
+        # one valid candidate (id 5) and one hallucinated id (999) -> 999 must be dropped
+        return ('{"probes":[{"finding_id":5,"server":"input-validation-testing","tool":"test_sqli",'
+                '"args":{"url":"http://t","param":"q"},"hypothesis":"confirm"},'
+                '{"finding_id":999,"server":"input-validation-testing","tool":"test_sqli",'
+                '"args":{},"hypothesis":"hallucinated"}]}')
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    candidates = [{"id": 5, "category": "WSTG-INPV-05", "title": "f", "source": "heuristic",
+                   "agent": "InputValidationAgent", "evidence": "e"}]
+    catalog = {"input-validation-testing": ["test_sqli", "test_xss_reflected"]}
+    out = asyncio.get_event_loop().run_until_complete(
+        client.propose_probes(candidates, catalog, {"target": "t"}, max_probes=4))
+    assert seen["fewshot"] is True and seen["catalog"] is True
+    assert [p["finding_id"] for p in out] == [5]          # hallucinated 999 dropped
+
+
+def test_propose_probes_empty_when_no_candidates_or_catalog():
+    client = SimpleLLMClient()
+    run = asyncio.get_event_loop().run_until_complete
+    assert run(client.propose_probes([], {"s": ["t"]}, {"target": "t"})) == []
+    assert run(client.propose_probes([{"id": 1}], {}, {"target": "t"})) == []

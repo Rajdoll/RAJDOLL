@@ -940,6 +940,61 @@ class SimpleLLMClient:
                                 "confidence": None, "reason": "not returned after retries"})
         return results
 
+    async def propose_probes(self, candidates: list, tool_catalog: dict, target_ctx: dict = None,
+                             max_probes: int = 4) -> list:
+        """Dedicated call: propose up to max_probes targeted probes to CONFIRM the most
+        promising uncertain candidate findings. The whole output is the probe list, so the
+        local model populates it (unlike the failed optional-field approach). Returns probe
+        dicts whose finding_id references a candidate; [] on no candidates/catalog/failure."""
+        if not candidates or not tool_catalog:
+            return []
+        schema = {
+            "title": "probes", "type": "object",
+            "properties": {"probes": {"type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "finding_id": {"type": "integer"},
+                    "server": {"type": "string"}, "tool": {"type": "string"},
+                    "args": {"type": "object"}, "hypothesis": {"type": "string"},
+                },
+                "required": ["finding_id", "server", "tool"], "additionalProperties": False,
+            }}},
+            "required": ["probes"], "additionalProperties": False,
+        }
+        catalog_txt = "\n".join(f"- {srv}: {', '.join(tools)}" for srv, tools in tool_catalog.items())
+        lines = [
+            f'id={c["id"]} [{c.get("source","heuristic")}] {c.get("category","")} {c.get("title","")}\n'
+            f'  evidence: {str(c.get("evidence",""))[:400]}'
+            for c in candidates
+        ]
+        example = ('Example probe: {"finding_id": 12, "server": "input-validation-testing", '
+                   '"tool": "test_sqli", "args": {"url": "http://t/rest/user/login", "param": "email"}, '
+                   '"hypothesis": "confirm SQLi on the email parameter with a real injection"}')
+        system = (
+            "You propose follow-up probes to CONFIRM uncertain security findings. Each finding "
+            "below is unconfirmed or only heuristically detected. For the strongest leads, name "
+            "the EXACT tool to run to confirm it and its args (url, param, plus any technique). "
+            "Pick tools ONLY from the catalog. Use the finding's own id as finding_id. Propose at "
+            f"most {max_probes} probes, best leads first; return an empty list only if none are "
+            "worth confirming. " + example
+        )
+        user = (
+            f"Target: {target_ctx.get('target','') if target_ctx else ''}\n"
+            f"Tool catalog (server: tools):\n{catalog_txt}\n\n"
+            "Candidate findings:\n" + "\n".join(lines)
+        )
+        try:
+            resp = await self.chat_completion(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                max_tokens=1200, temperature=0.0, response_schema=schema)
+        except Exception as e:
+            print(f"[SimpleLLMClient] propose_probes failed: {e}")
+            return []
+        valid_ids = {c["id"] for c in candidates}
+        probes = [p for p in _parse_probe_proposals(self._strip_thinking_tags(resp))
+                  if p["finding_id"] in valid_ids]
+        return probes[:max_probes]
+
     def _get_few_shot_examples(self, agent_name: str) -> str:
         """
         Provide few-shot examples for intelligent tool selection based on agent type.
