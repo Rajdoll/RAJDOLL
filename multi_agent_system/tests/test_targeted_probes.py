@@ -143,3 +143,27 @@ def test_phase_pipeline_skips_probes_when_replan_off(monkeypatch):
                         lambda probes: order.append(("probes",)) or [])
     o._run_triage_and_followup()
     assert order == [("triage", False)]   # triage once, no probes
+
+
+def test_collect_probe_candidates_filters(monkeypatch):
+    # needs_review (None) -> in; heuristic TP -> in; tool-confirmed TP -> out; FP -> out
+    class F:
+        def __init__(self, id, tp, ev, agent="InputValidationAgent", cat="WSTG-INPV-05"):
+            self.id = id; self.is_true_positive = tp; self.evidence = ev
+            self.details = None; self.agent_name = agent; self.category = cat; self.title = f"f{id}"
+    rows = [
+        F(1, None, {"note": "reflected"}),                    # needs_review -> in
+        F(2, True, {"note": "heuristic only"}),               # heuristic TP -> in
+        F(3, True, {"source": "sqlmap", "raw": "x"}),         # tool-confirmed TP -> out
+        F(4, False, {"note": "fp"}),                          # FP -> out (not in query result)
+    ]
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = [r for r in rows if r.is_true_positive in (None, True)]
+    cm = MagicMock(); cm.__enter__.return_value = db; cm.__exit__.return_value = False
+    monkeypatch.setattr("multi_agent_system.orchestrator.get_db", lambda: cm)
+
+    o = Orchestrator.__new__(Orchestrator); o.job_id = 1
+    cands = o._collect_probe_candidates()
+    ids = sorted(c["id"] for c in cands)
+    assert ids == [1, 2]                       # tool-confirmed (3) excluded; FP (4) never queried
+    assert all("agent" in c and "evidence" in c for c in cands)

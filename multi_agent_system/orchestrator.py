@@ -858,6 +858,26 @@ class Orchestrator:
 		if new_ids and not self._is_job_cancelled():
 			self._run_finding_triage(only_ids=new_ids, emit_probes=False)
 
+	def _collect_probe_candidates(self) -> list:
+		"""Findings still worth CONFIRMING: needs_review (is_true_positive is None) or
+		heuristic true-positives. Excludes false-positives (not queried) and tool-confirmed
+		true-positives (already proven). Returns compact items for the probe-proposal call."""
+		with get_db() as db:
+			rows = db.query(Finding).filter(
+				Finding.job_id == self.job_id,
+				(Finding.is_true_positive.is_(None)) | (Finding.is_true_positive.is_(True)),
+			).all()
+			out = []
+			for f in rows:
+				source = _finding_source(f.evidence, f.details, f.agent_name)
+				if f.is_true_positive is True and source == "tool-confirmed":
+					continue
+				out.append({
+					"id": f.id, "category": f.category, "title": f.title, "source": source,
+					"agent": f.agent_name, "evidence": str(f.evidence or f.details or "")[:400],
+				})
+		return out
+
 	def _build_tool_catalog(self, agent_names: list) -> dict:
 		"""Aggregate {server: [tools]} from the tool-server maps of the given agents.
 		Agents that are unregistered or fail to instantiate are skipped."""
