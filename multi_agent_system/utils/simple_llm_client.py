@@ -963,11 +963,19 @@ class SimpleLLMClient:
         except Exception as e:
             print(f"[SimpleLLMClient] propose_probes failed: {e}")
             return []
+        import re
         valid_ids = {c["id"] for c in candidates}
         # Repair the server field: local models put the target host (e.g. juice-shop:3000)
         # in `server` instead of the MCP server name. Derive the real server from the chosen
         # tool via the catalog (tool->server is unambiguous); drop probes for unknown tools.
         tool_to_server = {t: srv for srv, tools in tool_catalog.items() for t in tools}
+        # Most tools require a `url` arg, but the local model often omits args entirely.
+        # Backfill it from the candidate finding's evidence (a URL), else the scan target.
+        target = (target_ctx or {}).get("target", "")
+        url_by_id = {}
+        for c in candidates:
+            m = re.search(r'https?://[^\s"\'\\,}\])]+', str(c.get("evidence", "")))
+            url_by_id[c["id"]] = m.group(0) if m else target
         out = []
         for p in _parse_probe_proposals(self._strip_thinking_tags(resp)):
             if p["finding_id"] not in valid_ids:
@@ -976,6 +984,10 @@ class SimpleLLMClient:
             if not server:
                 continue
             p["server"] = server
+            if not p["args"].get("url"):
+                url = url_by_id.get(p["finding_id"]) or target
+                if url:
+                    p["args"] = {**p["args"], "url": url}
             out.append(p)
         return out[:max_probes]
 

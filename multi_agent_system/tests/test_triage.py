@@ -203,3 +203,27 @@ def test_propose_probes_constrains_tool_to_catalog_enum(monkeypatch):
         client.propose_probes(candidates, catalog, {"target": "t"}, max_probes=4))
     tool_prop = captured["schema"]["properties"]["probes"]["items"]["properties"]["tool"]
     assert tool_prop.get("enum") == ["test_sqli", "test_xss_reflected"]
+
+
+def test_propose_probes_backfills_url_from_evidence_or_target(monkeypatch):
+    # the local model often omits args entirely; backfill url from the finding evidence,
+    # else the scan target, so the tool call has its required url
+    client = SimpleLLMClient()
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        return ('{"probes":[{"finding_id":5,"server":"x","tool":"test_sqli","hypothesis":"h"},'
+                '{"finding_id":6,"server":"x","tool":"test_sqli","hypothesis":"h"}]}')
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    candidates = [
+        {"id": 5, "category": "C", "title": "f", "source": "heuristic", "agent": "InputValidationAgent",
+         "evidence": "found at http://juice-shop:3000/rest/user/login via boolean"},
+        {"id": 6, "category": "C", "title": "f", "source": "heuristic", "agent": "InputValidationAgent",
+         "evidence": "no url here"},
+    ]
+    catalog = {"input-validation-testing": ["test_sqli"]}
+    out = asyncio.get_event_loop().run_until_complete(
+        client.propose_probes(candidates, catalog, {"target": "http://juice-shop:3000"}, max_probes=4))
+    by_id = {p["finding_id"]: p for p in out}
+    assert by_id[5]["args"]["url"] == "http://juice-shop:3000/rest/user/login"   # from evidence
+    assert by_id[6]["args"]["url"] == "http://juice-shop:3000"                    # fallback target
