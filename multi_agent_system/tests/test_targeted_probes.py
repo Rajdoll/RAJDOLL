@@ -112,3 +112,34 @@ def test_run_targeted_probes_integrity_error_is_skipped(monkeypatch):
     new_ids = o._run_targeted_probes(probes)   # must NOT raise
     assert new_ids == []                       # duplicate -> skipped, no id collected
     db.rollback.assert_called_once()
+
+
+def test_phase_pipeline_runs_probes_when_replan_on(monkeypatch):
+    o = _make_orch()
+    order = []
+    monkeypatch.setattr("multi_agent_system.orchestrator.settings",
+                        type("S", (), {"adaptive_replan": True, "max_followup_probes": 4})())
+    monkeypatch.setattr(o, "_is_job_cancelled", lambda: False)
+    monkeypatch.setattr(o, "_run_finding_triage",
+                        lambda only_ids=None, emit_probes=False: (
+                            order.append(("triage", emit_probes, only_ids)) or
+                            ([{"finding_id": 5, "server": "s", "tool": "t", "args": {}, "hypothesis": "h"}]
+                             if emit_probes else [])))
+    monkeypatch.setattr(o, "_run_targeted_probes",
+                        lambda probes: order.append(("probes", len(probes))) or [11, 12])
+    o._run_triage_and_followup()
+    assert order == [("triage", True, None), ("probes", 1), ("triage", False, [11, 12])]
+
+
+def test_phase_pipeline_skips_probes_when_replan_off(monkeypatch):
+    o = _make_orch()
+    order = []
+    monkeypatch.setattr("multi_agent_system.orchestrator.settings",
+                        type("S", (), {"adaptive_replan": False, "max_followup_probes": 4})())
+    monkeypatch.setattr(o, "_is_job_cancelled", lambda: False)
+    monkeypatch.setattr(o, "_run_finding_triage",
+                        lambda only_ids=None, emit_probes=False: order.append(("triage", emit_probes)) or [])
+    monkeypatch.setattr(o, "_run_targeted_probes",
+                        lambda probes: order.append(("probes",)) or [])
+    o._run_triage_and_followup()
+    assert order == [("triage", False)]   # triage once, no probes

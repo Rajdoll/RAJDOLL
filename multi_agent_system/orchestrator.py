@@ -792,15 +792,19 @@ class Orchestrator:
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
-	def _run_finding_triage(self) -> None:
-		"""LLM triage pass over all findings before the report: re-rate severity and
-		suppress false positives (tool-confirmed findings are protected)."""
+	def _run_finding_triage(self, only_ids: list = None, emit_probes: bool = False) -> list:
+		"""LLM triage pass over findings before the report: re-rate severity, suppress false
+		positives (tool-confirmed protected), and (when emit_probes) collect targeted probes.
+		Scoped to only_ids when given. Always returns a list of probes (possibly empty)."""
 		summarizer = self._get_llm_summarizer()
 		if not summarizer:
 			print("[Orchestrator] No LLM summarizer — skipping finding triage")
-			return
+			return []
 		with get_db() as db:
-			rows = db.query(Finding).filter(Finding.job_id == self.job_id).all()
+			q = db.query(Finding).filter(Finding.job_id == self.job_id)
+			if only_ids:
+				q = q.filter(Finding.id.in_(only_ids))
+			rows = q.all()
 			items = [{
 				"id": f.id, "category": f.category, "title": f.title,
 				"current_severity": f.severity.value if hasattr(f.severity, "value") else str(f.severity),
@@ -809,15 +813,19 @@ class Orchestrator:
 			} for f in rows]
 			source_by_id = {it["id"]: it["source"] for it in items}
 		if not items:
-			return
+			return []
 		target = self._get_target() or ""
+		catalog = None
+		if emit_probes:
+			agent_names = [it["agent"] for it in items if it.get("agent")]
+			catalog = self._build_tool_catalog(agent_names)
 		loop = self._ensure_event_loop()
 		try:
 			verdicts = loop.run_until_complete(asyncio.wait_for(
-				summarizer.triage_findings(items, {"target": target}), timeout=600))
+				summarizer.triage_findings(items, {"target": target}, tool_catalog=catalog), timeout=600))
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: triage failed, findings left untouched: {e}")
-			return
+			return []
 		applied = 0
 		with get_db() as db:
 			for v in verdicts:
@@ -836,6 +844,19 @@ class Orchestrator:
 		suppressed = sum(1 for v in verdicts if (v.get("verdict") == "false_positive"
 		                 and source_by_id.get(v["id"]) != "tool-confirmed"))
 		print(f"[Orchestrator] Triage applied to {applied} findings ({suppressed} suppressed as FP)")
+		probes = [v["probe"] for v in verdicts if v.get("probe")] if emit_probes else []
+		return probes
+
+	def _run_triage_and_followup(self) -> None:
+		"""Triage all findings (emitting probes), run targeted probes if ADAPTIVE_REPLAN is on,
+		then re-triage only the new findings. Replaces the old follow-up wave + triage steps."""
+		replan = getattr(settings, "adaptive_replan", False)
+		probes = self._run_finding_triage(emit_probes=replan)
+		if not replan or not probes:
+			return
+		new_ids = self._run_targeted_probes(probes)
+		if new_ids and not self._is_job_cancelled():
+			self._run_finding_triage(only_ids=new_ids, emit_probes=False)
 
 	def _build_tool_catalog(self, agent_names: list) -> dict:
 		"""Aggregate {server: [tools]} from the tool-server maps of the given agents.
@@ -1228,19 +1249,13 @@ class Orchestrator:
 			except Exception as e:
 				print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
-		# PHASE 4b: Bounded post-pass follow-up wave (adaptive; re-tests lead surfaces)
+		# PHASE 4b+4c: triage findings, run LLM-proposed targeted probes (if ADAPTIVE_REPLAN),
+		# then re-triage the new findings. Replaces the old re-sweep follow-up wave.
 		if not self._is_job_cancelled():
 			try:
-				self._run_followup_wave()
+				self._run_triage_and_followup()
 			except Exception as e:
-				print(f"[Orchestrator] WARNING: Follow-up wave failed: {e}")
-
-		# PHASE 4c: LLM triage of findings (validity + severity) before the report
-		if not self._is_job_cancelled():
-			try:
-				self._run_finding_triage()
-			except Exception as e:
-				print(f"[Orchestrator] WARNING: Finding triage failed: {e}")
+				print(f"[Orchestrator] WARNING: triage/follow-up failed: {e}")
 
 		# Write scan timing breakdown to SharedContext for PDF report
 		try:
