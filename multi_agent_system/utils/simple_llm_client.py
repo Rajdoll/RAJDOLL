@@ -1341,69 +1341,6 @@ Reasoning: "Session cookies = fixation/hijacking risks, login form = brute force
             print(f"[SimpleLLMClient] propose_agent_reorder failed: {e}")
             return None
 
-    async def propose_followup_probes(
-        self,
-        *,
-        analysis: str,
-        findings_summary: str,
-        available_agents: List[str],
-    ) -> List[Dict[str, str]]:
-        """From the final cross-agent analysis, propose targeted follow-up probes
-        that re-test the SURFACE of confirmed/suspected leads with adjacent classes.
-
-        Returns a list of {agent, focus, reason} dicts (each agent must be in
-        `available_agents`), capped by the caller. Returns [] on failure / no
-        actionable leads. Additive only - never drops first-pass coverage.
-        """
-        import re
-        if not available_agents:
-            return []
-        agents_str = ", ".join(available_agents)
-        prompt = (
-            "A full WSTG security pass just finished. Using the cross-agent analysis "
-            "below, propose a SHORT list of targeted follow-up tests that deepen the "
-            "investigation ON THE SAME SURFACE where a lead was found - e.g. if SQLi "
-            "was confirmed on an endpoint/parameter, probe XSS/SSTI/command-injection "
-            "on that exact endpoint/parameter with that context.\n\n"
-            f"Agents you may assign (pick from these only): {agents_str}\n"
-            f"Final analysis:\n{analysis[:2500]}\n"
-            f"Findings summary:\n{findings_summary[:1500]}\n\n"
-            "Emit JSON only:\n"
-            '{ "probes": [ { "agent": <one of the listed agents>, '
-            '"focus": <specific instruction naming the endpoint/parameter and class to test>, '
-            '"reason": <why this lead is worth deepening> } ] }\n'
-            "Only include probes that chase a concrete lead. If there are none, return "
-            '{ "probes": [] }. Do not invent agents outside the list.'
-        )
-        messages = [
-            {"role": "system", "content": "You are a security testing strategist. Return ONLY valid JSON."},
-            {"role": "user", "content": prompt},
-        ]
-        try:
-            raw = await self.chat_completion(messages, max_tokens=600, temperature=0.3)
-            raw = self._strip_thinking_tags(raw)
-            match = re.search(r'\{.*\}', raw, re.DOTALL)
-            if not match:
-                return []
-            probes = json.loads(match.group()).get("probes", [])
-            if not isinstance(probes, list):
-                return []
-            cleaned = []
-            for p in probes:
-                if not isinstance(p, dict):
-                    continue
-                agent = p.get("agent")
-                if agent in available_agents:
-                    cleaned.append({
-                        "agent": agent,
-                        "focus": str(p.get("focus", "")),
-                        "reason": str(p.get("reason", "")),
-                    })
-            return cleaned
-        except Exception as e:
-            print(f"[SimpleLLMClient] propose_followup_probes failed: {e}")
-            return []
-
     async def tag_endpoints_with_subtests(
         self,
         *,
