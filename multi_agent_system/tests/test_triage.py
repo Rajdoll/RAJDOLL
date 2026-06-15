@@ -131,3 +131,37 @@ def test_parse_verdict_drops_invalid_probe_keeps_verdict():
     out = _parse_triage_verdicts(text)
     assert out[0]["id"] == 2 and out[0]["verdict"] == "false_positive"
     assert out[0]["probe"] is None
+
+
+def test_triage_findings_surfaces_probe_and_passes_catalog(monkeypatch):
+    client = SimpleLLMClient()
+    seen = {"catalog_in_prompt": False}
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        if "input-validation-testing" in messages[0]["content"]:
+            seen["catalog_in_prompt"] = True
+        return ('{"verdicts":[{"id":3,"verdict":"needs_review","severity":"high",'
+                '"probe":{"server":"input-validation-testing","tool":"test_sqli",'
+                '"args":{"url":"http://t","param":"q"},"hypothesis":"deeper sqli"}}]}')
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    items = [{"id": 3, "category": "WSTG-INPV-05", "title": "f", "current_severity": "high",
+              "source": "heuristic", "agent": "InputValidationAgent", "evidence": "e"}]
+    catalog = {"input-validation-testing": ["test_sqli", "test_xss_reflected"]}
+    out = asyncio.get_event_loop().run_until_complete(
+        client.triage_findings(items, {"target": "t"}, tool_catalog=catalog))
+    assert seen["catalog_in_prompt"] is True
+    assert out[0]["probe"]["tool"] == "test_sqli"
+
+
+def test_triage_findings_no_catalog_still_works(monkeypatch):
+    client = SimpleLLMClient()
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        return '{"verdicts":[{"id":1,"verdict":"true_positive","severity":"low"}]}'
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    items = [{"id": 1, "category": "X", "title": "f", "current_severity": "low",
+              "source": "heuristic", "agent": "A", "evidence": "e"}]
+    out = asyncio.get_event_loop().run_until_complete(client.triage_findings(items, {"target": "t"}))
+    assert out[0]["probe"] is None
