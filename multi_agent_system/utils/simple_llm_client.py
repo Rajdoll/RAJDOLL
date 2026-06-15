@@ -836,41 +836,47 @@ class SimpleLLMClient:
         """Judge findings (validity + severity) from evidence. Returns one verdict per
         input id. The local model often closes its array early and omits ids, so unanswered
         ids are re-sent in shrinking rounds; whatever is still missing defaults to needs_review."""
+        item_properties = {
+            "id": {"type": "integer"},
+            "verdict": {"type": "string", "enum": ["true_positive", "false_positive", "needs_review"]},
+            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+            "confidence": {"type": "number"},
+            "reason": {"type": "string"},
+        }
+        # Probe emission is only offered when a tool catalog is supplied (ADAPTIVE_REPLAN on);
+        # otherwise triage runs exactly as before this feature — no probe schema/prompt overhead.
+        probe_instructions = ""
+        if tool_catalog:
+            item_properties["probe"] = {"type": "object", "properties": {
+                "server": {"type": "string"}, "tool": {"type": "string"},
+                "args": {"type": "object"}, "hypothesis": {"type": "string"},
+            }}
+            catalog_txt = "\nAvailable tools to probe deeper (server: tools):\n" + "\n".join(
+                f"- {srv}: {', '.join(tools)}" for srv, tools in tool_catalog.items())
+            probe_instructions = (
+                " If a finding still has exploration potential (could be confirmed, escalated with a "
+                "stronger payload, or a different technique/angle would yield more), ALSO emit a "
+                "'probe' object naming the exact tool to run next and its args (url, param, plus any "
+                "escalation like technique/level). Pick the tool ONLY from the catalog below; omit "
+                "'probe' entirely when the finding is closed for re-testing." + catalog_txt
+            )
         schema = {
             "title": "triage", "type": "object",
             "properties": {"verdicts": {"type": "array", "items": {
                 "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "verdict": {"type": "string", "enum": ["true_positive", "false_positive", "needs_review"]},
-                    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
-                    "confidence": {"type": "number"},
-                    "reason": {"type": "string"},
-                    "probe": {"type": "object", "properties": {
-                        "server": {"type": "string"}, "tool": {"type": "string"},
-                        "args": {"type": "object"}, "hypothesis": {"type": "string"},
-                    }},
-                },
+                "properties": item_properties,
                 "required": ["id", "verdict", "severity"], "additionalProperties": False,
             }}},
             "required": ["verdicts"], "additionalProperties": False,
         }
-        catalog_txt = ""
-        if tool_catalog:
-            catalog_txt = "\nAvailable tools to probe deeper (server: tools):\n" + "\n".join(
-                f"- {srv}: {', '.join(tools)}" for srv, tools in tool_catalog.items())
         system = (
             "You are a senior penetration-test triager. For each finding decide, FROM THE "
             "EVIDENCE ONLY: verdict (true_positive/false_positive/needs_review) and severity "
             "(critical/high/medium/low/info by impact x exploitability). Rules: a finding marked "
             "[tool-confirmed] is from an authoritative scanner (sqlmap/dalfox/ffuf/nmap/nikto) — "
             "do NOT mark it false_positive unless the evidence is clearly contradictory; you MAY "
-            "adjust its severity. Prefer needs_review over guessing. Do not invent vulnerabilities. "
-            "If a finding still has exploration potential (could be confirmed, escalated with a "
-            "stronger payload, or a different technique/angle would yield more), ALSO emit a "
-            "'probe' object naming the exact tool to run next and its args (url, param, plus any "
-            "escalation like technique/level). Pick the tool ONLY from the catalog below; omit "
-            "'probe' entirely when the finding is closed for re-testing." + catalog_txt
+            "adjust its severity. Prefer needs_review over guessing. Do not invent vulnerabilities."
+            + probe_instructions
         )
         results = []
         pending = items

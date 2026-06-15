@@ -165,3 +165,23 @@ def test_triage_findings_no_catalog_still_works(monkeypatch):
               "source": "heuristic", "agent": "A", "evidence": "e"}]
     out = asyncio.get_event_loop().run_until_complete(client.triage_findings(items, {"target": "t"}))
     assert out[0]["probe"] is None
+
+
+def test_triage_no_catalog_omits_probe_schema_and_prompt(monkeypatch):
+    # Without a catalog (ADAPTIVE_REPLAN off), triage must run exactly as before this
+    # feature: no 'probe' in the system prompt and no 'probe' property in the schema.
+    client = SimpleLLMClient()
+    captured = {}
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        captured["system"] = messages[0]["content"]
+        captured["schema"] = response_schema
+        return '{"verdicts":[{"id":1,"verdict":"true_positive","severity":"low"}]}'
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    items = [{"id": 1, "category": "X", "title": "f", "current_severity": "low",
+              "source": "heuristic", "agent": "A", "evidence": "e"}]
+    asyncio.get_event_loop().run_until_complete(client.triage_findings(items, {"target": "t"}))
+    assert "probe" not in captured["system"].lower()
+    item_props = captured["schema"]["properties"]["verdicts"]["items"]["properties"]
+    assert "probe" not in item_props

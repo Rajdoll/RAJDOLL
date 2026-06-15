@@ -1167,7 +1167,7 @@ class Orchestrator:
 		without duplicating ~80 lines of post-loop code.
 		"""
 		# Mark the job as analyzing so the API does not auto-heal it to "completed"
-		# while PHASE 4/4b/4c (analysis + follow-up wave + triage) are still running.
+		# while PHASE 4/4b/4c (analysis + triage + targeted probes) are still running.
 		if not self._is_job_cancelled():
 			self._update_job_status(JobStatus.analyzing)
 
