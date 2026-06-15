@@ -1,6 +1,6 @@
 import asyncio
 
-from multi_agent_system.utils.simple_llm_client import SimpleLLMClient, _parse_triage_verdicts
+from multi_agent_system.utils.simple_llm_client import SimpleLLMClient, _parse_triage_verdicts, _parse_probe_proposals
 from multi_agent_system.orchestrator import _finding_source, _resolve_triage_verdict
 
 
@@ -185,3 +185,26 @@ def test_triage_no_catalog_omits_probe_schema_and_prompt(monkeypatch):
     assert "probe" not in captured["system"].lower()
     item_props = captured["schema"]["properties"]["verdicts"]["items"]["properties"]
     assert "probe" not in item_props
+
+
+def test_parse_probe_proposals_clean():
+    text = ('{"probes":[{"finding_id":5,"server":"input-validation-testing","tool":"test_sqli",'
+            '"args":{"url":"http://t","param":"q"},"hypothesis":"confirm sqli"}]}')
+    out = _parse_probe_proposals(text)
+    assert len(out) == 1
+    assert out[0]["finding_id"] == 5 and out[0]["tool"] == "test_sqli"
+    assert out[0]["args"]["param"] == "q"
+
+
+def test_parse_probe_proposals_drops_incomplete_and_salvages():
+    # first object complete, second cut off mid-string -> only the first survives
+    text = ('{"probes":[{"finding_id":1,"server":"s","tool":"t","args":{},"hypothesis":"h"},'
+            '{"finding_id":2,"server":"s","tool":')
+    out = _parse_probe_proposals(text)
+    assert [p["finding_id"] for p in out] == [1]
+
+
+def test_parse_probe_proposals_garbage_returns_empty():
+    assert _parse_probe_proposals("not json") == []
+    # missing server/tool -> dropped
+    assert _parse_probe_proposals('{"probes":[{"finding_id":9,"hypothesis":"x"}]}') == []

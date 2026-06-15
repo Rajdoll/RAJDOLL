@@ -94,6 +94,31 @@ def _parse_triage_verdicts(text: str) -> list:
     return out
 
 
+def _parse_probe_proposals(text: str) -> list:
+    """Parse the probe-proposal LLM response into a list of probe dicts. Tolerant of
+    truncation (recovers complete objects from the 'probes' array via the shared salvage).
+    Drops entries missing finding_id/server/tool. Garbage -> []."""
+    if not text:
+        return []
+    try:
+        obj = json.loads(text)
+        raw = obj.get("probes", []) if isinstance(obj, dict) else []
+    except Exception:
+        raw = _recover_json_objects(text, "probes")
+    out = []
+    for p in raw or []:
+        if not isinstance(p, dict) or "finding_id" not in p or not p.get("server") or not p.get("tool"):
+            continue
+        out.append({
+            "finding_id": p["finding_id"],
+            "server": str(p["server"]),
+            "tool": str(p["tool"]),
+            "args": p.get("args") if isinstance(p.get("args"), dict) else {},
+            "hypothesis": str(p.get("hypothesis", ""))[:300],
+        })
+    return out
+
+
 def _salvage_agent_analysis(text: str) -> Optional[dict]:
     """Best-effort recovery of a truncated summarize_agent_findings JSON: pulls the
     'summary' string (even when the trailing arrays are cut off) plus any complete
