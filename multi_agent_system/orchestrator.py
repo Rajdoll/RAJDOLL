@@ -7,6 +7,8 @@ import re
 from typing import Any, List, Dict, Optional
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from .core.config import settings
 from .core.db import get_db
 from .models.models import Job, JobAgent, JobStatus, AgentStatus, Finding
@@ -904,7 +906,12 @@ class Orchestrator:
 					details=_strip_nul_bytes(str(probe.get("hypothesis", ""))[:480]),
 				)
 				db.add(finding)
-				db.commit()
+				try:
+					db.commit()
+				except IntegrityError:
+					db.rollback()
+					print(f"[Orchestrator] duplicate probe finding skipped: {title}")
+					continue
 				db.refresh(finding)
 				new_ids.append(finding.id)
 		print(f"[Orchestrator] targeted probes: {len(new_ids)} new findings from {min(len(probes), cap)} probes")
