@@ -161,3 +161,25 @@ def test_propose_probes_empty_when_no_candidates_or_catalog():
     run = asyncio.get_event_loop().run_until_complete
     assert run(client.propose_probes([], {"s": ["t"]}, {"target": "t"})) == []
     assert run(client.propose_probes([{"id": 1}], {}, {"target": "t"})) == []
+
+
+def test_propose_probes_repairs_server_and_drops_unknown_tool(monkeypatch):
+    client = SimpleLLMClient()
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        # 1st: bad server (target host) but valid tool -> server must be repaired from the catalog
+        # 2nd: unknown tool -> must be dropped
+        return ('{"probes":[{"finding_id":5,"server":"juice-shop:3000","tool":"test_sqli",'
+                '"args":{"url":"http://t","param":"q"},"hypothesis":"h"},'
+                '{"finding_id":5,"server":"input-validation-testing","tool":"no_such_tool",'
+                '"args":{},"hypothesis":"x"}]}')
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    candidates = [{"id": 5, "category": "C", "title": "f", "source": "heuristic",
+                   "agent": "InputValidationAgent", "evidence": "e"}]
+    catalog = {"input-validation-testing": ["test_sqli", "test_xss_reflected"]}
+    out = asyncio.get_event_loop().run_until_complete(
+        client.propose_probes(candidates, catalog, {"target": "t"}, max_probes=4))
+    assert len(out) == 1                                    # unknown-tool probe dropped
+    assert out[0]["tool"] == "test_sqli"
+    assert out[0]["server"] == "input-validation-testing"  # repaired from "juice-shop:3000"

@@ -960,9 +960,20 @@ class SimpleLLMClient:
             print(f"[SimpleLLMClient] propose_probes failed: {e}")
             return []
         valid_ids = {c["id"] for c in candidates}
-        probes = [p for p in _parse_probe_proposals(self._strip_thinking_tags(resp))
-                  if p["finding_id"] in valid_ids]
-        return probes[:max_probes]
+        # Repair the server field: local models put the target host (e.g. juice-shop:3000)
+        # in `server` instead of the MCP server name. Derive the real server from the chosen
+        # tool via the catalog (tool->server is unambiguous); drop probes for unknown tools.
+        tool_to_server = {t: srv for srv, tools in tool_catalog.items() for t in tools}
+        out = []
+        for p in _parse_probe_proposals(self._strip_thinking_tags(resp)):
+            if p["finding_id"] not in valid_ids:
+                continue
+            server = tool_to_server.get(p["tool"])
+            if not server:
+                continue
+            p["server"] = server
+            out.append(p)
+        return out[:max_probes]
 
     def _get_few_shot_examples(self, agent_name: str) -> str:
         """
