@@ -834,6 +834,24 @@ class Orchestrator:
 		                 and source_by_id.get(v["id"]) != "tool-confirmed"))
 		print(f"[Orchestrator] Triage applied to {applied} findings ({suppressed} suppressed as FP)")
 
+	def _build_tool_catalog(self, agent_names: list) -> dict:
+		"""Aggregate {server: [tools]} from the tool-server maps of the given agents.
+		Agents that are unregistered or fail to instantiate are skipped."""
+		from .agents.base_agent import AgentRegistry
+		catalog: dict = {}
+		for name in dict.fromkeys(agent_names):  # de-dup, preserve order
+			try:
+				agent = AgentRegistry.get(name)(job_id=self.job_id)
+				tool_map = agent._get_tool_server_map()
+			except Exception as e:
+				print(f"[Orchestrator] tool catalog: skip {name}: {e}")
+				continue
+			for tool, server in (tool_map or {}).items():
+				catalog.setdefault(server, [])
+				if tool not in catalog[server]:
+					catalog[server].append(tool)
+		return catalog
+
 	def _apply_reorder(self, plan: List[Any], current_idx: int, proposed: List[str]) -> bool:
 		"""Replace the not-yet-run tail of `plan` with `proposed` order.
 
