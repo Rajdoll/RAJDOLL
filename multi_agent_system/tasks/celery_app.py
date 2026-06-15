@@ -60,7 +60,7 @@ def recover_stuck_jobs(sender, **kwargs):
             # 2h agent timeout). The 14-16 day zombies are caught; active/resuming
             # scans are left untouched.
             reaped = 0
-            for job in db.query(Job).filter(Job.status == JobStatus.running).all():
+            for job in db.query(Job).filter(Job.status.in_([JobStatus.running, JobStatus.analyzing])).all():
                 age_hours = (now - job.updated_at).total_seconds() / 3600 if job.updated_at else 99
                 if age_hours <= 3:
                     continue

@@ -324,6 +324,7 @@ body {
     box-shadow: 0 0 8px rgba(255,26,26,0.45);
     animation: badge-pulse 1.5s ease-in-out infinite;
 }
+.status-badge.analyzing { color: var(--accent-primary); animation: badge-pulse 1.5s ease-in-out infinite; }
 .status-badge.completed { color: var(--accent-green); }
 .status-badge.failed    { color: var(--accent-danger); }
 .status-badge.cancelled { color: var(--text-muted); }

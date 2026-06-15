@@ -25,6 +25,7 @@ from ..core.db import Base
 class JobStatus(str, enum.Enum):
     queued = "queued"
     running = "running"
+    analyzing = "analyzing"
     completed = "completed"
     failed = "failed"
     cancelled = "cancelled"

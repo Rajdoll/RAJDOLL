@@ -258,8 +258,8 @@ def cancel_scan(job_id: int):
 		if not job:
 			raise HTTPException(status_code=404, detail="Job not found")
 		
-		# Allow cancelling queued, running, or paused jobs
-		if job.status not in [JobStatus.queued, JobStatus.running, JobStatus.paused, JobStatus.waiting_checkpoint]:
+		# Allow cancelling queued, running, analyzing, or paused jobs
+		if job.status not in [JobStatus.queued, JobStatus.running, JobStatus.analyzing, JobStatus.paused, JobStatus.waiting_checkpoint]:
 			raise HTTPException(
 				status_code=400,
 				detail=f"Cannot cancel job with status: {job.status}"

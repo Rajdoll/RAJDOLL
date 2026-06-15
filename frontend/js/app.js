@@ -114,7 +114,7 @@ async function restoreLastScan() {
         logsPanel.style.display = 'block';
 
         const status = lastScan.status || 'unknown';
-        if (['queued', 'running', 'waiting_checkpoint'].includes(status)) {
+        if (['queued', 'running', 'analyzing', 'waiting_checkpoint'].includes(status)) {
             addLog(`[SYSTEM] Resuming monitoring of scan #${jobId}...`, 'info');
             await loadHistoricalLogs(jobId);
             startStatusPolling();
@@ -471,10 +471,14 @@ function updateStatusDisplay(data) {
         : 0;
     const progressPercent = totalAgents > 0 ? (completedAgents / totalAgents) * 100 : 0;
 
-    progressText.textContent = `${completedAgents} / ${totalAgents} agents`;
-    progressBar.style.width = `${progressPercent}%`;
-
     const status = data.status || 'queued';
+    if (status === 'analyzing') {
+        progressText.textContent = 'Menganalisis temuan dan mencari potensi kerentanan...';
+        progressBar.style.width = '100%';
+    } else {
+        progressText.textContent = `${completedAgents} / ${totalAgents} agents`;
+        progressBar.style.width = `${progressPercent}%`;
+    }
     // Show Requeue button only when stuck: queued + all agents pending + created > 30s ago
     const allPending = (data.agents || []).every(a => a.status === 'pending');
     const createdAt = data.created_at ? new Date(data.created_at).getTime() : Date.now();
@@ -482,7 +486,7 @@ function updateStatusDisplay(data) {
     requeueBtn.style.display = stuckQueued ? 'inline-flex' : 'none';
     requeueBtn.disabled = false;
 
-    if (['queued', 'running', 'waiting_checkpoint'].includes(status)) {
+    if (['queued', 'running', 'analyzing', 'waiting_checkpoint'].includes(status)) {
         pauseBtn.style.display = status === 'queued' ? 'none' : 'inline-flex';
         resumeBtn.style.display = 'none';
         cancelBtn.style.display = 'inline-flex';

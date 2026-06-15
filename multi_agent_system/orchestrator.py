@@ -1119,6 +1119,11 @@ class Orchestrator:
 		Extracted so the resume path in run() can call this after Phase 3 completes
 		without duplicating ~80 lines of post-loop code.
 		"""
+		# Mark the job as analyzing so the API does not auto-heal it to "completed"
+		# while PHASE 4/4b/4c (analysis + follow-up wave + triage) are still running.
+		if not self._is_job_cancelled():
+			self._update_job_status(JobStatus.analyzing)
+
 		# PHASE 4: Planner-Summarizer final cross-agent analysis before report
 		if not self._is_job_cancelled():
 			print("[Orchestrator] Running final cross-agent analysis...")
