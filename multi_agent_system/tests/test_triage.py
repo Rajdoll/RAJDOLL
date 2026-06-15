@@ -183,3 +183,23 @@ def test_propose_probes_repairs_server_and_drops_unknown_tool(monkeypatch):
     assert len(out) == 1                                    # unknown-tool probe dropped
     assert out[0]["tool"] == "test_sqli"
     assert out[0]["server"] == "input-validation-testing"  # repaired from "juice-shop:3000"
+
+
+def test_propose_probes_constrains_tool_to_catalog_enum(monkeypatch):
+    # the json_schema must constrain `tool` to the catalog tools so the grammar can't let
+    # the local model hallucinate a tool name (e.g. "dirsearch")
+    client = SimpleLLMClient()
+    captured = {}
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        captured["schema"] = response_schema
+        return '{"probes":[]}'
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    candidates = [{"id": 5, "category": "C", "title": "f", "source": "heuristic",
+                   "agent": "InputValidationAgent", "evidence": "e"}]
+    catalog = {"input-validation-testing": ["test_sqli", "test_xss_reflected"]}
+    asyncio.get_event_loop().run_until_complete(
+        client.propose_probes(candidates, catalog, {"target": "t"}, max_probes=4))
+    tool_prop = captured["schema"]["properties"]["probes"]["items"]["properties"]["tool"]
+    assert tool_prop.get("enum") == ["test_sqli", "test_xss_reflected"]

@@ -917,13 +917,17 @@ class SimpleLLMClient:
         dicts whose finding_id references a candidate; [] on no candidates/catalog/failure."""
         if not candidates or not tool_catalog:
             return []
+        # Constrain `tool` to the actual catalog tools so the grammar cannot let the local
+        # model hallucinate a tool name (e.g. "dirsearch"). The server is derived from the
+        # chosen tool afterwards, so it is not constrained here.
+        all_tools = [t for tools in tool_catalog.values() for t in tools]
         schema = {
             "title": "probes", "type": "object",
             "properties": {"probes": {"type": "array", "items": {
                 "type": "object",
                 "properties": {
                     "finding_id": {"type": "integer"},
-                    "server": {"type": "string"}, "tool": {"type": "string"},
+                    "server": {"type": "string"}, "tool": {"type": "string", "enum": all_tools},
                     "args": {"type": "object"}, "hypothesis": {"type": "string"},
                 },
                 "required": ["finding_id", "server", "tool"], "additionalProperties": False,
