@@ -792,14 +792,13 @@ class Orchestrator:
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: Final analysis failed: {e}")
 
-	def _run_finding_triage(self, only_ids: list = None, emit_probes: bool = False) -> list:
-		"""LLM triage pass over findings before the report: re-rate severity, suppress false
-		positives (tool-confirmed protected), and (when emit_probes) collect targeted probes.
-		Scoped to only_ids when given. Always returns a list of probes (possibly empty)."""
+	def _run_finding_triage(self, only_ids: list = None) -> None:
+		"""LLM triage pass over findings before the report: re-rate severity and suppress false
+		positives (tool-confirmed protected). Scoped to only_ids when given."""
 		summarizer = self._get_llm_summarizer()
 		if not summarizer:
 			print("[Orchestrator] No LLM summarizer — skipping finding triage")
-			return []
+			return
 		with get_db() as db:
 			q = db.query(Finding).filter(Finding.job_id == self.job_id)
 			if only_ids:
@@ -813,19 +812,15 @@ class Orchestrator:
 			} for f in rows]
 			source_by_id = {it["id"]: it["source"] for it in items}
 		if not items:
-			return []
+			return
 		target = self._get_target() or ""
-		catalog = None
-		if emit_probes:
-			agent_names = [it["agent"] for it in items if it.get("agent")]
-			catalog = self._build_tool_catalog(agent_names)
 		loop = self._ensure_event_loop()
 		try:
 			verdicts = loop.run_until_complete(asyncio.wait_for(
-				summarizer.triage_findings(items, {"target": target}, tool_catalog=catalog), timeout=600))
+				summarizer.triage_findings(items, {"target": target}), timeout=600))
 		except Exception as e:
 			print(f"[Orchestrator] WARNING: triage failed, findings left untouched: {e}")
-			return []
+			return
 		applied = 0
 		with get_db() as db:
 			for v in verdicts:
@@ -844,19 +839,36 @@ class Orchestrator:
 		suppressed = sum(1 for v in verdicts if (v.get("verdict") == "false_positive"
 		                 and source_by_id.get(v["id"]) != "tool-confirmed"))
 		print(f"[Orchestrator] Triage applied to {applied} findings ({suppressed} suppressed as FP)")
-		probes = [v["probe"] for v in verdicts if v.get("probe")] if emit_probes else []
-		return probes
 
 	def _run_triage_and_followup(self) -> None:
-		"""Triage all findings (emitting probes), run targeted probes if ADAPTIVE_REPLAN is on,
-		then re-triage only the new findings. Replaces the old follow-up wave + triage steps."""
-		replan = getattr(settings, "adaptive_replan", False)
-		probes = self._run_finding_triage(emit_probes=replan)
-		if not replan or not probes:
+		"""Triage all findings, then (if ADAPTIVE_REPLAN) propose targeted probes over the
+		uncertain candidates, run them, and re-triage the new findings. One round only."""
+		self._run_finding_triage()
+		if not getattr(settings, "adaptive_replan", False):
+			return
+		candidates = self._collect_probe_candidates()
+		if not candidates:
+			return
+		summarizer = self._get_llm_summarizer()
+		if not summarizer:
+			return
+		catalog = self._build_tool_catalog([c["agent"] for c in candidates if c.get("agent")])
+		if not catalog:
+			return
+		cap = getattr(settings, "max_followup_probes", 4)
+		loop = self._ensure_event_loop()
+		try:
+			probes = loop.run_until_complete(asyncio.wait_for(
+				summarizer.propose_probes(candidates, catalog,
+				                          {"target": self._get_target() or ""}, cap), timeout=300))
+		except Exception as e:
+			print(f"[Orchestrator] propose_probes failed: {e}")
+			return
+		if not probes:
 			return
 		new_ids = self._run_targeted_probes(probes)
 		if new_ids and not self._is_job_cancelled():
-			self._run_finding_triage(only_ids=new_ids, emit_probes=False)
+			self._run_finding_triage(only_ids=new_ids)
 
 	def _collect_probe_candidates(self) -> list:
 		"""Findings still worth CONFIRMING: needs_review (is_true_positive is None) or

@@ -114,35 +114,43 @@ def test_run_targeted_probes_integrity_error_is_skipped(monkeypatch):
     db.rollback.assert_called_once()
 
 
-def test_phase_pipeline_runs_probes_when_replan_on(monkeypatch):
+def test_pipeline_proposes_and_runs_probes_when_replan_on(monkeypatch):
     o = _make_orch()
     order = []
     monkeypatch.setattr("multi_agent_system.orchestrator.settings",
                         type("S", (), {"adaptive_replan": True, "max_followup_probes": 4})())
     monkeypatch.setattr(o, "_is_job_cancelled", lambda: False)
     monkeypatch.setattr(o, "_run_finding_triage",
-                        lambda only_ids=None, emit_probes=False: (
-                            order.append(("triage", emit_probes, only_ids)) or
-                            ([{"finding_id": 5, "server": "s", "tool": "t", "args": {}, "hypothesis": "h"}]
-                             if emit_probes else [])))
+                        lambda only_ids=None: order.append(("triage", only_ids)))
+    monkeypatch.setattr(o, "_collect_probe_candidates",
+                        lambda: [{"id": 5, "agent": "InputValidationAgent", "category": "C",
+                                  "title": "t", "source": "heuristic", "evidence": "e"}])
+    monkeypatch.setattr(o, "_build_tool_catalog", lambda names: {"input-validation-testing": ["test_sqli"]})
+    monkeypatch.setattr(o, "_get_target", lambda: "http://t")
+    monkeypatch.setattr(o, "_ensure_event_loop", lambda: asyncio.new_event_loop())
+    probe = {"finding_id": 5, "server": "input-validation-testing", "tool": "test_sqli",
+             "args": {}, "hypothesis": "h"}
+
+    class FakeSummarizer:
+        async def propose_probes(self, candidates, catalog, target_ctx=None, max_probes=4):
+            order.append(("propose", len(candidates)))
+            return [probe]
+    monkeypatch.setattr(o, "_get_llm_summarizer", lambda: FakeSummarizer())
     monkeypatch.setattr(o, "_run_targeted_probes",
-                        lambda probes: order.append(("probes", len(probes))) or [11, 12])
+                        lambda probes: order.append(("run", len(probes))) or [11])
     o._run_triage_and_followup()
-    assert order == [("triage", True, None), ("probes", 1), ("triage", False, [11, 12])]
+    assert order == [("triage", None), ("propose", 1), ("run", 1), ("triage", [11])]
 
 
-def test_phase_pipeline_skips_probes_when_replan_off(monkeypatch):
+def test_pipeline_skips_probes_when_replan_off(monkeypatch):
     o = _make_orch()
     order = []
     monkeypatch.setattr("multi_agent_system.orchestrator.settings",
                         type("S", (), {"adaptive_replan": False, "max_followup_probes": 4})())
-    monkeypatch.setattr(o, "_is_job_cancelled", lambda: False)
-    monkeypatch.setattr(o, "_run_finding_triage",
-                        lambda only_ids=None, emit_probes=False: order.append(("triage", emit_probes)) or [])
-    monkeypatch.setattr(o, "_run_targeted_probes",
-                        lambda probes: order.append(("probes",)) or [])
+    monkeypatch.setattr(o, "_run_finding_triage", lambda only_ids=None: order.append(("triage", only_ids)))
+    monkeypatch.setattr(o, "_collect_probe_candidates", lambda: order.append(("collect",)) or [])
     o._run_triage_and_followup()
-    assert order == [("triage", False)]   # triage once, no probes
+    assert order == [("triage", None)]      # triage once; no candidate collection / probes
 
 
 def test_collect_probe_candidates_filters(monkeypatch):
