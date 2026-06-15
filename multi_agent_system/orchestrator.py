@@ -21,6 +21,7 @@ from .utils.shared_context_manager import SharedContextManager
 from .utils.session_service import create_authenticated_session
 from .framework.js_bundle_analyzer import JSBundleAnalyzer as _JSBundleAnalyzer
 from .utils.simple_llm_client import SimpleLLMClient
+from .utils.mcp_client import MCPClient
 from .core.task_tree import build_task_tree
 from . import agents  # noqa: F401  # ensure agent classes are registered
 
@@ -851,6 +852,76 @@ class Orchestrator:
 				if tool not in catalog[server]:
 					catalog[server].append(tool)
 		return catalog
+
+	def _run_targeted_probes(self, probes: list) -> list:
+		"""Execute LLM-proposed probes directly via MCP (no agent, no sweep). Persists a
+		new Finding per probe that signals a hit. Returns the new finding ids. Bounded by
+		settings.max_followup_probes. Fail-safe: a probe error is logged and skipped."""
+		from .agents.base_agent import _strip_nul_bytes
+		cap = getattr(settings, "max_followup_probes", 4)
+		try:
+			server_urls = json.loads(os.getenv("MCP_SERVER_URLS", "{}") or "{}")
+		except Exception:
+			server_urls = {}
+		auth_session = None
+		try:
+			auth_session = self.context_manager.read("authenticated_session")
+		except Exception:
+			pass
+		category_by_id = {}
+		with get_db() as db:
+			for fid in {p.get("finding_id") for p in probes if p.get("finding_id")}:
+				f = db.query(Finding).get(fid)
+				if f:
+					category_by_id[fid] = f.category
+		client = MCPClient()
+		loop = self._ensure_event_loop()
+		new_ids: list = []
+		for probe in probes[:cap]:
+			server = probe.get("server")
+			tool = probe.get("tool")
+			if server not in server_urls or not tool:
+				print(f"[Orchestrator] probe skipped (unknown server/tool): {server}/{tool}")
+				continue
+			args = probe.get("args") if isinstance(probe.get("args"), dict) else {}
+			try:
+				result = loop.run_until_complete(asyncio.wait_for(
+					client.call_tool(server, tool, args, auth_session=auth_session), timeout=600))
+			except Exception as e:
+				print(f"[Orchestrator] probe failed {server}/{tool}: {e}")
+				continue
+			if not self._probe_found_something(result):
+				continue
+			fid = probe.get("finding_id")
+			category = category_by_id.get(fid, "WSTG-INFO")
+			title = _strip_nul_bytes(f"Targeted probe: {tool} confirmed {probe.get('hypothesis','')}"[:200])
+			evidence = result if isinstance(result, dict) else {"raw": str(result)}
+			with get_db() as db:
+				finding = Finding(
+					job_id=self.job_id, agent_name="TargetedProbeRunner",
+					category=category, title=title, severity="medium",
+					evidence=_strip_nul_bytes(evidence),
+					details=_strip_nul_bytes(str(probe.get("hypothesis", ""))[:480]),
+				)
+				db.add(finding)
+				db.commit()
+				db.refresh(finding)
+				new_ids.append(finding.id)
+		print(f"[Orchestrator] targeted probes: {len(new_ids)} new findings from {min(len(probes), cap)} probes")
+		return new_ids
+
+	@staticmethod
+	def _probe_found_something(result) -> bool:
+		"""True if a tool result signals a vulnerability/hit (covers common tool shapes)."""
+		if not isinstance(result, dict):
+			return False
+		data = result.get("data") if isinstance(result.get("data"), dict) else result
+		if data.get("vulnerable"):
+			return True
+		for key in ("findings", "vulnerabilities", "hits"):
+			if data.get(key):
+				return True
+		return False
 
 	def _apply_reorder(self, plan: List[Any], current_idx: int, proposed: List[str]) -> bool:
 		"""Replace the not-yet-run tail of `plan` with `proposed` order.
