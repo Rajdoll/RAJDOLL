@@ -227,3 +227,35 @@ def test_propose_probes_backfills_url_from_evidence_or_target(monkeypatch):
     by_id = {p["finding_id"]: p for p in out}
     assert by_id[5]["args"]["url"] == "http://juice-shop:3000/rest/user/login"   # from evidence
     assert by_id[6]["args"]["url"] == "http://juice-shop:3000"                    # fallback target
+
+
+def test_propose_probes_tool_collision_uses_first_server(monkeypatch):
+    # same tool name under two servers -> enum and server-repair must agree (first wins)
+    client = SimpleLLMClient()
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        return ('{"probes":[{"finding_id":5,"server":"x","tool":"test_sqli",'
+                '"args":{"url":"http://t"},"hypothesis":"h"}]}')
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    candidates = [{"id": 5, "category": "C", "title": "f", "source": "heuristic",
+                   "agent": "A", "evidence": "e"}]
+    catalog = {"server-a": ["test_sqli"], "server-b": ["test_sqli"]}
+    out = asyncio.get_event_loop().run_until_complete(
+        client.propose_probes(candidates, catalog, {"target": "http://t"}, max_probes=4))
+    assert out[0]["server"] == "server-a"          # first occurrence wins
+
+
+def test_propose_probes_strips_trailing_punctuation_from_evidence_url(monkeypatch):
+    client = SimpleLLMClient()
+
+    async def fake_chat(messages, max_tokens=2000, temperature=0.0, response_schema=None):
+        return '{"probes":[{"finding_id":5,"server":"x","tool":"test_sqli","hypothesis":"h"}]}'
+
+    monkeypatch.setattr(client, "chat_completion", fake_chat)
+    candidates = [{"id": 5, "category": "C", "title": "f", "source": "heuristic", "agent": "A",
+                   "evidence": "confirmed at http://juice-shop:3000/rest/user/login."}]
+    catalog = {"input-validation-testing": ["test_sqli"]}
+    out = asyncio.get_event_loop().run_until_complete(
+        client.propose_probes(candidates, catalog, {"target": "http://t"}, max_probes=4))
+    assert out[0]["args"]["url"] == "http://juice-shop:3000/rest/user/login"   # trailing "." stripped
