@@ -2012,7 +2012,8 @@ def _parse_retire_output(retire_json: dict) -> list:
             version = res.get("version", "")
             for vuln in res.get("vulnerabilities", []):
                 ids = vuln.get("identifiers", {}) or {}
-                cves = ids.get("CVE") or []
+                raw = ids.get("CVE") or []
+                cves = [raw] if isinstance(raw, str) else raw
                 cve = ", ".join(cves) if cves else (ids.get("githubID") or ids.get("summary") or "no-cve")
                 out.append({
                     "library": component,

@@ -38,3 +38,14 @@ def test_parse_retire_output_empty():
     assert cs._parse_retire_output({"data": []}) == []
     assert cs._parse_retire_output({"data": [{"file": "f", "results": [
         {"version": "9.9", "component": "safe", "vulnerabilities": []}]}]}) == []
+    assert cs._parse_retire_output({"data": [{"file": "f"}]}) == []
+    assert cs._parse_retire_output({"data": [{"file": "f", "results": [
+        {"version": "1", "component": "x"}]}]}) == []
+
+
+def test_parse_retire_output_cve_as_string():
+    data = {"data": [{"file": "f", "results": [
+        {"version": "1.0", "component": "x", "vulnerabilities": [
+            {"severity": "high", "identifiers": {"CVE": "CVE-2015-9251", "summary": "s"}}]}]}]}
+    out = cs._parse_retire_output(data)
+    assert out[0]["cve"] == "CVE-2015-9251"     # bare-string CVE not split into chars
