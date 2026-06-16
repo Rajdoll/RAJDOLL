@@ -2077,6 +2077,9 @@ async def _run_retire(path: str, timeout: int = 120) -> dict:
             await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             proc.kill()
+            await proc.wait()
+            return {}
+        if not os.path.exists(out_path):
             return {}
         with open(out_path) as fh:
             return json.load(fh)
