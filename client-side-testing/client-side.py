@@ -19,6 +19,10 @@ import httpx
 import re
 import json
 import time
+import os
+import shutil
+import tempfile
+from urllib.parse import urljoin
 from typing import Dict, Any, List, Optional
 
 # Logging configuration
@@ -2027,130 +2031,85 @@ def _parse_retire_output(retire_json: dict) -> list:
     return out
 
 
+async def _fetch_and_download_js(url: str, auth_session: Optional[Dict[str, Any]], tmpdir: str) -> int:
+    """Download the page's <script src> JS files into tmpdir (as N.js). Returns the count.
+    Bounded: max 30 files, 5MB each. Per-file failures are skipped."""
+    headers, cookies = {}, {}
+    if auth_session:
+        if auth_session.get("token"):
+            headers["Authorization"] = f"Bearer {auth_session['token']}"
+        if auth_session.get("cookies"):
+            cookies = auth_session["cookies"]
+    async with httpx.AsyncClient(verify=False, timeout=20, follow_redirects=True) as client:
+        resp = await client.get(url, headers=headers, cookies=cookies)
+        srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', resp.text or "", re.IGNORECASE)
+        seen, count = set(), 0
+        for src in srcs:
+            if count >= 30:
+                break
+            abs_url = urljoin(url, src)
+            if abs_url in seen:
+                continue
+            seen.add(abs_url)
+            try:
+                r = await client.get(abs_url, headers=headers, cookies=cookies)
+                if r.status_code != 200 or len(r.content) > 5_000_000:
+                    continue
+                with open(os.path.join(tmpdir, f"{count}.js"), "wb") as fh:
+                    fh.write(r.content)
+                count += 1
+            except Exception:
+                continue
+    return count
+
+
+async def _run_retire(path: str, timeout: int = 120) -> dict:
+    """Run the real retire CLI over a folder, return parsed JSON. retire exits 13 when it
+    finds vulns (NOT an error) so we read the output file regardless of exit code. Returns
+    {} if retire is unavailable / output unreadable (fail-safe)."""
+    out_path = os.path.join(path, "_retire_out.json")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "retire", "--path", path, "--outputformat", "json", "--outputpath", out_path,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return {}
+        with open(out_path) as fh:
+            return json.load(fh)
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"retire unavailable: {e}")
+        return {}
+
+
 async def scan_vulnerable_components(
     url: str,
     auth_session: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Detect known-vulnerable JavaScript libraries via HTTP response analysis (WSTG-CONF-01)."""
-    import re
-
-    KNOWN_VULNERABLE: dict = {
-        "jquery": [
-            ("jquery-1.", "Prototype Pollution / XSS - CVE-2011-4969, CVE-2019-11358"),
-            ("jquery-2.", "Prototype Pollution - CVE-2019-11358"),
-            ("jquery-3.0", "XSS - CVE-2020-11023"),
-            ("jquery-3.1", "XSS - CVE-2020-11023"),
-            ("jquery-3.2", "XSS - CVE-2020-11023"),
-            ("jquery-3.3", "XSS - CVE-2020-11023"),
-            ("jquery-3.4", "XSS - CVE-2020-11023"),
-            ("jquery/1.", "Prototype Pollution / XSS - CVE-2011-4969, CVE-2019-11358"),
-            ("jquery/2.", "Prototype Pollution - CVE-2019-11358"),
-            ("jquery/3.0", "XSS - CVE-2020-11023"),
-            ("jquery/3.1", "XSS - CVE-2020-11023"),
-            ("jquery/3.2", "XSS - CVE-2020-11023"),
-            ("jquery/3.3", "XSS - CVE-2020-11023"),
-            ("jquery/3.4", "XSS - CVE-2020-11023"),
-        ],
-        "angular": [
-            ("angular/1.", "Template Injection / Sandbox Escape - CVE-2019-14863"),
-            ("angular@1.", "Template Injection / Sandbox Escape - CVE-2019-14863"),
-            ("angular.min.js", "Template Injection / Sandbox Escape - CVE-2019-14863"),
-            ("angular.js", "Template Injection / Sandbox Escape (version check required)"),
-        ],
-        "bootstrap": [
-            ("bootstrap-3.0", "XSS - CVE-2018-20676"),
-            ("bootstrap-3.1", "XSS - CVE-2018-20676"),
-            ("bootstrap-3.2", "XSS - CVE-2018-20676"),
-            ("bootstrap-3.3", "XSS - CVE-2018-20676"),
-            ("bootstrap-4.0", "XSS - CVE-2019-8331"),
-            ("bootstrap-4.1", "XSS - CVE-2019-8331"),
-            ("bootstrap-4.2", "XSS - CVE-2019-8331"),
-            ("bootstrap/3.", "XSS - CVE-2018-20676"),
-            ("bootstrap/4.0", "XSS - CVE-2019-8331"),
-            ("bootstrap/4.1", "XSS - CVE-2019-8331"),
-            ("bootstrap/4.2", "XSS - CVE-2019-8331"),
-        ],
-        "lodash": [
-            ("lodash-4.17.0", "Prototype Pollution - CVE-2019-10744"),
-            ("lodash-4.17.1", "Prototype Pollution - CVE-2019-10744"),
-            ("lodash/4.17.0", "Prototype Pollution - CVE-2019-10744"),
-            ("lodash/4.17.1", "Prototype Pollution - CVE-2019-10744"),
-        ],
-    }
-
-    INLINE_VERSION_PATTERNS: list = [
-        (r"jQuery\s+v?(1\.\d+\.\d+)", "jQuery", "Prototype Pollution / XSS - CVE-2011-4969, CVE-2019-11358"),
-        (r"jQuery\s+v?(2\.\d+\.\d+)", "jQuery", "Prototype Pollution - CVE-2019-11358"),
-        (r"jQuery\s+v?(3\.[0-4]\.\d+)", "jQuery", "XSS - CVE-2020-11023"),
-        (r"angular\.version\s*=\s*\{.*?major\s*:\s*1", "AngularJS", "Template Injection / Sandbox Escape - CVE-2019-14863"),
-        (r"AngularJS\s+v?(1\.\d+\.\d+)", "AngularJS", "Template Injection / Sandbox Escape - CVE-2019-14863"),
-    ]
-
+    """Detect known-vulnerable JavaScript libraries with the real Retire.js CLI (WSTG-CONF-01).
+    Downloads the page's <script src> JS and runs `retire` (content-based, maintained CVE DB)."""
+    tmpdir = tempfile.mkdtemp(prefix="retire_")
     try:
-        headers = {}
-        cookies = {}
-        if auth_session:
-            if auth_session.get("token"):
-                headers["Authorization"] = f"Bearer {auth_session['token']}"
-            if auth_session.get("cookies"):
-                cookies = auth_session["cookies"]
-
-        async with httpx.AsyncClient(verify=False, timeout=20, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers, cookies=cookies)
-
-        html = resp.text or ""
-        script_srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html, re.IGNORECASE)
-
-        findings = []
-        checked_srcs = set()
-
-        for src in script_srcs:
-            src_lower = src.lower()
-            if src_lower in checked_srcs:
-                continue
-            checked_srcs.add(src_lower)
-
-            for lib, patterns in KNOWN_VULNERABLE.items():
-                for needle, cve_desc in patterns:
-                    if needle in src_lower:
-                        findings.append({
-                            "library": lib,
-                            "source": src,
-                            "cve": cve_desc,
-                            "severity": "high",
-                            "detection": "script_src",
-                        })
-                        break
-
-        for pattern, lib, cve_desc in INLINE_VERSION_PATTERNS:
-            m = re.search(pattern, html)
-            if m:
-                version = m.group(1) if m.lastindex else "detected"
-                findings.append({
-                    "library": lib,
-                    "source": f"inline ({version})",
-                    "cve": cve_desc,
-                    "severity": "high",
-                    "detection": "inline_pattern",
-                })
-
-        if findings:
-            msg = f"Found {len(findings)} vulnerable component(s) in {url}"
-        else:
-            msg = f"No known-vulnerable components detected in {url}"
-
-        return {
-            "status": "success",
-            "data": {
-                "url": url,
-                "findings": findings,
-                "vulnerable": len(findings) > 0,
-                "scripts_checked": len(checked_srcs),
-                "message": msg,
-            },
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+        try:
+            n = await _fetch_and_download_js(url, auth_session, tmpdir)
+        except Exception as e:
+            return {"status": "error", "message": f"fetch failed: {e}"}
+        if n == 0:
+            return {"status": "success", "data": {
+                "url": url, "findings": [], "vulnerable": False,
+                "scripts_checked": 0, "message": f"No script files to scan at {url}"}}
+        retire_json = await _run_retire(tmpdir)
+        findings = _parse_retire_output(retire_json)
+        msg = (f"Retire.js found {len(findings)} vulnerable component(s) in {url}"
+               if findings else f"No known-vulnerable components detected in {url}")
+        return {"status": "success", "data": {
+            "url": url, "findings": findings, "vulnerable": len(findings) > 0,
+            "scripts_checked": n, "message": msg}}
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # ============================================================================

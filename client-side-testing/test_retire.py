@@ -49,3 +49,52 @@ def test_parse_retire_output_cve_as_string():
             {"severity": "high", "identifiers": {"CVE": "CVE-2015-9251", "summary": "s"}}]}]}]}
     out = cs._parse_retire_output(data)
     assert out[0]["cve"] == "CVE-2015-9251"     # bare-string CVE not split into chars
+
+
+import asyncio
+
+
+def _run(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+def test_scan_surfaces_findings_when_retire_reports(monkeypatch):
+    async def fake_dl(url, auth_session, tmpdir):
+        return 2
+    monkeypatch.setattr(cs, "_fetch_and_download_js", fake_dl)
+    async def fake_retire(path, timeout=120):
+        return {"data": [{"file": "0.js", "results": [
+            {"version": "1.12.4", "component": "jquery", "vulnerabilities": [
+                {"severity": "medium", "identifiers": {"summary": "x", "CVE": ["CVE-2015-9251"]}}]}]}]}
+    monkeypatch.setattr(cs, "_run_retire", fake_retire)
+    res = _run(cs.scan_vulnerable_components("http://t/"))
+    assert res["status"] == "success"
+    d = res["data"]
+    assert d["vulnerable"] is True and d["scripts_checked"] == 2
+    assert d["findings"][0]["library"] == "jquery" and d["findings"][0]["cve"] == "CVE-2015-9251"
+
+
+def test_scan_empty_when_no_js(monkeypatch):
+    async def fake_dl(url, auth_session, tmpdir):
+        return 0
+    monkeypatch.setattr(cs, "_fetch_and_download_js", fake_dl)
+    called = {"retire": False}
+    async def fake_retire(path, timeout=120):
+        called["retire"] = True
+        return {}
+    monkeypatch.setattr(cs, "_run_retire", fake_retire)
+    res = _run(cs.scan_vulnerable_components("http://t/"))
+    assert res["status"] == "success" and res["data"]["findings"] == []
+    assert called["retire"] is False
+
+
+def test_scan_failsafe_when_retire_unavailable(monkeypatch):
+    async def fake_dl(url, auth_session, tmpdir):
+        return 1
+    monkeypatch.setattr(cs, "_fetch_and_download_js", fake_dl)
+    async def fake_retire(path, timeout=120):
+        return {}
+    monkeypatch.setattr(cs, "_run_retire", fake_retire)
+    res = _run(cs.scan_vulnerable_components("http://t/"))
+    assert res["status"] == "success" and res["data"]["findings"] == []
+    assert res["data"]["vulnerable"] is False
