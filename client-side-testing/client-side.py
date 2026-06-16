@@ -2001,6 +2001,31 @@ async def test_open_redirect(url: str, auth_session: Optional[Dict[str, Any]] = 
         return {"status": "error", "message": str(e)}
 
 
+def _parse_retire_output(retire_json: dict) -> list:
+    """Flatten retire --outputformat json into finding dicts. cve prefers a real CVE id,
+    then githubID, then the human summary. Returns [] for empty/garbage input."""
+    out = []
+    for entry in (retire_json or {}).get("data", []):
+        fname = entry.get("file", "")
+        for res in entry.get("results", []):
+            component = res.get("component", "unknown")
+            version = res.get("version", "")
+            for vuln in res.get("vulnerabilities", []):
+                ids = vuln.get("identifiers", {}) or {}
+                cves = ids.get("CVE") or []
+                cve = ", ".join(cves) if cves else (ids.get("githubID") or ids.get("summary") or "no-cve")
+                out.append({
+                    "library": component,
+                    "version": version,
+                    "severity": (vuln.get("severity") or "medium").lower(),
+                    "cve": cve,
+                    "summary": ids.get("summary", ""),
+                    "source": fname,
+                    "detection": "retirejs",
+                })
+    return out
+
+
 async def scan_vulnerable_components(
     url: str,
     auth_session: Optional[Dict[str, Any]] = None,
