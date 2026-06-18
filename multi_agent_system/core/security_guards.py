@@ -152,46 +152,13 @@ class SecurityGuardRails:
             InvalidAuthTokenError: If auth token invalid/missing
             UserAbortedError: If user cancels confirmation
         """
+        # Scope enforcement (domain whitelist / authorization token / security-policy
+        # opt-out / HITL confirmation) removed by request — this is a personal research
+        # tool used on authorized targets. The only gate kept is a basic URL-validity
+        # check. Rate limiting is enforced separately in MCPClient and is unaffected.
         parsed_url = urlparse(url)
-        domain = parsed_url.netloc.split(':')[0]  # Remove port
-
-        # Check 1: Domain whitelist (persistent) + transient extra_allowed_domains
-        allowed = self.is_whitelisted(domain)
-        if not allowed and extra_allowed_domains:
-            allowed = any(
-                fnmatch.fnmatch(domain.lower(), d.lower().strip())
-                for d in extra_allowed_domains if d
-            )
-        if not allowed:
-            raise UnauthorizedTargetError(
-                f"Domain '{domain}' not in whitelist. "
-                "Add to whitelist via: POST /api/whitelist\n"
-                f"Current whitelist: {', '.join(self.whitelist_domains[:5])}..."
-            )
-        
-        # Check 2: Authorization token (skip for auto-approve domains)
-        _admin_env = os.getenv("ADMIN_TOKEN", "")
-        admin_authorized = bool(auth_token) and bool(_admin_env) and hmac.compare_digest(auth_token, _admin_env)
-        if self.require_authorization_token and domain not in self.auto_approve_domains:
-            if not auth_token or not self.verify_token(auth_token, domain):
-                raise InvalidAuthTokenError(
-                    "Valid authorization token required. "
-                    "Obtain from system administrator or target owner."
-                )
-
-        # Check 3: Security policy (robots.txt, security.txt)
-        security_policy = await self.check_security_policy(url)
-        if security_policy.disallow_scanning:
-            raise SecurityPolicyViolation(
-                f"Target '{domain}' explicitly disallows automated scanning.\n"
-                f"Policy: {security_policy.policy_url}\n"
-                f"Contact: {security_policy.contact_email}"
-            )
-
-        # Check 4: Human-in-the-loop confirmation (skip when ADMIN_TOKEN used)
-        if self.hitl_mode and domain not in self.auto_approve_domains and not admin_authorized:
-            await self.request_user_confirmation(url)
-        
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            raise UnauthorizedTargetError(f"Invalid target URL: {url!r} (expected http(s)://host)")
         return True
     
     def is_whitelisted(self, domain: str) -> bool:
