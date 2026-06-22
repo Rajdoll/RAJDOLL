@@ -252,7 +252,7 @@ services:
       - LOG_LEVEL=INFO
 
   juice-shop:
-    image: bkimminich/juice-shop
+    image: bkimminich/juice-shop:v15.0.0
     restart: unless-stopped
     ports:
       - "3000:3000"
