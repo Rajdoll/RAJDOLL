@@ -521,6 +521,36 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                         except Exception:
                             continue
 
+        # Headless-browser XSS confirmation (WSTG-CLNT-01) — catches SPA/DOM XSS that
+        # response-based checks miss. Candidates from discovery; payloads generic.
+        if self.should_run_tool("verify_xss_headless"):
+            _inv = self.shared_context.get("endpoint_inventory", {})
+            _eps = _inv.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
+            _cands = [ep for ep in _eps
+                      if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))][:8]
+            for ep in _cands:
+                _u = ep.get("url") or ep.get("path")
+                if not _u:
+                    continue
+                _ps = ep.get("params") or list((ep.get("query_parameters") or {}).keys()) or ["q"]
+                try:
+                    hx = await self.run_tool_with_timeout(
+                        client.call_tool(server="client-side-testing", tool="verify_xss_headless",
+                                         args={"url": _u, "params": _ps[:2]}, auth_session=auth_data),
+                        timeout=90)
+                    if isinstance(hx, dict) and hx.get("status") == "success" and hx.get("data", {}).get("vulnerable"):
+                        for f in hx["data"]["findings"]:
+                            self.add_finding(
+                                "WSTG-CLNT-01",
+                                f"XSS confirmed via headless execution on {f.get('url')}",
+                                severity="high",
+                                evidence={"url": f.get("url"), "param": f.get("param"),
+                                          "payload": f.get("payload"), "proof_type": f.get("proof")},
+                                details="Headless Chromium confirmed JS execution (dialog/marker).")
+                        break
+                except Exception as e:
+                    self.log("warning", f"verify_xss_headless failed: {e}")
+
     def _get_tool_info(self) -> dict:
         return {
             "scan_vulnerable_components": {"priority": "CRITICAL", "description": "Detect known-vulnerable JS libraries via HTTP analysis"},
@@ -529,6 +559,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             "test_clickjacking":          {"priority": "HIGH", "description": "Clickjacking / missing XFO+CSP (WSTG-CLNT-09)"},
             "test_csp_bypass":            {"priority": "HIGH", "description": "CSP bypass (WSTG-CLNT-12)"},
             "test_client_url_redirect":   {"priority": "HIGH", "description": "Open redirect (WSTG-CLNT-04)"},
+            "verify_xss_headless":        {"priority": "HIGH", "description": "Confirm reflected/DOM XSS by real JS execution in headless Chromium (WSTG-CLNT-01)"},
         }
 
     def _get_available_tools(self) -> list[str]:
@@ -551,6 +582,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             'test_web_messaging',
             'test_csp_bypass',
             'test_open_redirect',
+            'verify_xss_headless',
         ]
 
     def _get_tool_server_map(self) -> Dict[str, str]:
