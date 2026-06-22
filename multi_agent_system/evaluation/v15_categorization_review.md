@@ -1,6 +1,6 @@
 # v15.0.0 New-Challenge Categorization — REVIEW BEFORE LOCK
 
-Total new challenges: 45 | Automatable: 25
+Total new challenges: 45 | Automatable: 23
 
 | Challenge | Category | Auto | WSTG | Reason |
 |---|---|---|---|---|
@@ -16,11 +16,11 @@ Total new challenges: 45 | Automatable: 25
 | Premium Paywall | Cryptographic Issues | N | - | multi-step crypto puzzle / source analysis |
 | Weird Crypto | Cryptographic Issues | Y | WSTG-CRYP-04 | detect insecure crypto algorithm in use — CRYP-04 |
 | Empty User Registration | Improper Input Validation | Y | WSTG-IDNT-02 | missing input validation on registration — IDNT-02 |
-| Missing Encoding | Improper Input Validation | Y | WSTG-IDNT-02 | encoded path to served media file — INPV/CONF |
+| Missing Encoding | Improper Input Validation | Y | WSTG-INPV-01 | encoded path to served media file — INPV/CONF |
 | Ephemeral Accountant | Injection | Y | WSTG-INPV-05 | SQLi login as non-existent user — INPV-05 |
 | User Credentials | Injection | Y | WSTG-INPV-05 | UNION SQLi credential dump — INPV-05 |
-| Blocked RCE DoS | Insecure Deserialization | Y | WSTG-INPV-13 | RCE via insecure deserialization — INPV |
-| Successful RCE DoS | Insecure Deserialization | Y | WSTG-INPV-13 | RCE via insecure deserialization — INPV |
+| Blocked RCE DoS | Insecure Deserialization | N | - | destructive DoS — system must not run DoS against target |
+| Successful RCE DoS | Insecure Deserialization | N | - | destructive DoS — system must not run DoS against target |
 | Bully Chatbot | Miscellaneous | N | - | chatbot interaction |
 | Mass Dispel | Miscellaneous | N | - | UI-only: close multiple notifications |
 | Privacy Policy | Miscellaneous | N | - | UI-only: read the privacy policy page |
@@ -28,7 +28,7 @@ Total new challenges: 45 | Automatable: 25
 | Blockchain Hype | Security through Obscurity | N | - | external announcement OSINT |
 | Privacy Policy Inspection | Security through Obscurity | N | - | client-side obscurity puzzle in policy page |
 | Steganography | Security through Obscurity | N | - | image steganography forensics |
-| GDPR Data Theft | Sensitive Data Exposure | Y | WSTG-CONF-04 | broken object-level authorization on data export |
+| GDPR Data Theft | Sensitive Data Exposure | Y | WSTG-ATHZ-04 | broken object-level authorization on data export |
 | Leaked Access Logs | Sensitive Data Exposure | N | - | keyword rule: 'dumpster dive' |
 | Leaked Unsafe Product | Sensitive Data Exposure | Y | WSTG-INPV-05 | SQLi to surface removed product — existing INPV-05 |
 | Login Amy | Sensitive Data Exposure | Y | WSTG-ATHN-07 | weak/guessable credentials — ATHN-07 |
