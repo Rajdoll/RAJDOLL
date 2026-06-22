@@ -6,6 +6,28 @@ from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
 
 
+def _strip_version(spec: str) -> str:
+    return (spec or "").lstrip("^~>=v ").strip() or "0.0.0"
+
+
+def _recover_manifest_urls(base: str) -> list:
+    base = (base or "").rstrip("/")
+    paths = ["/ftp/", "/"]
+    files = ["package.json.bak", "package.json"]
+    suffixes = ["", "%00.md", "%2500.md"]  # generic null-byte bypass (WSTG-BUSL-09)
+    return [f"{base}{p}{f}{s}" for p in paths for f in files for s in suffixes]
+
+
+def _deps_with_advisories(batch_results: list, deps: list) -> list:
+    out = []
+    for (name, version), res in zip(deps, batch_results or []):
+        vulns = (res or {}).get("vulns", []) if isinstance(res, dict) else []
+        if vulns:
+            out.append({"name": name, "version": version,
+                        "ids": [v.get("id") for v in vulns if v.get("id")][:5]})
+    return out
+
+
 @AgentRegistry.register("ConfigDeploymentAgent")
 class ConfigDeploymentAgent(BaseAgent):
     system_prompt: ClassVar[str] = """
@@ -444,43 +466,47 @@ Write to shared_context:
         self.log("info", "Configuration & Deployment checks complete")
 
     async def _check_ftp_packages(self, target: str) -> None:
+        """Generic SCA: recover a dependency manifest (conventional filenames + generic null-byte
+        bypass) and flag vulnerable dependencies via the OSV.dev advisory DB (WSTG-CONF-01).
+        No hardcoded package names/versions/paths (G1)."""
         import httpx as _httpx, json as _json
-
-        VULN_PACKAGES = {
-            "sanitize-html": ("1.", "XSS bypass via sanitize-html < 2.x - CVE-2021-26540"),
-            "jsonwebtoken": ("8.", "algorithm confusion in jsonwebtoken < 9.x"),
-            "lodash": ("4.17.1", "prototype pollution in lodash - CVE-2019-10744"),
-        }
-
-        base = target.rstrip("/")
-        bypasses = [
-            f"{base}/ftp/package.json.bak%00.md",
-            f"{base}/ftp/package.json.bak%2500.md",
-        ]
-
+        manifest = None
         async with _httpx.AsyncClient(verify=False, timeout=10, follow_redirects=True) as c:
-            for url in bypasses:
+            for url in _recover_manifest_urls(target):
                 try:
                     r = await c.get(url)
-                    if r.status_code == 200 and len(r.content) > 5000:
-                        deps = _json.loads(r.text).get("dependencies", {})
-                        for pkg, (vuln_prefix, cve_note) in VULN_PACKAGES.items():
-                            ver = deps.get(pkg, "")
-                            if ver and ver.lstrip("^~>=").startswith(vuln_prefix):
-                                self.add_finding(
-                                    "WSTG-CONF-01",
-                                    f"Vulnerable npm package exposed: {pkg}@{ver}",
-                                    severity="high",
-                                    evidence={
-                                        "package": pkg,
-                                        "version": ver,
-                                        "source": "/ftp/package.json.bak (null byte bypass)",
-                                        "note": cve_note,
-                                    },
-                                )
-                        return
+                    if r.status_code == 200 and len(r.content) > 1000:
+                        j = _json.loads(r.text)
+                        if isinstance(j, dict) and (j.get("dependencies") or j.get("devDependencies")):
+                            manifest = j
+                            break
                 except Exception:
                     continue
+            if not manifest:
+                return
+            deps = []
+            for section in ("dependencies", "devDependencies"):
+                for name, spec in (manifest.get(section) or {}).items():
+                    deps.append((name, _strip_version(spec)))
+            deps = deps[:60]
+            if not deps:
+                return
+            try:
+                queries = [{"package": {"name": n, "ecosystem": "npm"}, "version": v} for n, v in deps]
+                rr = await c.post("https://api.osv.dev/v1/querybatch", json={"queries": queries})
+                results = rr.json().get("results", []) if rr.status_code == 200 else []
+            except Exception as e:
+                self.log("warning", f"OSV query failed: {e}")
+                return
+            for d in _deps_with_advisories(results, deps):
+                self.add_finding(
+                    "WSTG-CONF-01",
+                    f"Vulnerable dependency: {d['name']}@{d['version']}",
+                    severity="high",
+                    evidence={"package": d["name"], "version": d["version"],
+                              "advisories": d["ids"],
+                              "source": "recovered dependency manifest (OSV.dev)"},
+                )
 
     def _get_target(self) -> str | None:
         from ..core.db import get_db
