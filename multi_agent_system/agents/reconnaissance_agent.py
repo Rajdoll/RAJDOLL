@@ -1611,7 +1611,7 @@ Operate autonomously without human guidance.
                 try:
                     import httpx as _httpx
                     async with _httpx.AsyncClient(timeout=10) as _client:
-                        await mine_params(_client, all_eps + _extra_r1 + _extra_r3, wordlist=_param_wl, top_n=20, rate_per_sec=5)
+                        await mine_params(_client, all_eps + _extra_r1 + _extra_r3, wordlist=_param_wl, top_n=20, rate_per_sec=int(_os.getenv("RECON_PARAM_RPS", "30")))
                     _extra_r4 = [ep for ep in all_eps + _extra_r1 + _extra_r3 if ep.get("discovered_params")]
                 except Exception as _exc:
                     self.log("warning", f"[Recon] R4 param mining failed: {_exc}")
