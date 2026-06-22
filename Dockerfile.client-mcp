@@ -1,0 +1,10 @@
+# client-mcp extends the shared MCP-tools base and adds a headless browser for XSS verification.
+FROM rajdoll-mcp-tools-base:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium && rm -rf /var/lib/apt/lists/*
+
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    XSS_CHROMIUM_PATH=/usr/bin/chromium
+
+RUN pip install --no-cache-dir playwright

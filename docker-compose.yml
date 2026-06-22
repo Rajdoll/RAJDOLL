@@ -178,7 +178,7 @@ services:
   client-mcp:
     build:
       context: .
-      dockerfile: Dockerfile.mcp-tools
+      dockerfile: Dockerfile.client-mcp
     command: ["uvicorn", "mcp_adapter.server:app", "--host", "0.0.0.0", "--port", "9008"]
     environment:
       - MODULE_PATH=/app/client-side-testing/client-side.py
