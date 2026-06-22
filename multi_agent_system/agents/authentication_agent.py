@@ -339,8 +339,11 @@ Write to shared_context:
 				self.log("warning", f"test_security_questions failed: {e}")
 		_found_reset_issue = False
 		if self.should_run_tool("test_password_reset"):
+			# Generic probe: detect reset-flow weaknesses (rate limiting, user enumeration via
+			# response diff) without hardcoding target-specific accounts (G1). Predictable
+			# security-answer cases are a documented limitation, not solved via encoded accounts.
 			for reset_url in _pick_urls(reset_eps):
-				for test_email in ["jim@example.com", "bender@example.com", "admin@juice-sh.op"]:
+				for test_email in ["probe-noexist@example.invalid"]:
 					try:
 						res = await self.run_tool_with_timeout(
 							client.call_tool(
@@ -392,29 +395,12 @@ Write to shared_context:
 						details="User enumeration via password recovery flow diff.",
 					)
 
-		# Inline WSTG-ATHN-09 fallback — only runs if MCP tool and active flow both produced nothing
-		if not _found_reset_issue:
-			try:
-				import httpx
-				async with httpx.AsyncClient(verify=False, timeout=15) as _client:
-					r = await _client.get(f"{target}/rest/security-question?email=jim%40example.com")
-					if r.status_code == 200:
-						question_data = r.json()
-						question = question_data.get("question", {}).get("question", "")
-						if question:
-							r2 = await _client.post(
-								f"{target}/rest/user/reset-password",
-								json={"email": "jim@example.com", "answer": "To get to the other side!", "new": "Test1234!", "repeat": "Test1234!"}
-							)
-							if r2.status_code == 200:
-								self.add_finding(
-									"WSTG-ATHN-09",
-									"Password reset via predictable security question answer (Jim account)",
-									severity="high",
-									evidence={"question": question, "status": r2.status_code}
-								)
-			except Exception as e:
-				self.log("warning", f"ATHN-09 inline fallback failed: {e}")
+		# NOTE: a challenge-specific WSTG-ATHN-09 probe (hardcoded account/answer/paths) was
+		# removed here to enforce the no-hardcoding principle (G1). Detecting predictable
+		# security-question password recovery generically requires the discovery layer to
+		# surface the recovery endpoints; where it does not, these cases are reported as a
+		# documented limitation rather than solved via encoded answers. The generic
+		# active-flow reset check above (WSTG-ATHN-09 user-enumeration) remains in effect.
 
 		# WSTG-ATHN-07: Test password policy strength
 		if self.should_run_tool("test_password_policy"):
