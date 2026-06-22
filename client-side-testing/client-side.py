@@ -245,28 +245,30 @@ async def verify_xss_headless(url, params=None, payloads=None, auth_session=None
             browser = await p.chromium.launch(
                 executable_path=chromium_path, headless=True,
                 args=["--no-sandbox", "--disable-dev-shm-usage"])
-            ctx = await browser.new_context(ignore_https_errors=True)
-            for param in params[:3]:
-                for payload in payloads:
-                    tested += 1
-                    target = _inject_payload(url, param, payload)
-                    page = await ctx.new_page()
-                    fired = {"v": False}
-                    page.on("dialog", lambda d: (fired.__setitem__("v", True),
-                                                 __import__("asyncio").ensure_future(d.dismiss())))
-                    try:
-                        await page.goto(target, wait_until="domcontentloaded", timeout=12000)
-                        await page.wait_for_timeout(1500)
-                        marker_set = bool(await page.evaluate(f"() => window['{marker}'] === true"))
-                    except Exception:
-                        marker_set = False
-                    finally:
-                        await page.close()
-                    if _classify_xss_result(fired["v"], marker_set):
-                        findings.append({"url": target, "param": param, "payload": payload,
-                                         "proof": "dialog" if fired["v"] else "marker"})
-                        break
-            await browser.close()
+            try:
+                ctx = await browser.new_context(ignore_https_errors=True)
+                for param in params[:3]:
+                    for payload in payloads:
+                        tested += 1
+                        target = _inject_payload(url, param, payload)
+                        page = await ctx.new_page()
+                        fired = {"v": False}
+                        page.on("dialog", lambda d: (fired.__setitem__("v", True),
+                                                     __import__("asyncio").ensure_future(d.dismiss())))
+                        try:
+                            await page.goto(target, wait_until="domcontentloaded", timeout=12000)
+                            await page.wait_for_timeout(1500)
+                            marker_set = bool(await page.evaluate(f"() => window['{marker}'] === true"))
+                        except Exception:
+                            marker_set = False
+                        finally:
+                            await page.close()
+                        if _classify_xss_result(fired["v"], marker_set):
+                            findings.append({"url": target, "param": param, "payload": payload,
+                                             "proof": "dialog" if fired["v"] else "marker"})
+                            break
+            finally:
+                await browser.close()
         return {"status": "success", "data": {"findings": findings,
                 "vulnerable": bool(findings), "tested": tested,
                 "message": f"Headless XSS verifier confirmed {len(findings)} execution(s)"}}
