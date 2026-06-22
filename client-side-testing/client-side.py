@@ -200,6 +200,81 @@ async def test_dom_xss(url: str, check_sources: bool = True, auth_session: Optio
 
 
 # ============================================================================
+# HEADLESS XSS VERIFIER - Pure helpers and async tool
+# ============================================================================
+
+import os, uuid
+from urllib.parse import urlsplit, urlunsplit
+
+def _inject_payload(url: str, param: str, payload: str) -> str:
+    """Place `payload` into `param` as a query value. For SPA hash routes (.../#/route),
+    the query is appended inside the hash fragment so the client router parses it."""
+    if "#" in url:
+        head, frag = url.split("#", 1)
+        sep = "&" if "?" in frag else "?"
+        return f"{head}#{frag}{sep}{param}={payload}"
+    parts = urlsplit(url)
+    sep = "&" if parts.query else ""
+    new_q = f"{parts.query}{sep}{param}={payload}" if parts.query else f"{param}={payload}"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_q, parts.fragment))
+
+def _classify_xss_result(dialog_fired: bool, marker_set: bool) -> bool:
+    return bool(dialog_fired or marker_set)
+
+def _default_xss_payloads(marker: str) -> list:
+    # Generic vectors. alert()-based fire a dialog; the marker vector sets window[marker]=true.
+    return [
+        "<img src=x onerror=alert(1)>",
+        "<svg onload=alert(1)>",
+        "<iframe src=\"javascript:alert(1)\">",
+        f"<img src=x onerror=\"window['{marker}']=true\">",
+    ]
+
+async def verify_xss_headless(url, params=None, payloads=None, auth_session=None):
+    """Confirm reflected/DOM XSS by rendering candidate URL+payload in headless Chromium and
+    detecting real JS execution (dialog fired or marker variable set). WSTG-CLNT-01.
+    Generic: payloads are standard vectors, target URL/params are caller-supplied (from discovery)."""
+    from playwright.async_api import async_playwright
+    chromium_path = os.getenv("XSS_CHROMIUM_PATH", "/usr/bin/chromium")
+    marker = "rajdoll_xss_" + uuid.uuid4().hex[:8]
+    params = params or ["q"]
+    payloads = payloads or _default_xss_payloads(marker)
+    findings, tested = [], 0
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                executable_path=chromium_path, headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"])
+            ctx = await browser.new_context(ignore_https_errors=True)
+            for param in params[:3]:
+                for payload in payloads:
+                    tested += 1
+                    target = _inject_payload(url, param, payload)
+                    page = await ctx.new_page()
+                    fired = {"v": False}
+                    page.on("dialog", lambda d: (fired.__setitem__("v", True),
+                                                 __import__("asyncio").ensure_future(d.dismiss())))
+                    try:
+                        await page.goto(target, wait_until="domcontentloaded", timeout=12000)
+                        await page.wait_for_timeout(1500)
+                        marker_set = bool(await page.evaluate(f"() => window['{marker}'] === true"))
+                    except Exception:
+                        marker_set = False
+                    finally:
+                        await page.close()
+                    if _classify_xss_result(fired["v"], marker_set):
+                        findings.append({"url": target, "param": param, "payload": payload,
+                                         "proof": "dialog" if fired["v"] else "marker"})
+                        break
+            await browser.close()
+        return {"status": "success", "data": {"findings": findings,
+                "vulnerable": bool(findings), "tested": tested,
+                "message": f"Headless XSS verifier confirmed {len(findings)} execution(s)"}}
+    except Exception as e:
+        return {"status": "error", "message": f"headless verify failed: {e}"}
+
+
+# ============================================================================
 # 4.11.2 - JAVASCRIPT EXECUTION TESTING
 # ============================================================================
 
