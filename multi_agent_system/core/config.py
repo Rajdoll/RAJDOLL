@@ -112,6 +112,13 @@ class Settings:
             self.lab_mode or self.scan_profile == "lab",
         )
 
+        # Recon fuzz rates follow the scan profile: fast only for a LOCAL lab/benchmark target;
+        # POLITE for real targets (bug_bounty/vdp/authorized_internal) to avoid WAF/IP bans,
+        # bug-bounty rate-limit policy violations, and DoS-like load. Explicit env still overrides.
+        _lab = self.lab_mode or self.scan_profile == "lab"
+        self.recon_fuzz_rps = int(os.getenv("RECON_FUZZ_RPS", "50" if _lab else "10"))
+        self.recon_param_rps = int(os.getenv("RECON_PARAM_RPS", "30" if _lab else "5"))
+
         # Validate hitl_mode
         if self.hitl_mode not in ("off", "agent", "tool"):
             self.hitl_mode = "off"

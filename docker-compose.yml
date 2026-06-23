@@ -53,9 +53,8 @@ services:
       # RESEARCH MODE: Intelligent Coverage Enforcement
       # LLM tetap sebagai "otak" planning, sistem ensure minimum coverage
       - MIN_TOOLS_PER_AGENT=7
-      # Recon fuzz rates — higher for LOCAL benchmark target (juice-shop): same probes/coverage, faster.
-      - RECON_FUZZ_RPS=${RECON_FUZZ_RPS:-50}
-      - RECON_PARAM_RPS=${RECON_PARAM_RPS:-30}
+      # Recon fuzz rates are now profile-aware in config.py (fast for lab, polite for real targets).
+      # Set RECON_FUZZ_RPS / RECON_PARAM_RPS in the environment only to override per-run.
       - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
     depends_on:
       - db
