@@ -2,6 +2,7 @@ import asyncio, json
 from multi_agent_system.utils.simple_llm_client import SimpleLLMClient
 
 def test_adjudicate_parses_schema_response(monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     c = SimpleLLMClient()
     canned = json.dumps({"verdict": "vulnerable", "vuln_class": "WSTG-ATHZ-04",
                          "evidence_span": "owner:1", "reason": "cross-user data", "confidence": 0.9})
@@ -16,6 +17,7 @@ def test_adjudicate_parses_schema_response(monkeypatch):
     assert out["verdict"] == "vulnerable" and out["evidence_span"] == "owner:1"
 
 def test_adjudicate_returns_empty_on_error(monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
     c = SimpleLLMClient()
     async def boom(*a, **k):
         raise RuntimeError("llm down")
