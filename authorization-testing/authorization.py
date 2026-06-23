@@ -18,6 +18,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+_BODY_LIMIT = 8192
+_HEADER_KEYS = {"content-type", "content-length", "location", "server", "x-powered-by", "www-authenticate"}
+
+
+def _emit_artifact(bucket, *, wstg, method, url, role, status, headers, body, baseline_status=None):
+    if len(bucket) >= 12:
+        return
+    hs = {k: v for k, v in dict(headers or {}).items() if k.lower() in _HEADER_KEYS}
+    bucket.append({"tool": "authz", "wstg": wstg, "method": method, "url": url,
+                   "role": role or "anonymous", "status": int(status), "headers_subset": hs,
+                   "body": (body or "")[:_BODY_LIMIT], "baseline_status": baseline_status})
+
+
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"authorization-testing")
 
 # --- Prompt ---
@@ -57,6 +70,7 @@ async def test_vertical_privilege_escalation(
     """
     logger.info("🔍 Executing test_vertical_privilege_escalation")
     findings = []
+    artifacts = []
     try:
         async with httpx.AsyncClient(verify=False) as client:
             for url in admin_urls:
@@ -69,7 +83,7 @@ async def test_vertical_privilege_escalation(
                         "timeout": 10
                     }
                     resp = await client.get(url, **req_kwargs)
-                    
+
                     # Kerentanan ada jika server merespons dengan 2xx (Success)
                     if 200 <= resp.status_code < 300:
                         findings.append({
@@ -78,6 +92,10 @@ async def test_vertical_privilege_escalation(
                             "status_code": resp.status_code,
                             "description": "Low-privilege user successfully accessed a high-privilege URL."
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
+                                       role=str(low_priv_session.get("user") if isinstance(low_priv_session, dict) else low_priv_session or "anonymous"),
+                                       status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                       baseline_status=None)
                     else:
                         findings.append({
                             "url": url,
@@ -86,8 +104,8 @@ async def test_vertical_privilege_escalation(
                         })
                 except Exception as e:
                     findings.append({"url": url, "status": "ERROR", "message": str(e)})
-        
-        return {"status": "success", "data": {"results": findings}}
+
+        return {"status": "success", "data": {"results": findings}, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": f"An unexpected error occurred: {e}"}
 
@@ -104,6 +122,7 @@ async def test_idor_vulnerability(
     """
     logger.info("🔍 Executing test_idor_vulnerability")
     findings = []
+    artifacts = []
     placeholder = "{ID}"
     if placeholder not in base_url_with_placeholder:
         return {"status": "error", "message": f"base_url_with_placeholder must contain '{{ID}}'."}
@@ -129,11 +148,15 @@ async def test_idor_vulnerability(
                             "status_code": resp.status_code,
                             "response_size": len(resp.content)
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
+                                       role=str(session.get("user") if isinstance(session, dict) else session or "anonymous"),
+                                       status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                       baseline_status=None)
                 except Exception:
                     # Mengabaikan error koneksi untuk ID individual
                     continue
-        
-        return {"status": "success", "data": {"results": findings, "instructions": "Review results to confirm if data from other users was accessed."}}
+
+        return {"status": "success", "data": {"results": findings, "instructions": "Review results to confirm if data from other users was accessed."}, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": f"An unexpected error occurred: {e}"}
 
@@ -148,6 +171,7 @@ async def test_http_method_tampering(
     """
     logger.info("🔍 Executing test_http_method_tampering")
     findings = []
+    artifacts = []
     methods_to_test = ["HEAD", "POST", "PUT", "DELETE", "PATCH"]
     try:
         async with httpx.AsyncClient(verify=False) as client:
@@ -158,7 +182,7 @@ async def test_http_method_tampering(
             }
             # Ambil response dasar dengan GET
             base_resp = await client.get(url, **req_kwargs)
-            
+
             for method in methods_to_test:
                 try:
                     resp = await client.request(method, url, **req_kwargs)
@@ -170,9 +194,14 @@ async def test_http_method_tampering(
                             "new_status": resp.status_code,
                             "description": "The server responded differently to a tampered HTTP method."
                         })
+                        if 200 <= resp.status_code < 300:
+                            _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method=method, url=url,
+                                           role=str(session.get("user") if isinstance(session, dict) else session or "anonymous"),
+                                           status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                           baseline_status=base_resp.status_code)
                 except Exception:
                     continue
-        return {"status": "success", "data": {"results": findings}}
+        return {"status": "success", "data": {"results": findings}, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": f"An unexpected error occurred: {e}"}
 
@@ -245,6 +274,7 @@ async def test_idor_comprehensive(
         idor_patterns = endpoint_patterns
 
     findings = []
+    artifacts = []
 
     try:
         async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as client:
@@ -283,6 +313,10 @@ async def test_idor_comprehensive(
                                     "data_sample": str(data)[:200] if data else "Binary or non-JSON response"
                                 }
                             })
+                            _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
+                                           role=str(session.get("user") if isinstance(session, dict) else session or "anonymous"),
+                                           status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                           baseline_status=None)
 
                     except httpx.TimeoutException:
                         continue  # Skip timeout
@@ -301,7 +335,8 @@ async def test_idor_comprehensive(
                 "findings": findings,
                 "description": f"Comprehensive IDOR testing complete. Tested {len(idor_patterns)} endpoint patterns across ID range {id_range_start}-{id_range_end}. High severity findings indicate authorization bypass vulnerabilities.",
                 "remediation": "Implement proper authorization checks before serving sensitive resources. Verify user ownership/permissions for all resource access."
-            }
+            },
+            "artifacts": artifacts
         }
 
     except Exception as e:
@@ -328,6 +363,7 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
                    Can be absolute URLs or relative paths (resolved against url's origin).
     """
     findings = []
+    artifacts = []
     from urllib.parse import urlparse, urljoin
     parsed = urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
@@ -382,6 +418,10 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
                                     "evidence": str(resp_data)[:300],
                                     "recommendation": f"Enforce server-side {id_field} from session, ignore client-sent value",
                                 })
+                                _emit_artifact(artifacts, wstg="WSTG-ATHZ-03", method="POST", url=endpoint_url,
+                                               role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                               status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                               baseline_status=None)
                                 break  # One proof per uid is enough
                     except Exception:
                         continue
@@ -455,7 +495,8 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
             "vulnerable": len(findings) > 0,
             "findings": findings,
             "description": "User spoofing and unauthorized action testing",
-        }
+        },
+        "artifacts": artifacts
     }
 
 

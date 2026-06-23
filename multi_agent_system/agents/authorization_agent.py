@@ -154,7 +154,8 @@ Write to shared_context:
     
     async def run(self) -> None:
         client = MCPClient()
-        
+        self._adjudication_artifacts = []
+
         # 🔑 AUTHENTICATED SESSION SUPPORT (via Orchestrator auto-login)
         auth_data = self.get_auth_session()
         if auth_data:
@@ -230,6 +231,8 @@ Write to shared_context:
                         auth_session=auth_data
                     )
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     results = res.get("data", {}).get("results", [])
                     confirmed = _confirmed_access_control_results(results)
@@ -268,6 +271,8 @@ Write to shared_context:
                             auth_session=auth_data
                         )
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         results = res.get("data", {}).get("results", [])
                         confirmed = _confirmed_access_control_results(results)
@@ -311,6 +316,8 @@ Write to shared_context:
                     ),
                     timeout=90  # Longer timeout for comprehensive testing
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     vulns_found = data.get("vulnerabilities_found", 0)
@@ -351,6 +358,8 @@ Write to shared_context:
                         auth_session=auth_data
                     )
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     results = res.get("data", {}).get("results", [])
                     if results:
@@ -388,6 +397,8 @@ Write to shared_context:
                     ),
                     timeout=120
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("vulnerable"):
@@ -402,6 +413,12 @@ Write to shared_context:
                 self.log("warning", f"test_user_spoofing failed: {e}")
 
         self.log("info", "Authorization checks complete")
+
+        from ..adjudication.runner import run_adjudication
+        try:
+            await run_adjudication(self, self._adjudication_artifacts)
+        except Exception as e:
+            self.log("warning", f"run_adjudication failed: {e}")
 
     def _get_available_tools(self) -> list[str]:
         """Return list of authorization testing tool names"""
