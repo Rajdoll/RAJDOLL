@@ -909,6 +909,49 @@ class SimpleLLMClient:
                                 "confidence": None, "reason": "not returned after retries"})
         return results
 
+    async def adjudicate_response(self, artifact: dict) -> dict:
+        """Judge ONE HTTP response for a contextual vuln class, reasoning over the raw body.
+        Returns {verdict, vuln_class, evidence_span, reason, confidence} or {} on failure."""
+        schema = {
+            "title": "adjudication", "type": "object",
+            "properties": {
+                "verdict": {"type": "string", "enum": ["vulnerable", "not_vulnerable", "uncertain"]},
+                "vuln_class": {"type": "string"},
+                "evidence_span": {"type": "string"},
+                "reason": {"type": "string"},
+                "confidence": {"type": "number"},
+            },
+            "required": ["verdict", "vuln_class", "evidence_span", "reason", "confidence"],
+            "additionalProperties": False,
+        }
+        system = (
+            "You are a senior penetration tester reading ONE HTTP response to judge whether it "
+            "reveals a vulnerability of the stated WSTG class. Decide FROM THE RESPONSE ONLY. "
+            "evidence_span MUST be an exact substring copied verbatim from the response body that "
+            "proves the issue; if you cannot copy such a span, answer not_vulnerable. Never invent "
+            "vulnerabilities. For IDOR/BOLA: vulnerable only if the body exposes another user's or "
+            "object's data given the caller's role. For error/info: vulnerable only if the body leaks "
+            "internals (stack traces, paths, secrets, SQL)."
+        )
+        a = artifact
+        user = (
+            f"WSTG class: {a.get('wstg')}\nCaller role: {a.get('role')}\n"
+            f"Request: {a.get('method')} {a.get('url')}\n"
+            f"Response status: {a.get('status')} (baseline status: {a.get('baseline_status')})\n"
+            f"Response headers: {a.get('headers_subset')}\n"
+            f"Response body (truncated):\n{a.get('body', '')}"
+        )
+        try:
+            resp = await self.chat_completion(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                max_tokens=600, temperature=0.0, response_schema=schema,
+            )
+            import json as _json
+            return _json.loads(self._strip_thinking_tags(resp))
+        except Exception as e:
+            print(f"[SimpleLLMClient] adjudicate_response failed: {e}")
+            return {}
+
     async def propose_probes(self, candidates: list, tool_catalog: dict, target_ctx: dict = None,
                              max_probes: int = 4) -> list:
         """Dedicated call: propose up to max_probes targeted probes to CONFIRM the most
