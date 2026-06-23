@@ -526,6 +526,7 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
         if self.should_run_tool("verify_xss_headless"):
             _inv = self.shared_context.get("endpoint_inventory", {})
             _eps = _inv.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
+            _eps = [e for e in _eps if isinstance(e, dict)]
             _cands = [ep for ep in _eps
                       if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))][:8]
             for ep in _cands:

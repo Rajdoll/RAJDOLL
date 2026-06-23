@@ -488,6 +488,8 @@ Write to shared_context:
             for section in ("dependencies", "devDependencies"):
                 for name, spec in (manifest.get(section) or {}).items():
                     deps.append((name, _strip_version(spec)))
+            import re as _re
+            deps = [(n, v) for n, v in deps if _re.match(r"^\d+\.\d+\.\d+", v)]  # OSV version field needs exact semver; skip ranges/wildcards so one bad spec can't reject the batch
             deps = deps[:60]
             if not deps:
                 return
