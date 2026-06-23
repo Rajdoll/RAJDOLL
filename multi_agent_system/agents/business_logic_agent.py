@@ -178,6 +178,7 @@ Write to shared_context:
 """
     async def run(self) -> None:
         client = MCPClient()
+        self._adjudication_artifacts = []
 
         # AUTHENTICATED SESSION SUPPORT (using base_agent method)
         auth_data = self.get_auth_session()
@@ -232,6 +233,8 @@ Write to shared_context:
                         tool="test_business_data_validation",
                         args={"base_url": target}, auth_session=auth_data), timeout=180
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     findings = data.get("findings", [])
@@ -252,6 +255,8 @@ Write to shared_context:
                         tool="test_workflow_bypass",
                         args={"base_url": target}, auth_session=auth_data), timeout=180
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     findings = data.get("findings", [])
@@ -271,6 +276,8 @@ Write to shared_context:
                             tool="test_race_conditions",
                             args={"target_url": race_url}, auth_session=auth_data), timeout=120
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         findings = data.get("findings", [])
@@ -290,6 +297,8 @@ Write to shared_context:
                             tool="test_function_limits",
                             args={"target_url": limit_url}, auth_session=auth_data), timeout=150
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         findings = data.get("findings", [])
@@ -310,6 +319,8 @@ Write to shared_context:
                         auth_session=auth_data
                     ), timeout=180
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     findings = data.get("findings", [])
@@ -332,6 +343,8 @@ Write to shared_context:
                         tool="test_integrity_checks",
                         args={"url": target}, auth_session=auth_data), timeout=180
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     findings = data.get("findings", [])
@@ -351,6 +364,8 @@ Write to shared_context:
                         tool="test_application_misuse_defenses",
                         args={"url": target}, auth_session=auth_data), timeout=180
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     findings = data.get("findings", [])
@@ -371,6 +386,8 @@ Write to shared_context:
                                 tool="test_parameter_tampering",
                                 args={"url": tamper_url, "param_to_remove": param}, auth_session=auth_data), timeout=60
                         )
+                        if isinstance(res, dict):
+                            self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                         if isinstance(res, dict) and res.get("status") == "success":
                             data = res.get("data", {})
                             if data.get("vulnerable"):
@@ -394,6 +411,8 @@ Write to shared_context:
                                 "evil_params": {"role": "admin", "isAdmin": True}
                             }, auth_session=auth_data), timeout=60
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         if data.get("vulnerable"):
@@ -414,6 +433,8 @@ Write to shared_context:
                                 "legitimate_order": {"orderPrice": 0.01, "deliveryPrice": 0}
                             }, auth_session=auth_data), timeout=120
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         if data.get("vulnerable"):
@@ -431,6 +452,8 @@ Write to shared_context:
                             tool="test_process_timing_race_condition",
                             args={"url": timing_url, "method": "POST", "runs": 10}, auth_session=auth_data), timeout=120
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         if data.get("vulnerable"):
@@ -448,6 +471,8 @@ Write to shared_context:
                             tool="test_usage_limits_burst",
                             args={"url": burst_url, "method": "POST", "burst_count": 20}, auth_session=auth_data), timeout=120
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         if data.get("vulnerable"):
@@ -465,6 +490,8 @@ Write to shared_context:
                             tool="test_unexpected_file_upload",
                             args={"upload_url": upload_url}, auth_session=auth_data), timeout=120
                     )
+                    if isinstance(res, dict):
+                        self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
                         if data.get("vulnerable"):
@@ -481,6 +508,8 @@ Write to shared_context:
                         tool="test_captcha_and_rate_limit",
                         args={"url": target}, auth_session=auth_data), timeout=120
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("vulnerable"):
@@ -503,6 +532,8 @@ Write to shared_context:
                         tool="test_coupon_forgery",
                         args={"url": target}, auth_session=auth_data), timeout=90
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("vulnerable"):
@@ -517,6 +548,12 @@ Write to shared_context:
                 self.log("warning", f"test_coupon_forgery failed: {e}")
 
         self.log("info", "Business logic checks complete")
+
+        from ..adjudication.runner import run_adjudication
+        try:
+            await run_adjudication(self, self._adjudication_artifacts)
+        except Exception as e:
+            self.log("warning", f"run_adjudication failed: {e}")
 
     def _get_available_tools(self) -> list[str]:
         """Return business logic testing tools for LLM planning"""

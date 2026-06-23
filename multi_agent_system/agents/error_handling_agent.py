@@ -187,6 +187,7 @@ Write to shared_context:
 
     async def run(self) -> None:
         client = MCPClient()
+        self._adjudication_artifacts = []
 
         #  AUTHENTICATED SESSION SUPPORT
         # Use authenticated session from Orchestrator auto-login
@@ -235,6 +236,8 @@ Write to shared_context:
                         args={"base_url": target}, auth_session=auth_data
                     )
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("info_leaks"):
@@ -252,6 +255,8 @@ Write to shared_context:
                         args={"base_url": target}, auth_session=auth_data
                     )
                 )
+                if isinstance(res, dict):
+                    self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     fuzz = res.get("data", {}).get("manual_fuzzing", [])
                     if fuzz:
@@ -260,6 +265,12 @@ Write to shared_context:
                 self.log("warning", f"probe_for_error_leaks failed: {e}")
 
         self.log("info", "Error handling checks complete")
+
+        from ..adjudication.runner import run_adjudication
+        try:
+            await run_adjudication(self, self._adjudication_artifacts)
+        except Exception as e:
+            self.log("warning", f"run_adjudication failed: {e}")
 
     def _get_available_tools(self) -> list[str]:
         """Return error handling testing tools for LLM planning"""

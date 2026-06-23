@@ -22,6 +22,20 @@ logger = logging.getLogger(__name__)
 
 from urllib.parse import urlparse, urlencode, urlunparse
 
+_BODY_LIMIT = 8192
+_HEADER_KEYS = {"content-type", "content-length", "location", "server", "x-powered-by", "www-authenticate"}
+_NONTRIVIAL_BODY_LEN = 200
+
+
+def _emit_artifact(bucket, *, wstg, method, url, role, status, headers, body, baseline_status=None):
+    if len(bucket) >= 12:
+        return
+    hs = {k: v for k, v in dict(headers or {}).items() if k.lower() in _HEADER_KEYS}
+    bucket.append({"tool": "errh", "wstg": wstg, "method": method, "url": url,
+                   "role": role or "anonymous", "status": int(status), "headers_subset": hs,
+                   "body": (body or "")[:_BODY_LIMIT], "baseline_status": baseline_status})
+
+
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"error-handling-testing")
 
 # --- Helpers ---
@@ -61,11 +75,13 @@ async def probe_for_error_leaks(base_url: str, auth_session: Optional[Dict[str, 
         auth_session: Optional authentication session with cookies/headers/token
     """
     findings = {}
+    artifacts = []
+    _role = str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous")
 
     # Manual fuzzing
     fuzz_payloads = ["'", "\"", "\\", "%27", "<", ">", "[", "]", "{", "}", "a" * 2048]
     fuzz_results = []
-    
+
     # Build request kwargs with auth support
     req_kwargs = {"timeout": 10, "verify": False}
     if auth_session:
@@ -75,7 +91,7 @@ async def probe_for_error_leaks(base_url: str, auth_session: Optional[Dict[str, 
             req_kwargs['headers'] = auth_session.get('headers', {})
         elif 'token' in auth_session:
             req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
-    
+
     try:
         async with httpx.AsyncClient(**req_kwargs) as client:
             for payload in fuzz_payloads:
@@ -96,13 +112,20 @@ async def probe_for_error_leaks(base_url: str, auth_session: Optional[Dict[str, 
                             "error_patterns_found": list(set(matches)),
                             "description": "Request with this payload leaked a verbose error message."
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-ERRH-01", method="GET", url=fuzzed_url,
+                                       role=_role, status=resp.status_code, headers=dict(resp.headers),
+                                       body=resp.text, baseline_status=None)
+                    elif resp.status_code >= 500 or len(resp.text or "") > _NONTRIVIAL_BODY_LEN:
+                        _emit_artifact(artifacts, wstg="WSTG-ERRH-01", method="GET", url=fuzzed_url,
+                                       role=_role, status=resp.status_code, headers=dict(resp.headers),
+                                       body=resp.text, baseline_status=None)
                 except httpx.RequestError:
                     continue
         findings["manual_fuzzing"] = fuzz_results
     except Exception as e:
         findings["manual_fuzzing"] = {"error": str(e)}
 
-    return {"status": "success", "data": findings}
+    return {"status": "success", "data": findings, "artifacts": artifacts}
 
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
@@ -121,6 +144,8 @@ async def check_generic_error_pages(base_url: str, auth_session: Optional[Dict[s
                 req_kwargs.setdefault('headers', {})['Authorization'] = f"Bearer {auth_session['token']}"
 
         info_leaks = []
+        artifacts = []
+        _role = str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous")
         base = base_url.rstrip('/')
 
         async with httpx.AsyncClient(**req_kwargs) as client:
@@ -131,6 +156,13 @@ async def check_generic_error_pages(base_url: str, auth_session: Optional[Dict[s
             if server_pattern.search(html_resp.text):
                 info_leaks.append({"type": "server_banner", "path": random_path,
                                    "evidence": server_pattern.search(html_resp.text).group(0)})
+                _emit_artifact(artifacts, wstg="WSTG-ERRH-01", method="GET", url=f"{base}{random_path}",
+                               role=_role, status=html_resp.status_code, headers=dict(html_resp.headers),
+                               body=html_resp.text, baseline_status=None)
+            elif html_resp.status_code >= 500 or len(html_resp.text or "") > _NONTRIVIAL_BODY_LEN:
+                _emit_artifact(artifacts, wstg="WSTG-ERRH-01", method="GET", url=f"{base}{random_path}",
+                               role=_role, status=html_resp.status_code, headers=dict(html_resp.headers),
+                               body=html_resp.text, baseline_status=None)
 
             # Probe 2: API path that doesn't exist — reveals Express error messages
             api_paths = ["/api/NonExistentEndpoint12345", "/api/Users/notanumber"]
@@ -149,6 +181,13 @@ async def check_generic_error_pages(base_url: str, auth_session: Optional[Dict[s
                             "evidence": api_resp.text[api_resp.text.find("<title>"):api_resp.text.find("<title>") + 200]
                                         if "<title>" in api_resp.text else api_resp.text[:200]
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-ERRH-01", method="GET", url=f"{base}{api_path}",
+                                       role=_role, status=api_resp.status_code, headers=dict(api_resp.headers),
+                                       body=api_resp.text, baseline_status=None)
+                    elif api_resp.status_code >= 500 or len(api_resp.text or "") > _NONTRIVIAL_BODY_LEN:
+                        _emit_artifact(artifacts, wstg="WSTG-ERRH-01", method="GET", url=f"{base}{api_path}",
+                                       role=_role, status=api_resp.status_code, headers=dict(api_resp.headers),
+                                       body=api_resp.text, baseline_status=None)
                 except Exception:
                     pass
 
@@ -157,7 +196,7 @@ async def check_generic_error_pages(base_url: str, auth_session: Optional[Dict[s
             "info_leaks": info_leaks,
             "info_leaks_found": len(info_leaks),
             "description": "Checks error pages for server version banners and verbose framework error messages."
-        }}
+        }, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

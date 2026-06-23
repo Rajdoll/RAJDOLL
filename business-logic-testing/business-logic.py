@@ -22,6 +22,19 @@ logger = logging.getLogger(__name__)
 
 from urllib.parse import urlparse, parse_qs, urlunparse
 
+_BODY_LIMIT = 8192
+_HEADER_KEYS = {"content-type", "content-length", "location", "server", "x-powered-by", "www-authenticate"}
+
+
+def _emit_artifact(bucket, *, wstg, method, url, role, status, headers, body, baseline_status=None):
+    if len(bucket) >= 12:
+        return
+    hs = {k: v for k, v in dict(headers or {}).items() if k.lower() in _HEADER_KEYS}
+    bucket.append({"tool": "biz", "wstg": wstg, "method": method, "url": url,
+                   "role": role or "anonymous", "status": int(status), "headers_subset": hs,
+                   "body": (body or "")[:_BODY_LIMIT], "baseline_status": baseline_status})
+
+
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"business-logic-testing")
 
 # --- Helpers ---
@@ -258,7 +271,8 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
     
     try:
         findings = []
-        
+        artifacts = []
+
         # Price manipulation payloads
         price_tests = [
             {"name": "negative_price", "price": -100, "quantity": 1},
@@ -267,7 +281,7 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
             {"name": "negative_quantity", "price": 10, "quantity": -5},
             {"name": "fractional_abuse", "price": 0.01, "quantity": 1000},
         ]
-        
+
         req_kwargs = {"verify": False, "follow_redirects": False, "timeout": 10}
         if auth_session:
             if 'cookies' in auth_session:
@@ -293,7 +307,7 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
                             "quantity": test["quantity"],
                             "total": test["price"] * test["quantity"]
                         })
-                        
+
                         # If server accepts invalid business data
                         if resp.status_code in [200, 201]:
                             content = resp.text.lower()
@@ -306,16 +320,20 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
                                     "severity": "Critical",
                                     "description": f"Server accepted invalid business data: {test['name']}"
                                 })
+                                _emit_artifact(artifacts, wstg="WSTG-BUSL-01", method="POST", url=url,
+                                               role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                               status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                               baseline_status=None)
                     except Exception:
                         continue
-        
+
         return {"status": "success", "data": {
             "endpoints_tested": len(test_endpoints),
             "validation_tests": len(price_tests),
             "vulnerabilities_found": len(findings),
             "findings": findings,
             "description": "Business logic should validate prices, quantities, and calculations server-side"
-        }}
+        }, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -525,7 +543,8 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
     
     try:
         findings = []
-        
+        artifacts = []
+
         req_kwargs = {"verify": False, "follow_redirects": True, "timeout": 10}
         if auth_session:
             if 'cookies' in auth_session:
@@ -542,10 +561,10 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                 final_url = final_step
             else:
                 final_url = f"{base_url.rstrip('/')}{final_step}"
-            
+
             try:
                 resp = await client.get(final_url)
-                
+
                 if resp.status_code == 200:
                     content = resp.text.lower()
                     # Check if we can access final step
@@ -556,9 +575,13 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                             "severity": "High",
                             "description": "Can access final step without completing prerequisites"
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-BUSL-06", method="GET", url=final_url,
+                                       role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                       status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                       baseline_status=None)
             except Exception:
                 pass
-            
+
             # Test 2: Access steps out of order
             for i in range(len(workflow_steps) - 1, 0, -1):
                 try:
@@ -581,9 +604,13 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                             "severity": "Medium",
                             "description": f"Step {i+1} accessible without completing step {i}"
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-BUSL-06", method="GET", url=url,
+                                       role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                       status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                       baseline_status=None)
                 except Exception:
                     continue
-            
+
             # Test 3: Submit final action via POST without session state
             try:
                 # Use the final workflow step as the action URL
@@ -606,6 +633,10 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                             "severity": "Critical",
                             "description": "Can complete action via POST without workflow validation"
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-BUSL-06", method="POST", url=final_url,
+                                       role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                       status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                       baseline_status=None)
             except Exception:
                 pass
         
@@ -614,7 +645,7 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
             "bypass_vulnerabilities_found": len(findings),
             "findings": findings,
             "description": "Multi-step workflows must validate completion of previous steps"
-        }}
+        }, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -974,6 +1005,7 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
     """
     try:
         findings = []
+        artifacts = []
         base = url.rstrip('/')
 
         # Use provided endpoints or fall back to base URL
@@ -1005,6 +1037,10 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
                                 "description": "Price can be modified via API request",
                                 "evidence": f"PUT {ep} with price=0.01 returned {tamper_resp.status_code}"
                             })
+                            _emit_artifact(artifacts, wstg="WSTG-BUSL-03", method="PUT", url=ep,
+                                           role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                           status=tamper_resp.status_code, headers=dict(tamper_resp.headers), body=tamper_resp.text,
+                                           baseline_status=resp.status_code)
                 except Exception:
                     pass
 
@@ -1026,6 +1062,10 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
                                 "description": f"Application accepted {label} ({qty})",
                                 "evidence": f"POST {ep} with quantity={qty} returned {resp.status_code}"
                             })
+                            _emit_artifact(artifacts, wstg="WSTG-BUSL-03", method="POST", url=ep,
+                                           role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                           status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                           baseline_status=None)
                     except Exception:
                         continue
 
@@ -1049,6 +1089,10 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
                                     "description": f"Server accepted tampered parameter: {param_name}",
                                     "evidence": resp_body
                                 })
+                                _emit_artifact(artifacts, wstg="WSTG-BUSL-03", method="PUT", url=ep,
+                                               role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                               status=resp.status_code, headers=dict(resp.headers), body=resp.text,
+                                               baseline_status=None)
                     except Exception:
                         continue
 
@@ -1057,7 +1101,7 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
             "findings": findings,
             "tests_performed": 3,
             "description": "Integrity check failures allow price tampering, quantity manipulation, and privilege escalation"
-        }}
+        }, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -1341,6 +1385,8 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
                 headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in auth_session["cookies"].items())
 
         findings = []
+        artifacts = []
+        _role = str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous")
 
         # Use provided endpoints or fall back to base URL
         test_targets = endpoints if endpoints else [base_url]
@@ -1357,10 +1403,11 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
                     "100OFF",
                 ]
                 for coupon in known_coupons:
+                    coupon_url = f"{target_ep}/{coupon}" if not target_ep.endswith('/') else f"{target_ep}{coupon}"
                     try:
                         # Try PUT with coupon in URL path
                         resp = await client.put(
-                            f"{target_ep}/{coupon}" if not target_ep.endswith('/') else f"{target_ep}{coupon}",
+                            coupon_url,
                             json={"couponCode": coupon}
                         )
                         if resp.status_code == 200:
@@ -1374,6 +1421,9 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
                                         "description": f"Coupon '{coupon}' accepted",
                                         "evidence": str(body)[:200]
                                     })
+                                    _emit_artifact(artifacts, wstg="WSTG-BUSL-09", method="PUT", url=coupon_url,
+                                                   role=_role, status=resp.status_code, headers=dict(resp.headers),
+                                                   body=resp.text, baseline_status=None)
                                     break  # One finding per endpoint is enough
                             except Exception:
                                 pass
@@ -1397,6 +1447,9 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
                                     "description": "Negative quantity accepted - potential credit generation",
                                     "evidence": str(body)[:200]
                                 })
+                                _emit_artifact(artifacts, wstg="WSTG-BUSL-09", method="PUT", url=target_ep,
+                                               role=_role, status=resp.status_code, headers=dict(resp.headers),
+                                               body=resp.text, baseline_status=None)
                         except Exception:
                             pass
                 except Exception:
@@ -1419,6 +1472,9 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
                                     "description": "Price set to 0 via direct API call",
                                     "evidence": str(body)[:200]
                                 })
+                                _emit_artifact(artifacts, wstg="WSTG-BUSL-09", method="PUT", url=target_ep,
+                                               role=_role, status=resp.status_code, headers=dict(resp.headers),
+                                               body=resp.text, baseline_status=None)
                         except Exception:
                             pass
                 except Exception:
@@ -1438,6 +1494,9 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
                             "description": "Same coupon code can be applied multiple times",
                             "evidence": f"First: {resp1.status_code}, Second: {resp2.status_code}"
                         })
+                        _emit_artifact(artifacts, wstg="WSTG-BUSL-09", method="PUT", url=coupon_url,
+                                       role=_role, status=resp2.status_code, headers=dict(resp2.headers),
+                                       body=resp2.text, baseline_status=resp1.status_code)
                 except Exception:
                     pass
 
@@ -1455,6 +1514,9 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
                                     "description": f"Internal data exposed ({len(body['data'])} records)",
                                     "evidence": str(body["data"][:2])[:200]
                                 })
+                                _emit_artifact(artifacts, wstg="WSTG-BUSL-09", method="GET", url=target_ep,
+                                               role=_role, status=resp.status_code, headers=dict(resp.headers),
+                                               body=resp.text, baseline_status=None)
                         except Exception:
                             pass
                 except Exception:
@@ -1464,7 +1526,7 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
             "vulnerable": len(findings) > 0,
             "findings": findings,
             "vulnerabilities_found": len(findings)
-        }}
+        }, "artifacts": artifacts}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
