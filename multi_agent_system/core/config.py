@@ -28,6 +28,13 @@ def _get_env_int(name: str, default: int) -> int:
         return default
 
 
+def _get_env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+
 def _env_flag(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -78,6 +85,11 @@ class Settings:
     recon_fuzz_rps: int = _get_env_int("RECON_FUZZ_RPS", 10)
     recon_mode: str = field(default_factory=lambda: os.getenv("RECON_MODE", "aggressive"))  # "aggressive" | "polite"
     recon_phase_timeout: int = _get_env_int("RECON_PHASE_TIMEOUT", 1800)
+
+    # LLM adjudication
+    enable_llm_adjudication: bool = field(default_factory=lambda: _env_flag("ENABLE_LLM_ADJUDICATION", False))
+    adjudication_max_per_agent: int = _get_env_int("ADJUDICATION_MAX_PER_AGENT", 15)
+    adjudication_min_confidence: float = _get_env_float("ADJUDICATION_MIN_CONFIDENCE", 0.7)
 
     # Circuit breaker
     circuit_breaker_failures: int = _get_env_int("CIRCUIT_BREAKER_FAILURES", 5)
