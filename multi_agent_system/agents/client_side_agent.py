@@ -6,6 +6,58 @@ import os
 from .base_agent import BaseAgent, AgentRegistry
 from ..utils.mcp_client import MCPClient
 from ..core.endpoint_inventory import read_tag
+from urllib.parse import urlsplit, parse_qs
+
+
+def _xss_candidate_urls(shared_context: dict, target: str) -> list[dict]:
+    """Build XSS probe candidates from discovered endpoints + SPA routes found via
+    static JS-bundle parsing (js_routes_analysis). Generic: route names and param
+    names come entirely from discovery data, nothing target-specific is hardcoded.
+    Filters out candidates whose host differs from the scan target's host."""
+    target_host = urlsplit(target).netloc
+
+    raw_eps: list = []
+    inv = shared_context.get("endpoint_inventory", {}) or {}
+    raw_eps.extend(inv.get("endpoints", []) or [])
+    de = shared_context.get("discovered_endpoints", {}) or {}
+    raw_eps.extend(de.get("endpoints", []) or [])
+
+    candidates = []
+    seen_urls = set()
+
+    for ep in raw_eps:
+        if not isinstance(ep, dict):
+            continue
+        url = ep.get("url") or ep.get("path")
+        if not url or url in seen_urls:
+            continue
+        has_params = ep.get("params") or ep.get("query_parameters") or "?" in url
+        if not has_params:
+            continue
+        ep_host = urlsplit(url).netloc
+        if ep_host and ep_host != target_host:
+            continue
+        query_part = urlsplit(url).query
+        if "://" in query_part:
+            continue
+        params = ep.get("params") or list((ep.get("query_parameters") or {}).keys())
+        if not params:
+            qs_params = list(parse_qs(urlsplit(url).query).keys())
+            params = qs_params or ["q"]
+        seen_urls.add(url)
+        candidates.append({"url": url, "params": params})
+
+    js_routes = shared_context.get("js_routes_analysis", {}) or {}
+    for route in js_routes.get("all_routes", []) or []:
+        if not route or not isinstance(route, str):
+            continue
+        url = f"{target.rstrip('/')}/#/{route.lstrip('/')}"
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        candidates.append({"url": url, "params": ["q"]})
+
+    return candidates
 
 
 @AgentRegistry.register("ClientSideAgent")
