@@ -10,3 +10,21 @@ def test_verify_xss_headless_registered_and_attributed():
     assert "WSTG-CLNT-01" in block
     # candidates come from discovery context, not hardcoded routes
     assert "endpoint_inventory" in src or "discovered_endpoints" in src
+
+
+def test_both_xss_blocks_use_shared_candidate_helper():
+    src = SRC.read_text()
+    assert src.count("_xss_candidate_urls(") >= 2, (
+        "expected both the aggressive-mode block and the verify_xss_headless block "
+        "to call _xss_candidate_urls()"
+    )
+
+
+def test_aggressive_block_uses_hash_aware_url_builder():
+    src = SRC.read_text()
+    block = src[src.index("Aggressive-mode"):src.index("Headless-browser XSS confirmation")]
+    assert "_build_probe_url(" in block, (
+        "aggressive-mode block must build probe URLs via a hash-aware builder, "
+        "not raw httpx params= (which puts the query OUTSIDE a #fragment, "
+        "breaking SPA hash-routed candidates)"
+    )

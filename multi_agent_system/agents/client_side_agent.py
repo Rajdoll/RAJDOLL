@@ -60,6 +60,21 @@ def _xss_candidate_urls(shared_context: dict, target: str) -> list[dict]:
     return candidates
 
 
+def _build_probe_url(url: str, param: str, payload: str) -> str:
+    """Place `payload` into `param` as a query value. For SPA hash routes
+    (.../#/route), the query is appended inside the hash fragment so the
+    client-side router parses it — matches client-side-testing's _inject_payload."""
+    if "#" in url:
+        head, frag = url.split("#", 1)
+        sep = "&" if "?" in frag else "?"
+        return f"{head}#{frag}{sep}{param}={payload}"
+    parts = urlsplit(url)
+    sep = "&" if parts.query else ""
+    new_q = f"{parts.query}{sep}{param}={payload}" if parts.query else f"{param}={payload}"
+    from urllib.parse import urlunsplit
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_q, parts.fragment))
+
+
 @AgentRegistry.register("ClientSideAgent")
 class ClientSideAgent(BaseAgent):
     system_prompt: str = """
@@ -531,15 +546,11 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
             except Exception as e:
                 self.log("warning", f"scan_vulnerable_components failed: {e}")
 
-        # Aggressive-mode: force reflected XSS probe on parameterized endpoints.
+        # Aggressive-mode: force reflected XSS probe on parameterized endpoints +
+        # SPA routes discovered via static JS parsing.
         # Generic OWASP WSTG-CLNT-01/02 baseline — not target-specific.
         if os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
-            _inventory = self.shared_context.get("endpoint_inventory", {})
-            _eps = _inventory.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
-            _candidates = [
-                ep for ep in _eps
-                if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))
-            ][:10]
+            _candidates = _xss_candidate_urls(self.shared_context, target)[:10]
             _marker = "rajdoll-xss-probe-7791"
             _xss_payloads = [
                 f"<script>alert('{_marker}')</script>",
@@ -547,14 +558,13 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 f"<svg onload=alert('{_marker}')>",
             ]
             async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _xss_client:
-                for ep in _candidates:
-                    _url = ep.get("url") or ep.get("path")
-                    if not _url:
-                        continue
-                    _params = ep.get("params") or list((ep.get("query_parameters") or {}).keys()) or ["q"]
+                for cand in _candidates:
+                    _url = cand["url"]
+                    _params = cand["params"]
                     for _payload in _xss_payloads:
                         try:
-                            _resp = await _xss_client.get(_url, params={_params[0]: _payload})
+                            _probe_url = _build_probe_url(_url, _params[0], _payload)
+                            _resp = await _xss_client.get(_probe_url)
                             if _payload in _resp.text or _marker in _resp.text:
                                 self.add_finding(
                                     "WSTG-CLNT-01",
@@ -574,18 +584,12 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                             continue
 
         # Headless-browser XSS confirmation (WSTG-CLNT-01) — catches SPA/DOM XSS that
-        # response-based checks miss. Candidates from discovery; payloads generic.
+        # response-based checks miss. Candidates from discovery + SPA routes; payloads generic.
         if self.should_run_tool("verify_xss_headless"):
-            _inv = self.shared_context.get("endpoint_inventory", {})
-            _eps = _inv.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
-            _eps = [e for e in _eps if isinstance(e, dict)]
-            _cands = [ep for ep in _eps
-                      if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))][:8]
-            for ep in _cands:
-                _u = ep.get("url") or ep.get("path")
-                if not _u:
-                    continue
-                _ps = ep.get("params") or list((ep.get("query_parameters") or {}).keys()) or ["q"]
+            _cands = _xss_candidate_urls(self.shared_context, target)[:20]
+            for cand in _cands:
+                _u = cand["url"]
+                _ps = cand["params"]
                 try:
                     hx = await self.run_tool_with_timeout(
                         client.call_tool(server="client-side-testing", tool="verify_xss_headless",
