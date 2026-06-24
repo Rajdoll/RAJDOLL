@@ -1,217 +1,37 @@
 {
-  "n_runs": 10,
-  "precision_mean": 90.55,
-  "precision_std": 0.27,
-  "recall_mean": 91.23,
+  "n_runs": 1,
+  "precision_mean": 87.95,
+  "precision_std": 0.0,
+  "recall_mean": 82.5,
   "recall_std": 0.0,
-  "f1_mean": 90.89,
-  "f1_std": 0.14,
-  "tcr_mean": 88.89,
+  "f1_mean": 85.14,
+  "f1_std": 0.0,
+  "tcr_mean": 81.48,
   "tcr_std": 0.0,
-  "scan_time_mean_hours": null,
-  "scan_time_std_hours": null,
+  "scan_time_mean_hours": 5.48,
+  "scan_time_std_hours": 0.0,
   "per_run": [
     {
-      "tp_findings": 66,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 73,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
+      "tp_findings": 73,
+      "fp_findings": 10,
+      "tp_gt_entries": 66,
+      "fn_gt_entries": 14,
+      "total_findings_non_info": 83,
+      "total_gt_entries": 80,
+      "detected_wstg_categories": 22,
       "total_wstg_categories": 27,
-      "precision": 90.41,
-      "recall": 91.23,
-      "f1": 90.82,
-      "tcr": 88.89,
+      "precision": 87.95,
+      "recall": 82.5,
+      "f1": 85.14,
+      "tcr": 81.48,
       "findings_by_severity": {
         "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 26,
-        "high": 24
-      },
-      "scan_time_hours": 1.08,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run1"
-    },
-    {
-      "tp_findings": 66,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 73,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.41,
-      "recall": 91.23,
-      "f1": 90.82,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 26,
-        "high": 24
-      },
-      "scan_time_hours": 1.01,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run2"
-    },
-    {
-      "tp_findings": 66,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 73,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.41,
-      "recall": 91.23,
-      "f1": 90.82,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 26,
-        "high": 24
-      },
-      "scan_time_hours": 1.07,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run3"
-    },
-    {
-      "tp_findings": 66,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 73,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.41,
-      "recall": 91.23,
-      "f1": 90.82,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 26,
-        "high": 24
-      },
-      "scan_time_hours": 1.1,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run4"
-    },
-    {
-      "tp_findings": 63,
-      "fp_findings": 6,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 69,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 91.3,
-      "recall": 91.23,
-      "f1": 91.27,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 25,
-        "high": 21
-      },
-      "scan_time_hours": 0.82,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run5"
-    },
-    {
-      "tp_findings": 68,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 75,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.67,
-      "recall": 91.23,
-      "f1": 90.95,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 28,
-        "high": 24
-      },
-      "scan_time_hours": 1.07,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run6"
-    },
-    {
-      "tp_findings": 68,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 75,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.67,
-      "recall": 91.23,
-      "f1": 90.95,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
         "info": 6,
-        "critical": 28,
-        "high": 24
+        "medium": 19,
+        "critical": 25,
+        "high": 33
       },
-      "scan_time_hours": 1.1,
+      "scan_time_hours": 5.48,
       "agent_stats": {
         "total": 13,
         "completed": 13,
@@ -219,97 +39,7 @@
         "skipped": 0,
         "success_rate": 100.0
       },
-      "run_label": "juiceshop_benchmark_run7"
-    },
-    {
-      "tp_findings": 66,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 73,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.41,
-      "recall": 91.23,
-      "f1": 90.82,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 26,
-        "high": 24
-      },
-      "scan_time_hours": 1.03,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run8"
-    },
-    {
-      "tp_findings": 66,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 73,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.41,
-      "recall": 91.23,
-      "f1": 90.82,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 26,
-        "high": 24
-      },
-      "scan_time_hours": 0.98,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run9"
-    },
-    {
-      "tp_findings": 66,
-      "fp_findings": 7,
-      "tp_gt_entries": 52,
-      "fn_gt_entries": 5,
-      "total_findings_non_info": 73,
-      "total_gt_entries": 57,
-      "detected_wstg_categories": 24,
-      "total_wstg_categories": 27,
-      "precision": 90.41,
-      "recall": 91.23,
-      "f1": 90.82,
-      "tcr": 88.89,
-      "findings_by_severity": {
-        "low": 6,
-        "medium": 17,
-        "info": 7,
-        "critical": 26,
-        "high": 24
-      },
-      "scan_time_hours": 1.02,
-      "agent_stats": {
-        "total": 13,
-        "completed": 13,
-        "failed": 0,
-        "skipped": 0,
-        "success_rate": 100.0
-      },
-      "run_label": "juiceshop_benchmark_run10"
+      "run_label": "validation_82d5a36"
     }
   ],
   "target": "juiceshop"
