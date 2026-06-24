@@ -604,7 +604,6 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                                 evidence={"url": f.get("url"), "param": f.get("param"),
                                           "payload": f.get("payload"), "proof_type": f.get("proof")},
                                 details="Headless Chromium confirmed JS execution (dialog/marker).")
-                        break
                 except Exception as e:
                     self.log("warning", f"verify_xss_headless failed: {e}")
 

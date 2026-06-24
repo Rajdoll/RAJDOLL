@@ -28,3 +28,13 @@ def test_aggressive_block_uses_hash_aware_url_builder():
         "not raw httpx params= (which puts the query OUTSIDE a #fragment, "
         "breaking SPA hash-routed candidates)"
     )
+
+
+def test_verify_xss_headless_loop_does_not_break_after_first_hit():
+    src = SRC.read_text()
+    block = src[src.index("Headless-browser XSS confirmation"):]
+    block = block[:block.index("def _get_tool_info")]
+    assert "break" not in block, (
+        "verify_xss_headless loop should try all candidates, not stop after the first hit, "
+        "so distinct XSS findings across multiple routes are reported"
+    )
