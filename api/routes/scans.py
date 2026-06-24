@@ -333,7 +333,6 @@ def pause_scan(job_id: int):
 @router.post("/scans/{job_id}/resume", status_code=202)
 def resume_scan(job_id: int):
 	"""Resume a paused scan by dispatching a new Celery task at the saved step index."""
-	from multi_agent_system.tasks.tasks import run_job_task
 	with get_db() as db:
 		job = db.query(Job).get(job_id)
 		if not job:
@@ -346,12 +345,19 @@ def resume_scan(job_id: int):
 			raise HTTPException(status_code=500, detail="paused_state missing or corrupt")
 
 		step_idx = int(job.paused_state["step_idx"])
+
+		# Dispatch before committing: if Celery is unreachable, the job stays
+		# paused with its checkpoint intact instead of being silently orphaned
+		# as "running" with no task behind it.
+		celery_app.send_task(
+			"multi_agent_system.tasks.tasks.run_job_task",
+			kwargs={"job_id": job_id, "resume_from_step_idx": step_idx},
+		)
+
 		job.status = JobStatus.running
 		job.paused_state = None
 		job.updated_at = datetime.utcnow()
 		db.commit()
-
-	run_job_task.delay(job_id=job_id, resume_from_step_idx=step_idx)
 
 	return {
 		"message": f"Scan resumed from step {step_idx}",
