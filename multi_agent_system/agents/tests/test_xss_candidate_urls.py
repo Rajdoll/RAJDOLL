@@ -59,6 +59,24 @@ def test_spa_route_with_no_query_string_defaults_to_q_param():
     assert match["params"] == ["q"]
 
 
+def test_spa_routes_survive_truncation_when_many_param_endpoints_exist():
+    # job#138 follow-up: real param endpoints are appended before SPA routes,
+    # so callers slicing to a cap (e.g. [:10]) starve out the SPA routes that
+    # exist specifically to catch hash-routed XSS.
+    many_eps = [
+        {"url": f"http://example-app:3000/rest/thing{i}?q=x"} for i in range(30)
+    ]
+    shared_context = {
+        "js_routes_analysis": {"all_routes": ["search"]},
+        "endpoint_inventory": {"endpoints": many_eps},
+        "discovered_endpoints": {"endpoints": []},
+    }
+    target = "http://example-app:3000"
+    cands = _xss_candidate_urls(shared_context, target)[:10]
+    urls = [c["url"] for c in cands]
+    assert "http://example-app:3000/#/search" in urls
+
+
 def test_no_hardcoded_target_specific_literals_in_source():
     import pathlib
     src = pathlib.Path(__file__).parents[1].joinpath("client_side_agent.py").read_text()

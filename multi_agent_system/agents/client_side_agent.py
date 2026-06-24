@@ -25,6 +25,20 @@ def _xss_candidate_urls(shared_context: dict, target: str) -> list[dict]:
     candidates = []
     seen_urls = set()
 
+    # SPA routes go first: there are usually few of them, and they are the
+    # signal job#138 added to catch hash-routed XSS. Putting them after the
+    # (often much larger) raw endpoint list let callers' [:N] caps starve
+    # them out entirely.
+    js_routes = shared_context.get("js_routes_analysis", {}) or {}
+    for route in js_routes.get("all_routes", []) or []:
+        if not route or not isinstance(route, str):
+            continue
+        url = f"{target.rstrip('/')}/#/{route.lstrip('/')}"
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        candidates.append({"url": url, "params": ["q"]})
+
     for ep in raw_eps:
         if not isinstance(ep, dict):
             continue
@@ -46,16 +60,6 @@ def _xss_candidate_urls(shared_context: dict, target: str) -> list[dict]:
             params = qs_params or ["q"]
         seen_urls.add(url)
         candidates.append({"url": url, "params": params})
-
-    js_routes = shared_context.get("js_routes_analysis", {}) or {}
-    for route in js_routes.get("all_routes", []) or []:
-        if not route or not isinstance(route, str):
-            continue
-        url = f"{target.rstrip('/')}/#/{route.lstrip('/')}"
-        if url in seen_urls:
-            continue
-        seen_urls.add(url)
-        candidates.append({"url": url, "params": ["q"]})
 
     return candidates
 
