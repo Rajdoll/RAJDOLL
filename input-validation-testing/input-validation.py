@@ -1622,6 +1622,74 @@ async def test_ssrf_comprehensive(url: str, param: Optional[str] = None, auth_se
         return {"status": "error", "message": str(e)}
 
 
+def _ssrf_body_field_from_path(path: str) -> Optional[str]:
+    """Derive a generic JSON body field name from a path-style 'fetch from URL'
+    endpoint (e.g. /profile/image/url -> 'url'), for sinks that take the SSRF
+    target as a body field instead of a query-string param."""
+    segments = [s for s in path.split("/") if s]
+    return segments[-1] if segments else None
+
+
+def _ssrf_evidence(resp_text: str, target_url: str, evidence_pattern: str) -> List[str]:
+    """Pure evidence check shared by the query-param and JSON-body SSRF probes.
+    Returns concrete evidence strings, or [] if nothing supports an SSRF verdict."""
+    evidence = []
+    if evidence_pattern and re.search(evidence_pattern, resp_text, re.IGNORECASE):
+        evidence.append(f"Pattern match: {evidence_pattern}")
+    if re.search(
+        r"ami-id|instance-id|iam/security-credentials|InstanceProfile|"
+        r"AccessKeyId|SecretAccessKey|computeMetadata|hostname",
+        resp_text,
+    ) and "metadata" in target_url:
+        evidence.append("Cloud metadata tokens returned")
+    if "/etc/passwd" in target_url and "root:" in resp_text:
+        evidence.append("File system access confirmed")
+    return evidence
+
+
+async def _test_ssrf_json_body(url: str, body_field: str, test_targets: list,
+                                auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Generic SSRF probe for 'fetch from URL' sinks that take the target as a
+    JSON body field rather than a query-string param (e.g. POST {"url": ...}).
+    No endpoint/field names hardcoded — body_field is derived from the URL path."""
+    findings = []
+    req_kwargs = {"timeout": 30, "follow_redirects": False, "verify": False}
+    if auth_session:
+        if 'cookies' in auth_session:
+            req_kwargs['cookies'] = auth_session['cookies']
+        if 'headers' in auth_session:
+            req_kwargs['headers'] = auth_session.get('headers', {})
+        elif 'token' in auth_session:
+            req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
+    async with httpx.AsyncClient(**req_kwargs) as client:
+        for target in test_targets:
+            target_url = target["url"]
+            ssrf_type = target["type"]
+            try:
+                resp = await client.post(url, json={body_field: target_url}, timeout=15)
+                evidence = _ssrf_evidence(resp.text, target_url, target["evidence_pattern"])
+                if evidence:
+                    severity = "critical" if ssrf_type in ["aws_metadata", "file_protocol"] else "high"
+                    findings.append({
+                        "parameter": body_field,
+                        "target": target_url,
+                        "type": ssrf_type,
+                        "evidence": "; ".join(evidence),
+                        "severity": severity,
+                        "impact": "Server-Side Request Forgery - can access internal resources"
+                    })
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                continue
+    if findings:
+        return {"status": "success", "data": {
+            "vulnerable": True, "findings": findings[:5],
+            "message": f"Found {len(findings)} SSRF vulnerabilities"
+        }}
+    return {"status": "success", "data": {"vulnerable": False, "message": "No SSRF vulnerabilities found"}}
+
+
 async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     BACKUP: Manual SSRF testing (only used if SSRFmap fails)
@@ -1648,12 +1716,18 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_s
             {"url": "http://192.168.1.1/", "type": "internal_network", "evidence_pattern": r"(router|admin|login)"},
             {"url": "http://10.0.0.1/", "type": "internal_network", "evidence_pattern": r""},
         ]
-        
+
         parsed = urlparse(url)
         params = parse_qs(parsed.query)
-        
+
         if not params and not param:
-            return {"status": "success", "data": {"vulnerable": False, "message": "No parameters to test"}}
+            # No query-string param to fuzz — many "fetch from URL" features take
+            # the target as a JSON body field instead (e.g. .../image/url with
+            # body {"url": ...}). Derive the field name from the URL path.
+            body_field = _ssrf_body_field_from_path(parsed.path)
+            if not body_field:
+                return {"status": "success", "data": {"vulnerable": False, "message": "No parameters to test"}}
+            return await _test_ssrf_json_body(url, body_field, test_targets, auth_session)
         
         findings = []
         test_params = [param] if param else list(params.keys())
@@ -1679,38 +1753,9 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_s
                     test_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(test_params_dict, doseq=True)}"
                     
                     try:
-                        start_time = time.time()
                         ssrf_resp = await client.get(test_url, timeout=15)
-                        elapsed = time.time() - start_time
-                        
-                        # Check for evidence of SSRF
-                        vulnerable = False
-                        evidence = []
-                        
-                        # Pattern matching
-                        if evidence_pattern and re.search(evidence_pattern, ssrf_resp.text, re.IGNORECASE):
-                            vulnerable = True
-                            evidence.append(f"Pattern match: {evidence_pattern}")
-                        
-                        # Concrete cloud-metadata proof — require actual metadata
-                        # tokens in the body, not just the word "metadata" in the URL.
-                        if re.search(
-                            r"ami-id|instance-id|iam/security-credentials|InstanceProfile|"
-                            r"AccessKeyId|SecretAccessKey|computeMetadata|hostname",
-                            ssrf_resp.text,
-                        ) and "metadata" in target_url:
-                            vulnerable = True
-                            evidence.append("Cloud metadata tokens returned")
-
-                        if "/etc/passwd" in target_url and "root:" in ssrf_resp.text:
-                            vulnerable = True
-                            evidence.append("File system access confirmed")
-                        # NOTE: removed weak heuristics ("metadata URL returned >50
-                        # chars" and "fast response from internal IP") — they flagged
-                        # ordinary error pages as SSRF (false positives). SSRF is now
-                        # reported only on concrete evidence (pattern/metadata/file).
-
-                        if vulnerable:
+                        evidence = _ssrf_evidence(ssrf_resp.text, target_url, evidence_pattern)
+                        if evidence:
                             severity = "critical" if ssrf_type in ["aws_metadata", "file_protocol"] else "high"
                             findings.append({
                                 "parameter": param_name,
@@ -1720,7 +1765,6 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_s
                                 "severity": severity,
                                 "impact": "Server-Side Request Forgery - can access internal resources"
                             })
-                    
                     except asyncio.TimeoutError:
                         # A timeout is NOT evidence of SSRF — the host may be filtered
                         # or non-routable and the request never reached anything.
@@ -1728,34 +1772,6 @@ async def _test_ssrf_manual_backup(url: str, param: Optional[str] = None, auth_s
                         continue
                     except Exception:
                         continue
-        
-        # Juice Shop-specific SSRF probe: imageUrl field in profile update
-        if auth_session:
-            _token = auth_session.get("token") or auth_session.get("access_token")
-            if _token:
-                _headers = {"Authorization": f"Bearer {_token}", "Content-Type": "application/json"}
-                _ssrf_targets = ["http://127.0.0.1/", "http://localhost:3000/api/Users/"]
-                async with httpx.AsyncClient(timeout=10, verify=False) as _client:
-                    for _target in _ssrf_targets:
-                        try:
-                            _r = await _client.post(
-                                f"{parsed.scheme}://{parsed.netloc}/profile",
-                                json={"imageUrl": _target},
-                                headers=_headers
-                            )
-                            _indicators = ["econnrefused", "connection refused", "127.0.0.1",
-                                          "ECONNREFUSED", "getaddrinfo", "fetch failed"]
-                            if any(kw in _r.text for kw in _indicators):
-                                findings.append({
-                                    "type": "ssrf_profile_imageurl",
-                                    "endpoint": "/profile",
-                                    "payload": _target,
-                                    "severity": "High",
-                                    "description": f"SSRF via profile imageUrl: server attempted to fetch {_target}",
-                                    "evidence": _r.text[:300]
-                                })
-                        except Exception:
-                            pass
 
         if findings:
             return {

@@ -540,7 +540,7 @@ class BaseAgent:
 		TOOL_ENDPOINT_PATTERNS: dict = {
 			"test_ssti_comprehensive":  ["profile", "feedback", "review", "comment", "name", "bio", "search"],
 			"test_xxe":                 ["ftp", "xml", "upload", "svg", "import", "export"],
-			"test_ssrf_comprehensive":  ["url=", "redirect", "fetch", "callback", "webhook", "link"],
+			"test_ssrf_comprehensive":  ["url", "redirect", "fetch", "callback", "webhook", "link"],
 			"test_unrestricted_upload": ["upload", "image", "photo", "avatar", "profile", "file", "attachment"],
 			"test_mime_type_bypass":    ["upload", "image", "photo", "avatar", "profile", "file"],
 			"test_password_policy":     ["register", "signup", "sign-up", "account/new", "create-account"],
