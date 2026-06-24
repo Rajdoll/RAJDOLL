@@ -44,6 +44,16 @@ def test_strip_version():
     assert f("~0.4.0") == "0.4.0"
     assert f("4.17.1") == "4.17.1"
 
+def test_strip_version_coerces_short_specs_to_three_parts():
+    # legacy npm manifests commonly use 1-2 part specs (~4.16, ~0.7, ^4);
+    # these must be coerced to x.y.z, not dropped by the downstream
+    # 3-part-semver filter, or most real-world deps never reach OSV at all.
+    f = _get("_strip_version")
+    assert f("~4.16") == "4.16.0"
+    assert f("~0.7") == "0.7.0"
+    assert f("^4") == "4.0.0"
+    assert f("~2") == "2.0.0"
+
 def test_recover_manifest_urls_generic():
     urls = _get("_recover_manifest_urls")("http://t:3000")
     # conventional filenames + generic null-byte bypass present, generated (not a single literal)

@@ -7,7 +7,16 @@ from ..core.endpoint_inventory import read_tag
 
 
 def _strip_version(spec: str) -> str:
-    return (spec or "").lstrip("^~>=v ").strip() or "0.0.0"
+    """Strip range operators and coerce to x.y.z. Legacy npm manifests commonly
+    pin 1-2 part specs (~4.16, ^4); OSV's querybatch needs a concrete 3-part
+    version, so pad missing parts with .0 rather than dropping the dependency."""
+    v = (spec or "").lstrip("^~>=v ").strip()
+    if not v:
+        return "0.0.0"
+    parts = v.split(".")[:3]
+    while len(parts) < 3:
+        parts.append("0")
+    return ".".join(p if p.isdigit() else "0" for p in parts)
 
 
 def _recover_manifest_urls(base: str) -> list:
@@ -488,8 +497,6 @@ Write to shared_context:
             for section in ("dependencies", "devDependencies"):
                 for name, spec in (manifest.get(section) or {}).items():
                     deps.append((name, _strip_version(spec)))
-            import re as _re
-            deps = [(n, v) for n, v in deps if _re.match(r"^\d+\.\d+\.\d+", v)]  # OSV version field needs exact semver; skip ranges/wildcards so one bad spec can't reject the batch
             deps = deps[:60]
             if not deps:
                 return
