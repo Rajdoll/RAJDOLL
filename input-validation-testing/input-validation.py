@@ -2921,6 +2921,25 @@ async def test_sqli(
             "auth_session": auth_session or {}
         }
 
+        # find-then-confirm gate: cheap deterministic screen before expensive sqlmap.
+        # No validated injection signal -> skip sqlmap (detection-neutral: the
+        # login-bypass probe and signalling endpoints are unaffected).
+        if os.getenv("SQLI_SCREEN_GATE", "true").lower() == "true":
+            _scr = await _sqli_screen(url, param=param, method=method,
+                                      post_data=post_data, content_type=content_type,
+                                      auth_session=auth_session)
+            if not _scr.get("signal"):
+                return {
+                    "status": "success",
+                    "data": {
+                        "vulnerable": False,
+                        "findings": [],
+                        "message": "No SQL injection signal (screened out before sqlmap)",
+                        "source": "screen",
+                        "screen": _scr,
+                    },
+                }
+
         # Try sqlmap first (comprehensive but may miss some cases)
         sqlmap_report = await run_sqlmap_scan(url, param, config)
         sqlmap_meta = {

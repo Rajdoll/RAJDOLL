@@ -122,3 +122,39 @@ def test_screen_no_signal_when_all_clean(monkeypatch):
         iv._sqli_screen("http://t/rest/products/search?q=apple", param="q")
     )
     assert out["signal"] is False
+
+
+def test_gate_skips_sqlmap_when_screen_has_no_signal(monkeypatch):
+    called = {"sqlmap": 0}
+    async def fake_screen(*a, **k):
+        return {"signal": False, "boundary": None, "param": "q", "reason": "no validated signal"}
+    async def fake_sqlmap(*a, **k):
+        called["sqlmap"] += 1
+        return {"status": "success", "findings": []}
+    monkeypatch.setattr(iv, "_sqli_screen", fake_screen)
+    monkeypatch.setattr(iv, "run_sqlmap_scan", fake_sqlmap)
+    monkeypatch.setattr(iv, "_manual_sqli_detection",
+                        lambda *a, **k: _async_return({"findings": []}), raising=False)
+    out = asyncio.run(
+        iv.test_sqli("http://t/rest/products/search?q=apple", param="q")
+    )
+    assert called["sqlmap"] == 0
+    assert out["status"] == "success"
+
+def test_gate_runs_sqlmap_when_screen_signals(monkeypatch):
+    called = {"sqlmap": 0}
+    async def fake_screen(*a, **k):
+        return {"signal": True, "boundary": "')--", "param": "q", "reason": "toggle"}
+    async def fake_sqlmap(*a, **k):
+        called["sqlmap"] += 1
+        return {"status": "success", "findings": [{"type": "sqli"}]}
+    monkeypatch.setattr(iv, "_sqli_screen", fake_screen)
+    monkeypatch.setattr(iv, "run_sqlmap_scan", fake_sqlmap)
+    asyncio.run(
+        iv.test_sqli("http://t/rest/products/search?q=apple", param="q")
+    )
+    assert called["sqlmap"] == 1
+
+def _async_return(v):
+    async def _f(*a, **k): return v
+    return _f()
