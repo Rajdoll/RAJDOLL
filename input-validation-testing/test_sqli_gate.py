@@ -26,3 +26,10 @@ def test_error_regex_matches_real_dbms_errors_not_generic_5xx():
     # generic server errors must NOT match
     assert not iv._SQLI_ERROR_RE.search("500 Internal Server Error")
     assert not iv._SQLI_ERROR_RE.search("B2B customer complaints have been deprecated")
+
+
+def test_error_regex_rejects_benign_substring_collisions():
+    assert not iv._SQLI_ERROR_RE.search("psql: connection refused")
+    assert not iv._SQLI_ERROR_RE.search("mysql_fetcher is a great metaphor")
+    assert not iv._SQLI_ERROR_RE.search('near "the end": syntax error free zone')
+    assert not iv._SQLI_ERROR_RE.search("PG::connection pooling guide")

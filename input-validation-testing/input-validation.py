@@ -159,10 +159,11 @@ def _parse_sqlmap_output(output: str) -> List[Dict[str, Any]]:
 import re as _re_sqli
 
 _SQLI_ERROR_RE = _re_sqli.compile(
-    r"SQLITE_ERROR|SQL syntax|syntax error at or near|unterminated quoted"
-    r"|ORA-\d{5}|PG::|psql:|mysql_fetch|valid MySQL result|SQLSTATE\["
+    r"SQLITE_ERROR|SQLITE_|SQL syntax|syntax error at or near|unterminated quoted"
+    r"|ORA-\d{5}|PG::\w*Error|mysql_(fetch_array|fetch_assoc|num_rows|query|error)\b"
+    r"|valid MySQL result|SQLSTATE\["
     r"|ODBC SQL Server Driver|Microsoft OLE DB Provider for SQL Server"
-    r"|SequelizeDatabaseError|SQLITE_|near \"[^\"]*\": syntax error",
+    r"|SequelizeDatabaseError|near \"[^\"]*\": syntax error(?!\s+\w)",
     _re_sqli.IGNORECASE,
 )
 
