@@ -197,14 +197,10 @@ def _sqli_error_signal(baseline_body: str, probes: list[dict]) -> dict:
 
     def token_present(p):
         body = p.get("body") or ""
-        if not _SQLI_ERROR_RE.search(body):
-            return False
-        # reflection guard: ignore if the matched token is just our echoed suffix
-        if (p.get("suffix") or "") and (p["suffix"] in body) and not _SQLI_ERROR_RE.search(
-            body.replace(p["suffix"], "")
-        ):
-            return False
-        return True
+        suffix = p.get("suffix") or ""
+        # genuine DBMS error: some match's text is not itself a substring of
+        # our sent payload (i.e. not merely our echoed input reflected back)
+        return any(m.group(0) not in suffix for m in _SQLI_ERROR_RE.finditer(body))
 
     flags = [token_present(p) for p in probes]
     if not any(flags):

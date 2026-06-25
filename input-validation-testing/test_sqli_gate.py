@@ -72,6 +72,20 @@ def test_reflection_guard_token_echoed_in_suffix_is_not_a_signal():
     )
     assert v["valid"] is False
 
+def test_real_error_with_suffix_substring_is_still_valid():
+    # suffix '"' is a short boundary that coincidentally appears inside the
+    # quotes of a genuine DBMS error span (near "x": syntax error); naively
+    # stripping the suffix from body destroys the real match's quote chars.
+    v = iv._sqli_error_signal(
+        baseline_body="ok",
+        probes=[
+            _probe('"', 'near "x": syntax error'),
+            _probe("'))--", "ok"),
+        ],
+    )
+    assert v["valid"] is True
+    assert v["boundary"] == '"'
+
 def test_no_signal_when_no_token_anywhere():
     v = iv._sqli_error_signal(
         baseline_body="ok",
