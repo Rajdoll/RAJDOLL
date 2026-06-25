@@ -92,3 +92,33 @@ def test_no_signal_when_no_token_anywhere():
         probes=[_probe("')--", "500 Internal Server Error"), _probe("'--", "ok")],
     )
     assert v["valid"] is False
+
+
+import asyncio, types
+
+class _FakeResp:
+    def __init__(self, text): self.text = text; self.status_code = 200
+
+def test_screen_signals_on_toggling_error(monkeypatch):
+    ERR = "Error: SQLITE_ERROR: incomplete input"
+    async def fake_send(method, url, **kw):
+        # baseline benign -> clean; ')-- -> error; deeper -> clean
+        q = url + str(kw.get("params")) + str(kw.get("json")) + str(kw.get("data"))
+        if "')--" in q and "'))--" not in q:
+            return _FakeResp(ERR)
+        return _FakeResp("normal results")
+    monkeypatch.setattr(iv, "_sqli_screen_send", fake_send, raising=False)
+    out = asyncio.run(
+        iv._sqli_screen("http://t/rest/products/search?q=apple", param="q")
+    )
+    assert out["signal"] is True
+    assert out["boundary"] == "')--"
+
+def test_screen_no_signal_when_all_clean(monkeypatch):
+    async def fake_send(method, url, **kw):
+        return _FakeResp("normal results")
+    monkeypatch.setattr(iv, "_sqli_screen_send", fake_send, raising=False)
+    out = asyncio.run(
+        iv._sqli_screen("http://t/rest/products/search?q=apple", param="q")
+    )
+    assert out["signal"] is False

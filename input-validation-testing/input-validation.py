@@ -211,6 +211,72 @@ def _sqli_error_signal(baseline_body: str, probes: list[dict]) -> dict:
     return {"valid": True, "boundary": boundary, "reason": "error toggles with boundary"}
 
 
+async def _sqli_screen_send(method, url, **kw):
+    """Thin seam over httpx so tests can monkeypatch transport."""
+    req_kwargs = {"timeout": 15, "follow_redirects": False, "verify": False}
+    async with httpx.AsyncClient(**req_kwargs) as c:
+        return await c.request(method, url, **kw)
+
+
+def _sqli_auth_kwargs(auth_session):
+    kw = {}
+    if auth_session:
+        if auth_session.get("cookies"):
+            kw["cookies"] = auth_session["cookies"]
+        tok = auth_session.get("token") or auth_session.get("access_token")
+        if tok:
+            kw["headers"] = {"Authorization": f"Bearer {tok}"}
+    return kw
+
+
+async def _sqli_screen(url, param=None, method="GET", post_data=None,
+                       content_type="application/x-www-form-urlencoded",
+                       auth_session=None) -> dict:
+    """Cheap deterministic SQLi screen. Sends a benign baseline + the generic
+    breakout matrix, returns whether a VALIDATED error signal toggled."""
+    seed = "rajdoll"
+    method = (method or "GET").upper()
+    akw = _sqli_auth_kwargs(auth_session)
+
+    parts = urlparse(url)
+    qs = parse_qs(parts.query)
+    target_param = param or (next(iter(qs), None) if method == "GET" else
+                             (next(iter(post_data), None) if isinstance(post_data, dict) else None))
+    if not target_param:
+        return {"signal": False, "boundary": None, "param": None, "reason": "no param to screen"}
+
+    async def fetch(value):
+        if method == "GET":
+            params = {target_param: value}
+            base = f"{parts.scheme}://{parts.netloc}{parts.path}"
+            r = await _sqli_screen_send("GET", base, params=params, **akw)
+        else:
+            body = dict(post_data) if isinstance(post_data, dict) else {}
+            body[target_param] = value
+            if "json" in (content_type or ""):
+                r = await _sqli_screen_send("POST", url, json=body, **akw)
+            else:
+                r = await _sqli_screen_send("POST", url, data=body, **akw)
+        return getattr(r, "text", "") or ""
+
+    try:
+        baseline_body = await fetch(seed)
+        probes = []
+        for b in _sqli_boundary_matrix():
+            body = await fetch(seed + b["suffix"])
+            probes.append({"suffix": b["suffix"], "body": body})
+            # early exit: stop once we have a clear toggling signal
+            v = _sqli_error_signal(baseline_body, probes)
+            if v["valid"]:
+                return {"signal": True, "boundary": v["boundary"],
+                        "param": target_param, "reason": v["reason"]}
+    except Exception as e:
+        return {"signal": False, "boundary": None, "param": target_param,
+                "reason": f"screen error: {e}"}
+    return {"signal": False, "boundary": None, "param": target_param,
+            "reason": "no validated signal"}
+
+
 def _parse_dalfox_output(output: str) -> List[Dict[str, Any]]:
     """Parse Dalfox JSONL output into structured findings."""
     findings: List[Dict[str, Any]] = []
