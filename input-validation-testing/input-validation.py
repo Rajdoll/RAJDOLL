@@ -156,6 +156,37 @@ def _parse_sqlmap_output(output: str) -> List[Dict[str, Any]]:
     return findings
 
 
+import re as _re_sqli
+
+_SQLI_ERROR_RE = _re_sqli.compile(
+    r"SQLITE_ERROR|SQL syntax|syntax error at or near|unterminated quoted"
+    r"|ORA-\d{5}|PG::|psql:|mysql_fetch|valid MySQL result|SQLSTATE\["
+    r"|ODBC SQL Server Driver|Microsoft OLE DB Provider for SQL Server"
+    r"|SequelizeDatabaseError|SQLITE_|near \"[^\"]*\": syntax error",
+    _re_sqli.IGNORECASE,
+)
+
+
+def _sqli_boundary_matrix() -> list[dict]:
+    """Generic SQL breakout contexts: quote x closing-paren-depth x comment.
+    Ordered by prevalence (shallow first). Target-agnostic — enumerates the
+    finite SQL context space, never a specific query."""
+    quotes = ["'", '"', ""]          # string / numeric contexts
+    parens = ["", ")", "))", ")))"]  # closing-paren depth 0..3
+    comments = ["", "--", "#", "-- -"]  # include bare (no comment) first for prevalence
+    out: list[dict] = []
+    seen = set()
+    for q in quotes:
+        for p in parens:
+            for c in comments:
+                suffix = f"{q}{p}{c}"
+                if suffix in seen:
+                    continue
+                seen.add(suffix)
+                out.append({"suffix": suffix, "ctx": f"q={q!r} parens={len(p)} {c}"})
+    return out
+
+
 def _parse_dalfox_output(output: str) -> List[Dict[str, Any]]:
     """Parse Dalfox JSONL output into structured findings."""
     findings: List[Dict[str, Any]] = []
