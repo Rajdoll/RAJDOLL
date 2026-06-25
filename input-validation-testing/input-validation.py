@@ -233,7 +233,9 @@ async def _sqli_screen(url, param=None, method="GET", post_data=None,
                        content_type="application/x-www-form-urlencoded",
                        auth_session=None) -> dict:
     """Cheap deterministic SQLi screen. Sends a benign baseline + the generic
-    breakout matrix, returns whether a VALIDATED error signal toggled."""
+    breakout matrix, returns whether a VALIDATED error signal toggled.
+    Error-based only (no boolean/time/blind path): a purely-blind SQLi yields
+    no signal and is gated out; this is a known, accepted limitation."""
     seed = "rajdoll"
     method = (method or "GET").upper()
     akw = _sqli_auth_kwargs(auth_session)
@@ -247,9 +249,11 @@ async def _sqli_screen(url, param=None, method="GET", post_data=None,
 
     async def fetch(value):
         if method == "GET":
-            params = {target_param: value}
+            base_params = {k: (v[0] if isinstance(v, list) and v else v)
+                           for k, v in qs.items()}
+            base_params[target_param] = value
             base = f"{parts.scheme}://{parts.netloc}{parts.path}"
-            r = await _sqli_screen_send("GET", base, params=params, **akw)
+            r = await _sqli_screen_send("GET", base, params=base_params, **akw)
         else:
             body = dict(post_data) if isinstance(post_data, dict) else {}
             body[target_param] = value
@@ -271,7 +275,7 @@ async def _sqli_screen(url, param=None, method="GET", post_data=None,
                 return {"signal": True, "boundary": v["boundary"],
                         "param": target_param, "reason": v["reason"]}
     except Exception as e:
-        return {"signal": False, "boundary": None, "param": target_param,
+        return {"signal": False, "error": True, "boundary": None, "param": target_param,
                 "reason": f"screen error: {e}"}
     return {"signal": False, "boundary": None, "param": target_param,
             "reason": "no validated signal"}
@@ -2928,7 +2932,7 @@ async def test_sqli(
             _scr = await _sqli_screen(url, param=param, method=method,
                                       post_data=post_data, content_type=content_type,
                                       auth_session=auth_session)
-            if not _scr.get("signal"):
+            if _scr.get("signal") is False and not _scr.get("error"):
                 return {
                     "status": "success",
                     "data": {
