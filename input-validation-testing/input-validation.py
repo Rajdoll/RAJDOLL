@@ -188,6 +188,33 @@ def _sqli_boundary_matrix() -> list[dict]:
     return out
 
 
+def _sqli_error_signal(baseline_body: str, probes: list[dict]) -> dict:
+    """Error-based validity via causal toggle. Valid only if a DBMS error token
+    appears under some boundary, is absent at baseline, is not constant across all
+    boundaries, and is not merely our reflected input."""
+    if _SQLI_ERROR_RE.search(baseline_body or ""):
+        return {"valid": False, "boundary": None, "reason": "error present at baseline"}
+
+    def token_present(p):
+        body = p.get("body") or ""
+        if not _SQLI_ERROR_RE.search(body):
+            return False
+        # reflection guard: ignore if the matched token is just our echoed suffix
+        if (p.get("suffix") or "") and (p["suffix"] in body) and not _SQLI_ERROR_RE.search(
+            body.replace(p["suffix"], "")
+        ):
+            return False
+        return True
+
+    flags = [token_present(p) for p in probes]
+    if not any(flags):
+        return {"valid": False, "boundary": None, "reason": "no DBMS error token"}
+    if all(flags):
+        return {"valid": False, "boundary": None, "reason": "error constant, not structural"}
+    boundary = next(p["suffix"] for p, f in zip(probes, flags) if f)
+    return {"valid": True, "boundary": boundary, "reason": "error toggles with boundary"}
+
+
 def _parse_dalfox_output(output: str) -> List[Dict[str, Any]]:
     """Parse Dalfox JSONL output into structured findings."""
     findings: List[Dict[str, Any]] = []

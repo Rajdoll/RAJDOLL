@@ -33,3 +33,48 @@ def test_error_regex_rejects_benign_substring_collisions():
     assert not iv._SQLI_ERROR_RE.search("mysql_fetcher is a great metaphor")
     assert not iv._SQLI_ERROR_RE.search('near "the end": syntax error free zone')
     assert not iv._SQLI_ERROR_RE.search("PG::connection pooling guide")
+
+
+def _probe(suffix, body):
+    return {"suffix": suffix, "body": body}
+
+ERR = "Error: SQLITE_ERROR: incomplete input"
+
+def test_valid_when_error_toggles_across_boundaries():
+    # live-observed: baseline clean, ')-- errors, '))-- clean again
+    v = iv._sqli_error_signal(
+        baseline_body="ok normal results",
+        probes=[_probe("')--", ERR), _probe("'))--", "ok normal results")],
+    )
+    assert v["valid"] is True
+    assert v["boundary"] == "')--"
+
+def test_invalid_when_error_constant_regardless_of_boundary():
+    # error present everywhere incl. shapes -> not caused by our structure
+    v = iv._sqli_error_signal(
+        baseline_body="ok",
+        probes=[_probe("'", ERR), _probe("'--", ERR), _probe("'))--", ERR)],
+    )
+    assert v["valid"] is False
+
+def test_invalid_when_error_present_in_baseline():
+    v = iv._sqli_error_signal(
+        baseline_body=ERR,
+        probes=[_probe("')--", ERR)],
+    )
+    assert v["valid"] is False
+
+def test_reflection_guard_token_echoed_in_suffix_is_not_a_signal():
+    # suffix literally contains the token; response echoes it -> not backend error
+    v = iv._sqli_error_signal(
+        baseline_body="ok",
+        probes=[_probe("SQLITE_ERROR", "you searched for SQLITE_ERROR")],
+    )
+    assert v["valid"] is False
+
+def test_no_signal_when_no_token_anywhere():
+    v = iv._sqli_error_signal(
+        baseline_body="ok",
+        probes=[_probe("')--", "500 Internal Server Error"), _probe("'--", "ok")],
+    )
+    assert v["valid"] is False
