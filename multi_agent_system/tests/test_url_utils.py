@@ -28,3 +28,7 @@ def test_prefer_query_params_no_query_keeps_defaults():
 def test_prefer_query_params_dedups_overlap():
     assert prefer_query_params("http://dvwa/vulnerabilities/sqli/?id=1",
                                ["id", "q"]) == ["id", "q"]
+
+
+def test_prefer_query_params_keeps_flag_param():
+    assert prefer_query_params("http://dvwa/vulnerabilities/fi/?page", ["id"]) == ["page", "id"]

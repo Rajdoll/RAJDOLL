@@ -11,7 +11,7 @@ def absolutize_url(url: str, base: str | None) -> str:
 
 
 def prefer_query_params(url: str, defaults: list[str]) -> list[str]:
-    q = list(parse_qs(urlparse(url).query).keys())
+    q = list(parse_qs(urlparse(url).query, keep_blank_values=True).keys())
     if not q:
         return list(defaults)
     return q + [p for p in defaults if p not in q]

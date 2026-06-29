@@ -1031,10 +1031,6 @@ class BaseAgent:
 		# ✅ FIX: Use merged arguments from hook (includes LLM args)
 		args = approval.get("arguments", args)
 
-		# Absolutize a relative tool URL against the target so downstream tools
-		# (sqlmap/ffuf/httpx) never receive a host-less path. No-op if already absolute.
-		_maybe_absolutize_args_url(args, self._target)
-
 		# 🔑 PHASE 3: AUTO-INJECT AUTHENTICATION FROM SHARED CONTEXT
 		# This is the CRITICAL FIX for coverage gap - tools need auth to test authenticated endpoints
 		if not auth_session:  # Only inject if not explicitly provided
@@ -1064,6 +1060,9 @@ class BaseAgent:
 		# Normalize LLM-generated arguments to MCP signatures
 		if args:
 			args = self._normalize_llm_arguments(tool, args)
+			# Absolutize a relative tool URL (now under the canonical 'url' key) so
+			# downstream tools never receive a host-less path. No-op if already absolute.
+			_maybe_absolutize_args_url(args, self._target)
 
 		start = time.perf_counter()
 		self.log("info", "Tool execution started", {"server": server, "tool": tool, "final_args": args})
