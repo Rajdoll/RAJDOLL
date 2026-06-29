@@ -271,6 +271,26 @@ def _parse_form_fields(html, target_param):
     return {"method": None, "fields": {}}
 
 
+async def _harvest_form_fields(url, target_param, auth_session=None):
+    if not target_param:
+        return {"method": None, "fields": {}}
+    akw = _sqli_auth_kwargs(auth_session)
+    try:
+        r = await _sqli_screen_send("GET", url, **akw)
+        body = getattr(r, "text", "") or ""
+    except Exception:
+        return {"method": None, "fields": {}}
+    return _parse_form_fields(body, target_param)
+
+
+def _augment_url_query(url, extra):
+    p = urlparse(url)
+    qs = parse_qs(p.query)
+    flat = {k: (v[0] if isinstance(v, list) and v else v) for k, v in qs.items()}
+    flat.update(extra)
+    return urlunparse(p._replace(query=urlencode(flat)))
+
+
 async def _sqli_screen(url, param=None, method="GET", post_data=None,
                        content_type="application/x-www-form-urlencoded",
                        auth_session=None, companion_fields=None) -> dict:
@@ -2974,10 +2994,17 @@ async def test_sqli(
         # find-then-confirm gate: cheap deterministic screen before expensive sqlmap.
         # No validated injection signal -> skip sqlmap (detection-neutral: the
         # login-bypass probe and signalling endpoints are unaffected).
+        _parts = urlparse(url)
+        _qs = parse_qs(_parts.query)
+        _target_param = param or (next(iter(_qs), None) if method.upper() == "GET"
+                                  else (next(iter(post_data), None) if isinstance(post_data, dict) else None))
+        _harvest = await _harvest_form_fields(url, _target_param, auth_session)
+        _companion = _harvest.get("fields") or {}
+
         if os.getenv("SQLI_SCREEN_GATE", "true").lower() == "true":
             _scr = await _sqli_screen(url, param=param, method=method,
                                       post_data=post_data, content_type=content_type,
-                                      auth_session=auth_session)
+                                      auth_session=auth_session, companion_fields=_companion)
             if _scr.get("signal") is False and not _scr.get("error"):
                 return {
                     "status": "success",
@@ -2991,7 +3018,13 @@ async def test_sqli(
                 }
 
         # Try sqlmap first (comprehensive but may miss some cases)
-        sqlmap_report = await run_sqlmap_scan(url, param, config)
+        _sqlmap_url = url
+        if _companion:
+            if method.upper() == "POST" and isinstance(post_data, dict):
+                config["post_data"] = {**post_data, **_companion}
+            else:
+                _sqlmap_url = _augment_url_query(url, _companion)
+        sqlmap_report = await run_sqlmap_scan(_sqlmap_url, param, config)
         sqlmap_meta = {
             "status": sqlmap_report.get("status"),
             "message": sqlmap_report.get("message"),

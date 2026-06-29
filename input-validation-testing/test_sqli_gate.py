@@ -268,3 +268,26 @@ def test_screen_includes_companion_fields_post(monkeypatch):
                                 companion_fields={"Submit": "Submit"}))
     assert sent, "screen made no request"
     assert all(req[2].get("data", {}).get("Submit") == "Submit" for req in sent)
+
+
+def test_harvest_form_fields_fetches_and_parses(monkeypatch):
+    async def fake_send(method, url, **kw):
+        class R:
+            text = _DVWA_SQLI_FORM
+        return R()
+
+    monkeypatch.setattr(iv, "_sqli_screen_send", fake_send)
+    import asyncio
+    out = asyncio.run(iv._harvest_form_fields("http://dvwa/vulnerabilities/sqli/", "id"))
+    assert out == {"method": "GET", "fields": {"Submit": "Submit"}}
+
+
+def test_harvest_form_fields_fetch_error_is_noop(monkeypatch):
+    async def boom(method, url, **kw):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(iv, "_sqli_screen_send", boom)
+    import asyncio
+    assert iv._harvest_form_fields is not None
+    out = asyncio.run(iv._harvest_form_fields("http://dvwa/x", "id"))
+    assert out == {"method": None, "fields": {}}
