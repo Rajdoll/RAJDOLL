@@ -463,6 +463,36 @@ Operate autonomously without human guidance.
         self.write_context("discovered_endpoints", {"endpoints": all_eps, "count": len(all_eps)})
         self.log("info", f"[Recon] discovered_endpoints now has {len(all_eps)} total endpoints ({len(new_eps)} from auth links)")
 
+        # endpoint_inventory is built before this merge runs, so post-auth deep links
+        # never reach the per-agent LLM planners and agents fall back to hallucinated
+        # URLs. Fold the new auth-discovered endpoints into the inventory here, tagging
+        # them as input-testing surface (authenticated deep links are the primary attack
+        # surface regardless of whether the crawl exposed query params).
+        if not new_eps:
+            return
+        try:
+            from ..core.endpoint_inventory import augment_tags_heuristic, build_inventory
+            inv = self.context_manager.read("endpoint_inventory") or {}
+            inv_eps = inv.get("endpoints", []) if isinstance(inv, dict) else []
+            inv_urls = {e.get("url") or e.get("path") for e in inv_eps}
+            added = []
+            for off, ep in enumerate(new_eps):
+                if ep.get("url") in inv_urls:
+                    continue
+                rec = dict(ep)
+                rec["id"] = f"ep_auth_{len(inv_eps) + off + 1:03d}"
+                rec["path"] = rec.get("endpoint") or rec.get("url", "")
+                rec["tags"] = ["error_prone_param"]
+                added.append(rec)
+            if added:
+                combined = inv_eps + added
+                augment_tags_heuristic(combined)
+                new_inv = build_inventory(combined, stats=inv.get("stats", {}) if isinstance(inv, dict) else {})
+                self.write_context("endpoint_inventory", new_inv)
+                self.log("info", f"[Recon] endpoint_inventory augmented with {len(added)} auth-discovered endpoints")
+        except Exception as exc:
+            self.log("warning", f"[Recon] failed to fold auth links into endpoint_inventory: {exc}")
+
     async def _collect_baseline_data(self, client: MCPClient, target: str, domain: str, baseline_snapshot: Dict[str, Any]) -> None:
         baseline_snapshot.setdefault("baseline_results", {})
         prior_stack = self.shared_context.get("tech_stack")

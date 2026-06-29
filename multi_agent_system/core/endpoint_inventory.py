@@ -108,6 +108,9 @@ def augment_tags_heuristic(endpoints: list[dict[str, Any]]) -> list[dict[str, An
         if _NUMERIC_ID_RE.search(path):
             current.add("idor_candidate")
 
+        if _FILE_UPLOAD_HINT_RE.search(path):
+            current.add("file_upload")
+
         if method in {"POST", "PUT", "PATCH", "DELETE"}:
             current.add("state_changing_resource")
             if _REGISTRATION_HINT_RE.search(path):
@@ -117,8 +120,6 @@ def augment_tags_heuristic(endpoints: list[dict[str, Any]]) -> list[dict[str, An
             if _PASSWORD_RECOVERY_HINT_RE.search(path):
                 current.add("password_recovery")
             if "multipart" in content_type:
-                current.add("file_upload")
-            if _FILE_UPLOAD_HINT_RE.search(path):
                 current.add("file_upload")
 
         if path.startswith("/api/") or "/api/" in path or "/rest/" in path:
