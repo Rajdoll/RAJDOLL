@@ -67,6 +67,7 @@ def load_job_result(run_label: str) -> dict:
 GT_ALIAS_MAP: dict = {
     "WSTG-INPV-18": ["WSTG-CLNT-13", "WSTG-CLNT-01"],   # SSTI ↔ client-side template injection
     "WSTG-INPV-01": ["WSTG-INPV-02", "WSTG-CLNT-01"],   # Reflected/Stored/DOM XSS (same tool family)
+    "WSTG-CLNT-01": ["WSTG-INPV-01", "WSTG-INPV-02"],   # XSS (reflected/stored) classified by tool as INPV
     "WSTG-CLNT-04": ["WSTG-CLNT-12", "WSTG-CLNT-09"],   # Client-side allowlist ↔ open redirect
     "WSTG-CONF-05": ["WSTG-CONF-07", "WSTG-INFO-02"],    # Sensitive endpoint ↔ hidden endpoints
     "WSTG-BUSL-09": ["WSTG-ATHZ-02", "WSTG-BUSL-01"],   # Business Logic/IDOR ↔ IDOR
