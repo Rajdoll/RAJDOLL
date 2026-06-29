@@ -250,3 +250,21 @@ def test_screen_without_companion_unchanged(monkeypatch):
     asyncio.run(iv._sqli_screen("http://t/x?id=1", param="id", method="GET"))
     assert sent
     assert all("Submit" not in req[2].get("params", {}) for req in sent)
+
+
+def test_screen_includes_companion_fields_post(monkeypatch):
+    sent = []
+
+    async def fake_send(method, url, **kw):
+        sent.append((method, url, kw))
+        class R:
+            text = ""
+        return R()
+
+    monkeypatch.setattr(iv, "_sqli_screen_send", fake_send)
+    import asyncio
+    asyncio.run(iv._sqli_screen("http://t/x", param="id", method="POST",
+                                post_data={"id": "1"},
+                                companion_fields={"Submit": "Submit"}))
+    assert sent, "screen made no request"
+    assert all(req[2].get("data", {}).get("Submit") == "Submit" for req in sent)
