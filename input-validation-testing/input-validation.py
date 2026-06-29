@@ -233,17 +233,21 @@ def _sqli_auth_kwargs(auth_session):
 class _FormFieldCollector(_FormHTMLParser):
     def __init__(self):
         super().__init__()
-        self.forms = []      # list of {"method": str, "fields": {name: value}}
+        self.forms = []      # list of {"method", "fields": {name:value}, "typed":[...]}
         self._cur = None
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag == "form":
-            self._cur = {"method": (a.get("method") or "GET").upper(), "fields": {}}
+            self._cur = {"method": (a.get("method") or "GET").upper(), "fields": {}, "typed": []}
         elif tag in ("input", "select", "textarea") and self._cur is not None:
             name = a.get("name")
             if name:
-                self._cur["fields"][name] = a.get("value") or ""
+                value = a.get("value") or ""
+                self._cur["fields"][name] = value
+                ftype = "textarea" if tag == "textarea" else ("select" if tag == "select"
+                                                               else (a.get("type") or "text").lower())
+                self._cur["typed"].append({"name": name, "type": ftype, "value": value})
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
@@ -269,6 +273,20 @@ def _parse_form_fields(html, target_param):
                 "fields": {k: v for k, v in form["fields"].items() if k != target_param},
             }
     return {"method": None, "fields": {}}
+
+
+def _parse_post_form(html):
+    if not html:
+        return None
+    try:
+        c = _FormFieldCollector()
+        c.feed(html)
+    except Exception:
+        return None
+    for form in c.forms:
+        if form["method"] == "POST":
+            return form
+    return None
 
 
 async def _harvest_form_fields(url, target_param, auth_session=None):
