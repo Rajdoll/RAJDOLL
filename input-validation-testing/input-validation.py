@@ -28,6 +28,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from urllib.parse import urlparse, parse_qs, urlencode, quote, unquote, urlunparse
+from html.parser import HTMLParser as _FormHTMLParser
 
 # mcp = FastMCP("input-validation-testing-enhanced")  # REMOVED: Using JSON-RPC adapter instead
 
@@ -227,6 +228,47 @@ def _sqli_auth_kwargs(auth_session):
         if tok:
             kw["headers"] = {"Authorization": f"Bearer {tok}"}
     return kw
+
+
+class _FormFieldCollector(_FormHTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.forms = []      # list of {"method": str, "fields": {name: value}}
+        self._cur = None
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "form":
+            self._cur = {"method": (a.get("method") or "GET").upper(), "fields": {}}
+        elif tag in ("input", "select", "textarea") and self._cur is not None:
+            name = a.get("name")
+            if name:
+                self._cur["fields"][name] = a.get("value") or ""
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if tag == "form" and self._cur is not None:
+            self.forms.append(self._cur)
+            self._cur = None
+
+
+def _parse_form_fields(html, target_param):
+    if not html or not target_param:
+        return {"method": None, "fields": {}}
+    try:
+        c = _FormFieldCollector()
+        c.feed(html)
+    except Exception:
+        return {"method": None, "fields": {}}
+    for form in c.forms:
+        if target_param in form["fields"]:
+            return {
+                "method": form["method"],
+                "fields": {k: v for k, v in form["fields"].items() if k != target_param},
+            }
+    return {"method": None, "fields": {}}
 
 
 async def _sqli_screen(url, param=None, method="GET", post_data=None,

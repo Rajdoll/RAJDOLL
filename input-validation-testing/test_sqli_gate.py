@@ -189,3 +189,30 @@ def test_screen_preserves_sibling_get_params(monkeypatch):
 def _async_return(v):
     async def _f(*a, **k): return v
     return _f()
+
+
+_DVWA_SQLI_FORM = '''
+<div class="vulnerable_code_area">
+    <form action="#" method="GET">
+        <input type="text" size="15" name="id">
+        <input type="submit" name="Submit" value="Submit">
+    </form>
+    <input type="button" value="View Help" name="HelpBtn">
+    <input type="button" value="View Source" name="SourceBtn">
+</div>
+'''
+
+
+def test_parse_form_fields_dvwa_sqli():
+    out = iv._parse_form_fields(_DVWA_SQLI_FORM, "id")
+    assert out["method"] == "GET"
+    assert out["fields"] == {"Submit": "Submit"}  # excludes 'id', excludes out-of-form buttons
+
+
+def test_parse_form_fields_param_absent():
+    assert iv._parse_form_fields(_DVWA_SQLI_FORM, "nothere") == {"method": None, "fields": {}}
+
+
+def test_parse_form_fields_empty_or_none():
+    assert iv._parse_form_fields("", "id") == {"method": None, "fields": {}}
+    assert iv._parse_form_fields(_DVWA_SQLI_FORM, None) == {"method": None, "fields": {}}
