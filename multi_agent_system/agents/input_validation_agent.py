@@ -6,6 +6,7 @@ from ..utils.mcp_client import MCPClient
 from ..utils.session_manager import SessionManager
 from ..utils.react_loop import ReActLoop, react_test
 from ..core.endpoint_inventory import read_tag
+from ..core.url_utils import absolutize_url, prefer_query_params
 import re
 import httpx
 import os
@@ -315,7 +316,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
         discovered_urls: list[str] = [
             ep.get("path") or ep.get("url", "") for ep in targets if isinstance(ep, dict)
         ]
-        discovered_urls = [u for u in discovered_urls if u]
+        discovered_urls = [absolutize_url(u, target) for u in discovered_urls if u]
         if not discovered_urls:
             discovered_urls = [target]
         priority_endpoints = list(discovered_urls)
@@ -510,6 +511,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             parameters = url_info.get('parameters', ['id'])
             if not isinstance(parameters, list) or not parameters:
                 parameters = ['id', 'q', 'search']
+            parameters = prefer_query_params(url, parameters)
             priority_score = url_info.get('priority_score', 0)
             reason = url_info.get('reason', 'LLM selected')
 
