@@ -102,6 +102,33 @@ def _safe_parse_test_plan(text):
             return _recover_array(candidate, "selections") or _recover_array(candidate, "priority_urls")
 
 
+_STORED_XSS_CONTENT_PATTERNS = [
+    "feedback", "comment", "review", "message", "post", "note",
+    "profile", "account", "user", "complaint", "recycle", "submit",
+]
+
+
+def _select_stored_xss_endpoints(all_links, target, cap=10):
+    from urllib.parse import urlparse
+    same_host = urlparse(target).netloc
+    keyworded, others, seen = [], [], set()
+    for u in all_links:
+        if not u:
+            continue
+        p = urlparse(u)
+        if same_host and p.netloc and p.netloc != same_host:
+            continue
+        path = p.path or "/"
+        if path in seen:
+            continue
+        seen.add(path)
+        if any(k in u.lower() for k in _STORED_XSS_CONTENT_PATTERNS):
+            keyworded.append(path)
+        else:
+            others.append(path)
+    return (keyworded + others)[:cap] or ["/"]
+
+
 @AgentRegistry.register("InputValidationAgent")
 class InputValidationAgent(BaseAgent):
     system_prompt: ClassVar[str] = """
@@ -694,14 +721,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     if isinstance(self.shared_context.get("auth_discovered_links"), list)
                     else []
                 ) or list(discovered_urls or [])
-                user_content_patterns = [
-                    "feedback", "comment", "review", "message", "post", "note",
-                    "profile", "account", "user", "complaint", "recycle", "submit",
-                ]
-                stored_xss_endpoints = [
-                    urlparse(u).path for u in all_links
-                    if any(p in u.lower() for p in user_content_patterns)
-                ] or ["/"]  # fallback: at least test the root
+                stored_xss_endpoints = _select_stored_xss_endpoints(all_links, target)
                 for ep in stored_xss_endpoints[:6]:
                     ep_url = urljoin(target, ep)
                     result = await self.execute_tool(
