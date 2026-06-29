@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Type, ClassVar, Optional, List
 from urllib.parse import urlparse
+from ..core.url_utils import absolutize_url
 from sqlalchemy.exc import IntegrityError
 
 from ..core.config import settings
@@ -39,6 +40,14 @@ CIRCUIT_BREAKER_FAILURES = 3    # Max failures before circuit opens
 
 # URL argument names checked for host scope enforcement in _before_tool_execution()
 URL_ARG_NAMES = ("url", "target_url", "target", "base_url", "domain", "host")
+
+
+def _maybe_absolutize_args_url(args: dict, base: str | None) -> dict:
+	"""Rewrite a relative args['url'] to absolute against base. No-op otherwise."""
+	url = args.get("url")
+	if url and base:
+		args["url"] = absolutize_url(url, base)
+	return args
 
 
 def _strip_nul_bytes(value):
@@ -1021,6 +1030,10 @@ class BaseAgent:
 
 		# ✅ FIX: Use merged arguments from hook (includes LLM args)
 		args = approval.get("arguments", args)
+
+		# Absolutize a relative tool URL against the target so downstream tools
+		# (sqlmap/ffuf/httpx) never receive a host-less path. No-op if already absolute.
+		_maybe_absolutize_args_url(args, self._target)
 
 		# 🔑 PHASE 3: AUTO-INJECT AUTHENTICATION FROM SHARED CONTEXT
 		# This is the CRITICAL FIX for coverage gap - tools need auth to test authenticated endpoints
