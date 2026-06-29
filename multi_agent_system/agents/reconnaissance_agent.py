@@ -17,6 +17,19 @@ from ..utils.mcp_client import MCPClient
 from .modules.directory_scanner import DirectoryScanner
 
 
+def _auth_link_inventory_record(ep: dict, ep_id: str) -> dict:
+    """Build an endpoint_inventory record for an auth-discovered link.
+
+    path carries the ABSOLUTE url (not the relative endpoint) so downstream
+    tools never receive a host-less path.
+    """
+    rec = dict(ep)
+    rec["id"] = ep_id
+    rec["path"] = rec.get("url") or rec.get("endpoint", "")
+    rec["tags"] = ["error_prone_param"]
+    return rec
+
+
 async def build_endpoint_inventory(
     hostname: str,
     endpoints: list[dict],
@@ -479,11 +492,8 @@ Operate autonomously without human guidance.
             for off, ep in enumerate(new_eps):
                 if ep.get("url") in inv_urls:
                     continue
-                rec = dict(ep)
-                rec["id"] = f"ep_auth_{len(inv_eps) + off + 1:03d}"
-                rec["path"] = rec.get("endpoint") or rec.get("url", "")
-                rec["tags"] = ["error_prone_param"]
-                added.append(rec)
+                added.append(_auth_link_inventory_record(
+                    ep, f"ep_auth_{len(inv_eps) + off + 1:03d}"))
             if added:
                 combined = inv_eps + added
                 augment_tags_heuristic(combined)
