@@ -216,3 +216,37 @@ def test_parse_form_fields_param_absent():
 def test_parse_form_fields_empty_or_none():
     assert iv._parse_form_fields("", "id") == {"method": None, "fields": {}}
     assert iv._parse_form_fields(_DVWA_SQLI_FORM, None) == {"method": None, "fields": {}}
+
+
+def test_screen_includes_companion_fields(monkeypatch):
+    sent = []
+
+    async def fake_send(method, url, **kw):
+        sent.append((method, url, kw))
+        class R:
+            text = ""  # no error -> screen returns no signal; we only assert request shape
+        return R()
+
+    monkeypatch.setattr(iv, "_sqli_screen_send", fake_send)
+    import asyncio
+    asyncio.run(iv._sqli_screen("http://t/x?id=1", param="id", method="GET",
+                                companion_fields={"Submit": "Submit"}))
+    assert sent, "screen made no request"
+    # every GET request carries Submit=Submit alongside the fuzzed id
+    assert all(req[2].get("params", {}).get("Submit") == "Submit" for req in sent)
+
+
+def test_screen_without_companion_unchanged(monkeypatch):
+    sent = []
+
+    async def fake_send(method, url, **kw):
+        sent.append((method, url, kw))
+        class R:
+            text = ""
+        return R()
+
+    monkeypatch.setattr(iv, "_sqli_screen_send", fake_send)
+    import asyncio
+    asyncio.run(iv._sqli_screen("http://t/x?id=1", param="id", method="GET"))
+    assert sent
+    assert all("Submit" not in req[2].get("params", {}) for req in sent)

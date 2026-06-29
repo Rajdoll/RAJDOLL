@@ -273,7 +273,7 @@ def _parse_form_fields(html, target_param):
 
 async def _sqli_screen(url, param=None, method="GET", post_data=None,
                        content_type="application/x-www-form-urlencoded",
-                       auth_session=None) -> dict:
+                       auth_session=None, companion_fields=None) -> dict:
     """Cheap deterministic SQLi screen. Sends a benign baseline + the generic
     breakout matrix, returns whether a VALIDATED error signal toggled.
     Error-based only (no boolean/time/blind path): a purely-blind SQLi yields
@@ -293,11 +293,15 @@ async def _sqli_screen(url, param=None, method="GET", post_data=None,
         if method == "GET":
             base_params = {k: (v[0] if isinstance(v, list) and v else v)
                            for k, v in qs.items()}
+            if companion_fields:
+                base_params.update(companion_fields)
             base_params[target_param] = value
             base = f"{parts.scheme}://{parts.netloc}{parts.path}"
             r = await _sqli_screen_send("GET", base, params=base_params, **akw)
         else:
             body = dict(post_data) if isinstance(post_data, dict) else {}
+            if companion_fields:
+                body.update(companion_fields)
             body[target_param] = value
             if "json" in (content_type or ""):
                 r = await _sqli_screen_send("POST", url, json=body, **akw)
