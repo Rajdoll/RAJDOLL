@@ -299,7 +299,7 @@ def _stored_xss_form_plan(form):
         if ftype in _STORED_XSS_TEXT_TYPES:
             form_data[name] = value
             injectable.append(name)
-        elif ftype in ("submit", "button", "image", "reset"):
+        elif ftype in ("submit", "button", "image"):
             if not submit_seen:
                 form_data[name] = value
                 submit_seen = True

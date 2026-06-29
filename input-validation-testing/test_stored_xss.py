@@ -69,3 +69,16 @@ def test_stored_xss_uses_real_fields(monkeypatch):
     # the POST used the REAL fields, not the old guesses
     assert "mtxMessage" in posted and "btnSign" in posted
     assert "comment" not in posted and "message" not in posted
+
+
+def test_stored_xss_form_plan_ignores_reset_button():
+    html = ('<form method="post">'
+            '<input name="msg" type="text">'
+            '<input name="rst" type="reset" value="Reset">'
+            '<input name="go" type="submit" value="Go">'
+            '</form>')
+    form = iv._parse_post_form(html)
+    form_data, injectable = iv._stored_xss_form_plan(form)
+    assert injectable == ["msg"]
+    assert "rst" not in form_data          # reset never in POST payload
+    assert form_data.get("go") == "Go"     # real submit still selected
