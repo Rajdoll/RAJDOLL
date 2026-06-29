@@ -37,3 +37,35 @@ def test_parse_form_fields_dict_shape_unchanged():
     # regression: the typed extension must not break the SQLi parser
     out = iv._parse_form_fields(_GET_ONLY, "id")
     assert out == {"method": "GET", "fields": {"Submit": "Submit"}}
+
+
+def test_stored_xss_form_plan_guestbook():
+    form = iv._parse_post_form(_GUESTBOOK)
+    form_data, injectable = iv._stored_xss_form_plan(form)
+    assert injectable == ["txtName", "mtxMessage"]
+    assert form_data["btnSign"] == "Sign Guestbook"
+    assert "btnClear" not in form_data          # only the first submit kept
+    assert set(form_data) == {"txtName", "mtxMessage", "btnSign"}
+
+
+def test_stored_xss_uses_real_fields(monkeypatch):
+    posted = {}
+
+    class _Resp:
+        def __init__(self, text, ct="text/html"):
+            self.text = text; self.headers = {"content-type": ct}
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url): return _Resp(_GUESTBOOK)
+        async def post(self, url, data=None):
+            posted.update(data or {}); return _Resp(_GUESTBOOK)
+
+    monkeypatch.setattr(iv.httpx, "AsyncClient", _Client)
+    import asyncio
+    asyncio.run(iv.test_stored_xss("http://dvwa/vulnerabilities/xss_s/"))
+    # the POST used the REAL fields, not the old guesses
+    assert "mtxMessage" in posted and "btnSign" in posted
+    assert "comment" not in posted and "message" not in posted

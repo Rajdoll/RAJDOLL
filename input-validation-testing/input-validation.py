@@ -289,6 +289,25 @@ def _parse_post_form(html):
     return None
 
 
+_STORED_XSS_TEXT_TYPES = ("text", "search", "email", "url", "tel", "password", "textarea")
+
+
+def _stored_xss_form_plan(form):
+    form_data, injectable, submit_seen = {}, [], False
+    for f in form["typed"]:
+        name, ftype, value = f["name"], f["type"], f["value"]
+        if ftype in _STORED_XSS_TEXT_TYPES:
+            form_data[name] = value
+            injectable.append(name)
+        elif ftype in ("submit", "button", "image", "reset"):
+            if not submit_seen:
+                form_data[name] = value
+                submit_seen = True
+        elif ftype in ("hidden",):
+            form_data[name] = value
+    return form_data, injectable
+
+
 async def _harvest_form_fields(url, target_param, auth_session=None):
     if not target_param:
         return {"method": None, "fields": {}}
@@ -1027,7 +1046,8 @@ async def test_stored_xss(
         ]
         
         findings = []
-        
+        injectable_fields = None
+
         # If form_data not provided, discover via common REST API endpoints
         if not form_data:
             req_kwargs = {"timeout": 30, "follow_redirects": True, "verify": False}
@@ -1058,9 +1078,13 @@ async def test_stored_xss(
                             # JSON API - try common fields
                             form_data = {"comment": "", "message": "", "content": "", "email": "", "captcha": ""}
                             break
-                        elif '<form' in resp.text or 'textarea' in resp.text.lower():
-                            form_data = {"comment": "", "message": "", "content": "", "review": ""}
-                            break
+                        else:
+                            _form = _parse_post_form(resp.text)
+                            if _form is not None:
+                                _fd, injectable_fields = _stored_xss_form_plan(_form)
+                                if injectable_fields:
+                                    form_data = _fd
+                                    break
                     except Exception:
                         continue
         
@@ -1077,7 +1101,7 @@ async def test_stored_xss(
             elif 'token' in auth_session:
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
         async with httpx.AsyncClient(**req_kwargs) as client:
-            for field_name in (test_fields or form_data.keys()):
+            for field_name in (test_fields or injectable_fields or form_data.keys()):
                 for payload in payloads[:8]:  # Test first 8 payloads (basic + bypass techniques)
                     test_data = form_data.copy()
                     test_data[field_name] = payload
