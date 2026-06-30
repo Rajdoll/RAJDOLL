@@ -34,6 +34,28 @@ def test_xss_priority_paths_extracts_tagged():
     ]
 
 
+def test_xss_s_included_from_large_untagged_set():
+    # Real DVWA case: no content-keyword pages, xss_s buried at ~pos 16. The sweep
+    # must still include it (cap covers all non-static pages); no LLM tags relied on.
+    links = [f"http://dvwa/p{i}.php" for i in range(15)] + [
+        "http://dvwa/vulnerabilities/xss_s/",
+        "http://dvwa/vulnerabilities/xss_r/",
+    ]
+    sel = _select_stored_xss_endpoints(links, "http://dvwa/")
+    assert "/vulnerabilities/xss_s/" in sel
+
+
+def test_static_assets_filtered():
+    links = [
+        "http://dvwa/dvwa/css/main.css",
+        "http://dvwa/.well-known/security.txt",
+        "http://dvwa/vulnerabilities/xss_s/",
+    ]
+    sel = _select_stored_xss_endpoints(links, "http://dvwa/")
+    assert "/vulnerabilities/xss_s/" in sel
+    assert not any(p.endswith((".css", ".txt")) for p in sel)
+
+
 def test_xss_tagged_pages_land_in_tested_window():
     # xss_s buried past the cap/[:6] in raw discovery; prepending the xss-tagged
     # url must pull it into the tested window (first 6).

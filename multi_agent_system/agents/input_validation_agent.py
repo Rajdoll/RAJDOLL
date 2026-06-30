@@ -108,7 +108,13 @@ _STORED_XSS_CONTENT_PATTERNS = [
 ]
 
 
-def _select_stored_xss_endpoints(all_links, target, cap=10):
+_STORED_XSS_STATIC_EXT = (
+    ".css", ".js", ".map", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+    ".woff", ".woff2", ".ttf", ".txt", ".xml", ".pdf", ".zip",
+)
+
+
+def _select_stored_xss_endpoints(all_links, target, cap=25):
     from urllib.parse import urlparse
     same_host = urlparse(target).netloc
     keyworded, others, seen = [], [], set()
@@ -120,6 +126,8 @@ def _select_stored_xss_endpoints(all_links, target, cap=10):
             continue
         path = p.path or "/"
         if path in seen:
+            continue
+        if path.lower().endswith(_STORED_XSS_STATIC_EXT):
             continue
         seen.add(path)
         if any(k in u.lower() for k in _STORED_XSS_CONTENT_PATTERNS):
@@ -731,11 +739,11 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     if isinstance(self.shared_context.get("auth_discovered_links"), list)
                     else []
                 ) or list(discovered_urls or [])
-                # Planner already tags XSS sink pages (tests=['xss']); lead with them so
-                # form pages like /vulnerabilities/xss_s/ aren't truncated out of the window.
-                all_links = _xss_priority_paths(priority_urls) + all_links
                 stored_xss_endpoints = _select_stored_xss_endpoints(all_links, target)
-                for ep in stored_xss_endpoints[:6]:
+                # SessionManagement's logout test runs before InputValidation and kills the
+                # shared session, so the guestbook GET would redirect to login. Refresh if dead.
+                auth_data = await self._reauth_if_session_dead(target, stored_xss_endpoints, auth_data)
+                for ep in stored_xss_endpoints:
                     ep_url = urljoin(target, ep)
                     result = await self.execute_tool(
                         server="input-validation-testing",
@@ -865,6 +873,55 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                             )
             except Exception as e:
                 self.log("warning", f"test_redos failed: {e}")
+
+    def _resolve_scan_credentials(self):
+        scan_creds = self.context_manager.read("scan_credentials")
+        if not isinstance(scan_creds, dict):
+            return None
+        ref = scan_creds.get("credential_ref")
+        if not ref:
+            return None
+        secret = self.context_manager.read_secret(ref)
+        if not isinstance(secret, dict):
+            return None
+        u, p = secret.get("username"), secret.get("password")
+        return [(u, p)] if u and p else None
+
+    async def _reauth_if_session_dead(self, target, endpoints, auth_data):
+        if not auth_data:
+            return auth_data
+        cookies = (auth_data.get("cookies") if isinstance(auth_data, dict) else None) or {}
+        import httpx
+        from urllib.parse import urljoin
+        dead = False
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True, verify=False) as c:
+                for ep in (endpoints or [])[:3]:
+                    resp = await c.get(urljoin(target, ep), cookies=cookies)
+                    if "login" in str(resp.url).lower():
+                        dead = True
+                        break
+        except Exception:
+            return auth_data
+        if not dead:
+            return auth_data
+        creds = self._resolve_scan_credentials()
+        if not creds:
+            return auth_data
+        try:
+            from ..utils.session_service import create_authenticated_session
+            ok, fresh = await create_authenticated_session(target, credentials=creds)
+        except Exception:
+            return auth_data
+        if not ok or not fresh:
+            return auth_data
+        self.log("warning", "Re-authenticated stale session for stored-XSS sweep")
+        return {
+            "cookies": fresh.get("cookies", {}),
+            "headers": fresh.get("headers", {}),
+            "token": fresh.get("jwt_token"),
+            "username": fresh.get("username"),
+        }
 
     # ============================================================================
     # 🔧 LLM-DRIVEN TEST EXECUTION METHODS
