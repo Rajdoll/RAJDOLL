@@ -129,6 +129,16 @@ def _select_stored_xss_endpoints(all_links, target, cap=10):
     return (keyworded + others)[:cap] or ["/"]
 
 
+def _xss_priority_paths(priority_urls):
+    out = []
+    for u in priority_urls or []:
+        if isinstance(u, dict) and "xss" in (u.get("tests") or []):
+            url = u.get("url")
+            if url:
+                out.append(url)
+    return out
+
+
 @AgentRegistry.register("InputValidationAgent")
 class InputValidationAgent(BaseAgent):
     system_prompt: ClassVar[str] = """
@@ -721,6 +731,9 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     if isinstance(self.shared_context.get("auth_discovered_links"), list)
                     else []
                 ) or list(discovered_urls or [])
+                # Planner already tags XSS sink pages (tests=['xss']); lead with them so
+                # form pages like /vulnerabilities/xss_s/ aren't truncated out of the window.
+                all_links = _xss_priority_paths(priority_urls) + all_links
                 stored_xss_endpoints = _select_stored_xss_endpoints(all_links, target)
                 for ep in stored_xss_endpoints[:6]:
                     ep_url = urljoin(target, ep)
