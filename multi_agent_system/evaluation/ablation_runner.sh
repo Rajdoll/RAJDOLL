@@ -61,7 +61,7 @@ for AGENT in "${AGENTS[@]}"; do
     sleep 60
   done
 
-  curl -s "$BASE_URL/api/scans/$JOB_ID/findings" > "$OUTPUT_DIR/findings.json"
+  curl -s "$BASE_URL/api/scans/$JOB_ID/findings?mode=raw" > "$OUTPUT_DIR/findings.json"
   COUNT=$(python3 -c "import json; print(len(json.load(open('$OUTPUT_DIR/findings.json'))))" 2>/dev/null || echo "?")
   echo "  Done: $COUNT findings -> $OUTPUT_DIR/"
 done

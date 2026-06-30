@@ -51,7 +51,7 @@ collect_job() {
 
   curl -s "$API/api/scans/$JOB_ID" > "$OUTPUT_DIR/job_result.json"
   local FINDINGS
-  FINDINGS=$(curl -s "$API/api/scans/$JOB_ID/findings")
+  FINDINGS=$(curl -s "$API/api/scans/$JOB_ID/findings?mode=raw")
   echo "$FINDINGS" > "$OUTPUT_DIR/findings.json"
   local COUNT
   COUNT=$(echo "$FINDINGS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null)

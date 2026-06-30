@@ -31,7 +31,7 @@ elif [[ "$STATUS" == "completed" || "$STATUS" == "failed" ]]; then
   echo "Scan already finished ($STATUS) — saving results and skipping to next."
   mkdir -p "$EVAL_DIR/runs/$LABEL"
   curl -s "$API/api/scans/$JOB_ID" > "$EVAL_DIR/runs/$LABEL/job_result.json"
-  curl -s "$API/api/scans/$JOB_ID/findings" > "$EVAL_DIR/runs/$LABEL/findings.json"
+  curl -s "$API/api/scans/$JOB_ID/findings?mode=raw" > "$EVAL_DIR/runs/$LABEL/findings.json"
 fi
 
 echo "[$(date '+%H:%M:%S')] Benchmark resumed" >> "$LOG"

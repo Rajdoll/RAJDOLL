@@ -58,7 +58,7 @@ print(f\"Status: {d.get('status')}\")
 print(f\"Findings: {len(d.get('findings', []))}\")
 "
 
-curl -s "$API_BASE/api/scans/$JOB_ID/findings" | tee "$OUTPUT_DIR/findings.json" | python3 -c "
+curl -s "$API_BASE/api/scans/$JOB_ID/findings?mode=raw" | tee "$OUTPUT_DIR/findings.json" | python3 -c "
 import sys, json
 findings = json.load(sys.stdin)
 print(f'Total findings saved: {len(findings)}')

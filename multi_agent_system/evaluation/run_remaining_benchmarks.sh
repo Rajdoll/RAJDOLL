@@ -31,7 +31,7 @@ run_scan() {
 
   # Simpan hasil
   curl -s "$API/api/scans/$JOB_ID" > "$OUT/job_result.json"
-  curl -s "$API/api/scans/$JOB_ID/findings" > "$OUT/findings.json"
+  curl -s "$API/api/scans/$JOB_ID/findings?mode=raw" > "$OUT/findings.json"
   TOTAL=$(python3 -c "import json; d=json.load(open('$OUT/findings.json')); print(len(d))" 2>/dev/null)
   log "$LABEL selesai — $TOTAL findings disimpan ke $OUT"
 }
