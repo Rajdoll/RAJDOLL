@@ -41,12 +41,15 @@ def get_findings(
         job = db.query(Job).get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        # raw mode is consumed only by the eval pipeline (needs every detected
+        # finding, not evidence). Serializing evidence for all findings made raw
+        # exceed the request timeout, so skip evidence there to keep it fast.
         return serialize_findings_for_job(
             db,
             job_id,
             mode=mode,
-            include_evidence=True,
-            include_internal_evidence=(mode == "raw"),
+            include_evidence=(mode != "raw"),
+            include_internal_evidence=False,
         )
 
 
