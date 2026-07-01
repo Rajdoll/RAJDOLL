@@ -5,7 +5,7 @@ import sys
 def split_by_source(findings: list) -> dict:
     out = {"deterministic": [], "llm-adjudicated": []}
     for f in findings or []:
-        src = (f.get("evidence") or {}).get("source")
+        src = f.get("source") or (f.get("evidence") or {}).get("source")
         if src == "llm-adjudicated":
             out["llm-adjudicated"].append(f)
         else:

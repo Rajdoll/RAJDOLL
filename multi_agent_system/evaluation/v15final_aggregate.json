@@ -1,0 +1,57 @@
+{
+  "recall": {
+    "mean": 94.5,
+    "std": 0.68,
+    "values": [
+      95.0,
+      93.75,
+      95.0,
+      95.0,
+      93.75
+    ]
+  },
+  "precision": {
+    "mean": 91.46,
+    "std": 0.42,
+    "values": [
+      91.59,
+      90.74,
+      91.74,
+      91.74,
+      91.51
+    ]
+  },
+  "f1": {
+    "mean": 92.96,
+    "std": 0.51,
+    "values": [
+      93.26,
+      92.22,
+      93.34,
+      93.34,
+      92.62
+    ]
+  },
+  "tcr": {
+    "mean": 91.11,
+    "std": 2.03,
+    "values": [
+      92.59,
+      88.89,
+      92.59,
+      92.59,
+      88.89
+    ]
+  },
+  "n_runs": 5,
+  "std_type": "sample (ddof=1)",
+  "fn_per_run": [
+    4,
+    5,
+    4,
+    4,
+    5
+  ],
+  "stable_fn": "ATHN-09 x2 (Reset Jim's/Change Bender's) + INPV-07/XXE x2 (Data Access/DoS)",
+  "swing_fn": "INPV-19 SSRF (detected run1/3/4, missed run2/5)"
+}

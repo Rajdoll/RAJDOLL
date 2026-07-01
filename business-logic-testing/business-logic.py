@@ -321,7 +321,7 @@ async def test_business_data_validation(base_url: str, test_endpoints: List[str]
                                     "description": f"Server accepted invalid business data: {test['name']}"
                                 })
                                 _emit_artifact(artifacts, wstg="WSTG-BUSL-01", method="POST", url=url,
-                                               role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                               role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                                status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                                baseline_status=None)
                     except Exception:
@@ -576,7 +576,7 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                             "description": "Can access final step without completing prerequisites"
                         })
                         _emit_artifact(artifacts, wstg="WSTG-BUSL-06", method="GET", url=final_url,
-                                       role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                       role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                        status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                        baseline_status=None)
             except Exception:
@@ -605,7 +605,7 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                             "description": f"Step {i+1} accessible without completing step {i}"
                         })
                         _emit_artifact(artifacts, wstg="WSTG-BUSL-06", method="GET", url=url,
-                                       role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                       role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                        status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                        baseline_status=None)
                 except Exception:
@@ -634,7 +634,7 @@ async def test_workflow_bypass(base_url: str, workflow_steps: List[str] = None, 
                             "description": "Can complete action via POST without workflow validation"
                         })
                         _emit_artifact(artifacts, wstg="WSTG-BUSL-06", method="POST", url=final_url,
-                                       role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                       role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                        status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                        baseline_status=None)
             except Exception:
@@ -1038,7 +1038,7 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
                                 "evidence": f"PUT {ep} with price=0.01 returned {tamper_resp.status_code}"
                             })
                             _emit_artifact(artifacts, wstg="WSTG-BUSL-03", method="PUT", url=ep,
-                                           role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                           role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                            status=tamper_resp.status_code, headers=dict(tamper_resp.headers), body=tamper_resp.text,
                                            baseline_status=resp.status_code)
                 except Exception:
@@ -1063,7 +1063,7 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
                                 "evidence": f"POST {ep} with quantity={qty} returned {resp.status_code}"
                             })
                             _emit_artifact(artifacts, wstg="WSTG-BUSL-03", method="POST", url=ep,
-                                           role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                           role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                            status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                            baseline_status=None)
                     except Exception:
@@ -1090,7 +1090,7 @@ async def test_integrity_checks(url: str, endpoints: Optional[List[str]] = None,
                                     "evidence": resp_body
                                 })
                                 _emit_artifact(artifacts, wstg="WSTG-BUSL-03", method="PUT", url=ep,
-                                               role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                               role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                                status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                                baseline_status=None)
                     except Exception:
@@ -1386,7 +1386,7 @@ async def test_coupon_forgery(url: str, endpoints: Optional[List[str]] = None, a
 
         findings = []
         artifacts = []
-        _role = str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous")
+        _role = (auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous"
 
         # Use provided endpoints or fall back to base URL
         test_targets = endpoints if endpoints else [base_url]

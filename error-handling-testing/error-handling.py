@@ -76,7 +76,7 @@ async def probe_for_error_leaks(base_url: str, auth_session: Optional[Dict[str, 
     """
     findings = {}
     artifacts = []
-    _role = str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous")
+    _role = (auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous"
 
     # Manual fuzzing
     fuzz_payloads = ["'", "\"", "\\", "%27", "<", ">", "[", "]", "{", "}", "a" * 2048]
@@ -145,7 +145,7 @@ async def check_generic_error_pages(base_url: str, auth_session: Optional[Dict[s
 
         info_leaks = []
         artifacts = []
-        _role = str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous")
+        _role = (auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous"
         base = base_url.rstrip('/')
 
         async with httpx.AsyncClient(**req_kwargs) as client:

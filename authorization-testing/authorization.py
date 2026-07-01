@@ -93,7 +93,7 @@ async def test_vertical_privilege_escalation(
                             "description": "Low-privilege user successfully accessed a high-privilege URL."
                         })
                         _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
-                                       role=str(low_priv_session.get("user") if isinstance(low_priv_session, dict) else low_priv_session or "anonymous"),
+                                       role=(low_priv_session.get("username") if isinstance(low_priv_session, dict) else low_priv_session) or "anonymous",
                                        status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                        baseline_status=None)
                     else:
@@ -149,7 +149,7 @@ async def test_idor_vulnerability(
                             "response_size": len(resp.content)
                         })
                         _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
-                                       role=str(session.get("user") if isinstance(session, dict) else session or "anonymous"),
+                                       role=(session.get("username") if isinstance(session, dict) else session) or "anonymous",
                                        status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                        baseline_status=None)
                 except Exception:
@@ -196,7 +196,7 @@ async def test_http_method_tampering(
                         })
                         if 200 <= resp.status_code < 300:
                             _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method=method, url=url,
-                                           role=str(session.get("user") if isinstance(session, dict) else session or "anonymous"),
+                                           role=(session.get("username") if isinstance(session, dict) else session) or "anonymous",
                                            status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                            baseline_status=base_resp.status_code)
                 except Exception:
@@ -314,7 +314,7 @@ async def test_idor_comprehensive(
                                 }
                             })
                             _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
-                                           role=str(session.get("user") if isinstance(session, dict) else session or "anonymous"),
+                                           role=(session.get("username") if isinstance(session, dict) else session) or "anonymous",
                                            status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                            baseline_status=None)
 
@@ -419,7 +419,7 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
                                     "recommendation": f"Enforce server-side {id_field} from session, ignore client-sent value",
                                 })
                                 _emit_artifact(artifacts, wstg="WSTG-ATHZ-03", method="POST", url=endpoint_url,
-                                               role=str(auth_session.get("user") if isinstance(auth_session, dict) else auth_session or "anonymous"),
+                                               role=(auth_session.get("username") if isinstance(auth_session, dict) else auth_session) or "anonymous",
                                                status=resp.status_code, headers=dict(resp.headers), body=resp.text,
                                                baseline_status=None)
                                 break  # One proof per uid is enough

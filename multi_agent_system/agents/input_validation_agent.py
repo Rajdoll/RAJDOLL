@@ -739,6 +739,7 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                     if isinstance(self.shared_context.get("auth_discovered_links"), list)
                     else []
                 ) or list(discovered_urls or [])
+                all_links = _xss_priority_paths(priority_urls) + all_links
                 stored_xss_endpoints = _select_stored_xss_endpoints(all_links, target)
                 # SessionManagement's logout test runs before InputValidation and kills the
                 # shared session, so the guestbook GET would redirect to login. Refresh if dead.

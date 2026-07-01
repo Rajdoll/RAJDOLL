@@ -16,7 +16,7 @@ def _strip_version(spec: str) -> str:
     parts = v.split(".")[:3]
     while len(parts) < 3:
         parts.append("0")
-    return ".".join(p if p.isdigit() else "0" for p in parts)
+    return ".".join(p if p else "0" for p in parts)
 
 
 def _recover_manifest_urls(base: str) -> list:

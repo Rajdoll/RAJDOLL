@@ -84,6 +84,8 @@ def serialize_finding(
         "proof_type": classification.get("proof_type"),
         "impact_class": classification.get("impact_class"),
         "validation_errors": classification.get("validation_errors", []),
+        # Always emitted so ablation can split by source even in raw (evidence-free) exports
+        "source": evidence.get("source") if isinstance(evidence, dict) else None,
     }
     if include_evidence:
         serialized["evidence"] = _clean_evidence(evidence, include_internal=include_internal_evidence)
