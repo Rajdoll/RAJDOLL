@@ -234,8 +234,8 @@ class ReActLoop:
         NOSQL_TECHNIQUES = {}
         SSTI_TECHNIQUES_DICT = {
             "ssti_detection": {
-                "payloads": ["{{7*7}}", "${7*7}", "<%= 7*7 %>"],
-                "indicators": ["49", "7777777"]
+                "payloads": ["{{7919*6997}}", "${7919*6997}", "<%= 7919*6997 %>"],
+                "indicators": ["jinja2", "twig", "freemarker", "velocity", "smarty", "thymeleaf"],
             },
         }
         XXE_TECHNIQUES_DICT = {}
@@ -1365,39 +1365,55 @@ AVAILABLE TECHNIQUE PAYLOADS (use as starting point, modify as needed):
                 
                 vulnerable = False
                 evidence = []
-                
-                # SSTI math-based detection ({{7*7}} = 49, {{7*'7'}} = 7777777)
-                ssti_math_results = [
-                    "49", "7777777", "42", "12345678987654321",
-                    "9", "81", "343"  # Other common math results
-                ]
-                
-                for result in ssti_math_results:
-                    if result in response_text:
-                        # Make sure it's likely from our payload
-                        if "7*7" in payload or "7*'7'" in payload or "3*3" in payload:
-                            vulnerable = True
-                            evidence.append(f"SSTI math result detected: {result}")
-                
-                # SSTI error indicators
+
+                # Baseline request with a benign marker to guard against natural collisions.
+                import random as _random
+                import string as _string
+                from .ssti_verify import product_from_payload, verify_ssti_evaluation
+
+                _marker = "raj" + "".join(_random.choices(_string.ascii_lowercase + _string.digits, k=6))
+                _enc_marker = quote(_marker, safe="")
+                if "?" in url:
+                    baseline_url = f"{url}&{parameter}={_enc_marker}"
+                else:
+                    baseline_url = f"{url}?{parameter}={_enc_marker}"
+                try:
+                    baseline_resp = await client.get(baseline_url, headers=headers, cookies=cookies)
+                    baseline_text = baseline_resp.text
+                except Exception:
+                    baseline_text = ""
+
+                # SSTI math-based detection: expression must evaluate to its product,
+                # the product must be absent from the baseline, and the raw expression
+                # must not be echoed (evaluation, not reflection).
+                parsed = product_from_payload(payload)
+                if parsed:
+                    product, raw_expr = parsed
+                    if verify_ssti_evaluation(baseline_text, response_text, product, raw_expr):
+                        vulnerable = True
+                        evidence.append(f"SSTI math result detected: {product}")
+
+                # SSTI error indicators: distinctive engine and error signatures only,
+                # and only when absent from the baseline. Generic words like "template"
+                # and "render" are intentionally excluded (they appear in normal pages).
                 ssti_errors = [
                     "jinja2", "mako", "twig", "freemarker",
-                    "velocity", "smarty", "thymeleaf",
-                    "template", "render", "templateerror",
-                    "undefined variable", "undefined method",
-                    "erubis", "erb", "haml"
+                    "velocity", "smarty", "thymeleaf", "erubis",
+                    "templateerror", "undefined variable", "undefined method",
                 ]
-                
                 for indicator in ssti_errors + indicators:
-                    if indicator.lower() in response_text.lower():
+                    ind = indicator.lower()
+                    if ind in response_text.lower() and ind not in baseline_text.lower():
                         vulnerable = True
                         evidence.append(f"SSTI indicator: '{indicator}'")
-                
-                # Check for code execution results
-                if "uid=" in response_text or "root:" in response_text:
-                    vulnerable = True
-                    evidence.append("Possible code execution via SSTI")
-                
+
+                # Check for code execution results (distinctive, guard against baseline).
+                for exec_sig in ("uid=", "root:"):
+                    if exec_sig in response_text and exec_sig not in baseline_text:
+                        vulnerable = True
+                        evidence.append("Possible code execution via SSTI")
+                        break
+
                 return {
                     "status_code": response.status_code,
                     "response_length": len(response_text),
