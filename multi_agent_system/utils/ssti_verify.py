@@ -1,20 +1,13 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
+from .differential_verify import verify_differential, run_differential_probe
 
 _MATH_RE = re.compile(r"(\d+)\s*\*\s*(\d+)")
 
 # One representative payload per common template-engine syntax family.
 _ENGINE_TEMPLATES = ("{{%s}}", "${%s}", "<%%= %s %%>", "#{%s}", "*{%s}")
-
-
-def _with_param(url: str, param: str, value: str) -> str:
-    """Return url with param set to value, replacing any existing value for that key."""
-    parts = urlsplit(url)
-    query = dict(parse_qsl(parts.query))
-    query[param] = value
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 def build_ssti_payloads(a: int, b: int) -> list[tuple[str, str, str]]:
@@ -52,31 +45,14 @@ def ssti_candidates(endpoints: list[dict], cap: int = 15) -> list[tuple[str, str
 def verify_ssti_evaluation(baseline_text: str, test_text: str, product: str, raw_expr: str) -> bool:
     """True only if the product appears in the test response, is absent from the
     baseline response, and the raw expression is not echoed (evaluation, not reflection)."""
-    return (
-        product in test_text
-        and product not in baseline_text
-        and raw_expr not in test_text
-    )
+    return verify_differential(baseline_text, test_text, product, raw_expr)
 
 
 async def run_ssti_probe(client, candidates, payloads, marker: str) -> list[dict]:
     """For each (url, param), take a benign baseline then test each payload.
     Return confirmed findings only."""
-    confirmed: list[dict] = []
-    for url, param in candidates:
-        try:
-            baseline = await client.get(_with_param(url, param, marker))
-        except Exception:
-            continue
-        baseline_text = baseline.text
-        for payload, product, raw_expr in payloads:
-            try:
-                resp = await client.get(_with_param(url, param, payload))
-            except Exception:
-                continue
-            if verify_ssti_evaluation(baseline_text, resp.text, product, raw_expr):
-                confirmed.append(
-                    {"url": url, "parameter": param, "payload": payload, "product": product}
-                )
-                break
-    return confirmed
+    confirmed = await run_differential_probe(client, candidates, payloads, marker)
+    return [
+        {"url": c["url"], "parameter": c["parameter"], "payload": c["payload"], "product": c["signal"]}
+        for c in confirmed
+    ]
