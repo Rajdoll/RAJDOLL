@@ -411,8 +411,12 @@ Write to shared_context:
                         self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
-                        if data.get("vulnerable"):
-                            self.add_finding("WSTG-BUSL-02", "Mass assignment: privileged fields accepted", severity="critical", evidence=data)
+                        # test_mass_assignment computes no automated verdict (its own
+                        # response says "Manually verify..."); always surface the raw
+                        # evidence as a human-review lead, never auto-reportable.
+                        evidence = dict(data)
+                        evidence["proof_type"] = "heuristic"
+                        self.add_finding("WSTG-BUSL-02", "Mass assignment: privileged fields submitted, needs manual verification", severity="critical", evidence=evidence)
                 except Exception as e:
                     self.log("warning", f"test_mass_assignment failed: {e}")
 
