@@ -106,3 +106,15 @@ async def test_run_ssti_probe_rejects_reflection():
             client, [("https://x/a?id=1", "id")], payloads, marker="rajabc123"
         )
     assert confirmed == []
+
+
+def test_job164_wildcard_inventory_yields_no_candidates():
+    # Exact shape of the agoda job-164 route inventory: all wildcard patterns.
+    endpoints = [
+        {"url": "https://www.agoda.com/*/activities/detail?*", "params": ["q"]},
+        {"url": "https://www.agoda.com/*/trips?", "params": ["q"]},
+        {"url": "https://www.agoda.com/*/home?", "params": ["q"]},
+        {"url": "https://www.agoda.com/*-*/place/*?", "params": ["q"]},
+        {"url": "https://www.agoda.com/activities/detail?*", "params": ["q"]},
+    ]
+    assert ssti_candidates(endpoints) == []

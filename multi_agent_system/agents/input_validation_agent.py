@@ -625,56 +625,46 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
             if _skip_agent:
                 break
 
-        # Aggressive-mode: force SSTi probe on parameterized endpoints.
-        # Generic Tplmap-style detection — {{7*7}} -> 49 means template eval succeeded.
+        # Aggressive-mode: differential SSTi probe on real parameterized endpoints.
+        # Confirms only when {{a*b}} evaluates to the product, absent from a baseline,
+        # and the raw expression is not echoed. No fabricated params, no wildcard URLs.
         if os.getenv("ADAPTIVE_MODE", "balanced").lower() == "aggressive":
+            import random
+            import string
+            from ..utils.ssti_verify import ssti_candidates, build_ssti_payloads, run_ssti_probe
+
             _inventory = self.shared_context.get("endpoint_inventory", {})
             _eps = _inventory.get("endpoints", []) or self.shared_context.get("discovered_endpoints", {}).get("endpoints", [])
-            _candidates = [
-                ep for ep in _eps
-                if (ep.get("params") or ep.get("query_parameters") or "?" in (ep.get("url") or ep.get("path") or ""))
-            ][:15]
-            _ssti_payloads = [
-                ("{{7*7}}", "49"),
-                ("${7*7}", "49"),
-                ("<%= 7*7 %>", "49"),
-                ("#{7*7}", "49"),
-                ("*{7*7}", "49"),
-                ("{{7*'7'}}", "7777777"),
-            ]
+            _candidates = ssti_candidates(_eps, cap=15)
+            _a = random.randint(10000, 99999)
+            _b = random.randint(10000, 99999)
+            _payloads = build_ssti_payloads(_a, _b)
+            _marker = "raj" + "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
             async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _ssti_client:
-                for ep in _candidates:
-                    _url = ep.get("url") or ep.get("path")
-                    if not _url:
-                        continue
-                    _params = ep.get("params") or list((ep.get("query_parameters") or {}).keys()) or ["q"]
-                    for _payload, _signal in _ssti_payloads:
-                        try:
-                            _resp = await _ssti_client.get(_url, params={_params[0]: _payload})
-                            if _signal in _resp.text:
-                                all_findings.setdefault("ssti", []).append({
-                                    "url": _url,
-                                    "parameter": _params[0],
-                                    "payload": _payload,
-                                    "signal_detected": _signal,
-                                })
-                                self.add_finding(
-                                    "WSTG-INPV-18",
-                                    f"Server-Side Template Injection via {_params[0]} on {_url}",
-                                    severity="critical",
-                                    evidence={
-                                        "url": _url,
-                                        "parameter": _params[0],
-                                        "payload": _payload,
-                                        "expected_signal": _signal,
-                                        "proof_type": "exploit_success",
-                                        "impact": "Template engine evaluates arbitrary expressions — RCE potential.",
-                                    },
-                                    details=f"Aggressive mode forced SSTi probe. Payload {_payload} produced signal {_signal} in response.",
-                                )
-                                break
-                        except Exception:
-                            continue
+                _confirmed = await run_ssti_probe(_ssti_client, _candidates, _payloads, _marker)
+            for _c in _confirmed:
+                all_findings.setdefault("ssti", []).append({
+                    "url": _c["url"],
+                    "parameter": _c["parameter"],
+                    "payload": _c["payload"],
+                    "signal_detected": _c["product"],
+                })
+                self.add_finding(
+                    "WSTG-INPV-18",
+                    f"Server-Side Template Injection via {_c['parameter']} on {_c['url']}",
+                    severity="critical",
+                    evidence={
+                        "url": _c["url"],
+                        "parameter": _c["parameter"],
+                        "payload": _c["payload"],
+                        "expected_signal": _c["product"],
+                        "baseline_absent": True,
+                        "raw_reflected": False,
+                        "proof_type": "exploit_success",
+                        "impact": "Template engine evaluates arbitrary expressions -- RCE potential.",
+                    },
+                    details=f"Differential SSTi confirm: {_c['payload']} produced {_c['product']} (absent in baseline, expression not reflected).",
+                )
 
         # Report all findings
         self._report_all_findings(all_findings)
