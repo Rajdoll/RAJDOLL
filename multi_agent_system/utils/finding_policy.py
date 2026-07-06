@@ -42,6 +42,18 @@ CONCRETE_PROOF_TYPES = {
     "verified_state_change",
     "sensitive_data_exposure",
 }
+DIFFERENTIAL_PROOF_TYPES = {
+    "exploit_success",
+    "verified_state_change",
+    "sensitive_data_exposure",
+    "data_exposure",
+}
+
+
+def _has_differential_proof(evidence: dict[str, Any]) -> bool:
+    return evidence.get("baseline_absent") is True and evidence.get("raw_reflected") is False
+
+
 BUG_BOUNTY_OUT_OF_SCOPE_PATTERNS = (
     "rate limit",
     "rate-limit",
@@ -233,6 +245,10 @@ def assess_finding_contract(
     if not _has_severity_rationale(evidence_dict, details, meta_dict):
         errors.append("missing_severity_rationale")
 
+    proof_type = str(evidence_dict.get("proof_type") or meta_dict.get("proof_type") or "").lower()
+    if proof_type in DIFFERENTIAL_PROOF_TYPES and not _has_differential_proof(evidence_dict):
+        errors.append("missing_differential_proof")
+
     return errors
 
 
@@ -361,6 +377,11 @@ def build_finding_meta(
         evidence_quality = "moderate"
         proof_type = _evidence_proof_type(evidence, meta) or "structured_evidence"
     if contract_errors and not lab_evidence_reportable and is_true_positive is None and reportability_status == "reportable":
+        finding_state = "lead"
+        reportability_status = "needs_validation"
+        evidence_quality = "weak"
+        proof_type = meta.get("proof_type") or "partial"
+    if "missing_differential_proof" in contract_errors and is_true_positive is not True:
         finding_state = "lead"
         reportability_status = "needs_validation"
         evidence_quality = "weak"
