@@ -260,7 +260,7 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     findings = data.get("findings", [])
-                    vuln_count = data.get("vulnerabilities_found", 0)
+                    vuln_count = data.get("bypass_vulnerabilities_found", 0)
                     if findings and vuln_count > 0:
                         self.add_finding("WSTG-BUSL-07", f"Workflow bypasses: {vuln_count} multi-step process bypass(es)", severity="high", evidence={"findings": findings[:2]})
             except Exception as e:
@@ -280,10 +280,8 @@ Write to shared_context:
                         self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
-                        findings = data.get("findings", [])
-                        vuln_count = data.get("vulnerabilities_found", 0)
-                        if findings and vuln_count > 0:
-                            self.add_finding("WSTG-BUSL-07", f"Race condition vulnerabilities: {vuln_count} TOCTOU issue(s)", severity="high", evidence={"findings": findings[:2]})
+                        if data.get("race_condition_detected"):
+                            self.add_finding("WSTG-BUSL-07", f"Race condition vulnerabilities: {data.get('successful_responses', 0)} concurrent request(s) succeeded", severity="high", evidence={"successful_responses": data.get("successful_responses"), "results": data.get("results", [])[:3]})
                 except Exception as e:
                     self.log("warning", f"test_race_conditions failed: {e}")
 
@@ -301,10 +299,8 @@ Write to shared_context:
                         self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
-                        findings = data.get("findings", [])
-                        vuln_count = data.get("vulnerabilities_found", 0)
-                        if findings and vuln_count > 0:
-                            self.add_finding("WSTG-BUSL-05", f"Function limit bypasses: {vuln_count} rate limit bypass(es)", severity="medium", evidence={"findings": findings[:3]})
+                        if not data.get("rate_limiting_detected"):
+                            self.add_finding("WSTG-BUSL-05", f"Function limit bypasses: no rate limiting after {data.get('burst_requests_sent', 0)} burst request(s)", severity="medium", evidence={"burst_requests_sent": data.get("burst_requests_sent"), "sample_results": data.get("sample_results", [])[:3], "average_response_time_ms": data.get("average_response_time_ms")})
                 except Exception as e:
                     self.log("warning", f"test_function_limits failed: {e}")
 
@@ -456,8 +452,8 @@ Write to shared_context:
                         self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
-                        if data.get("vulnerable"):
-                            self.add_finding("WSTG-BUSL-04", "Race condition in process timing", severity="high", evidence=data)
+                        if data.get("successful_requests", 0) > 1:
+                            self.add_finding("WSTG-BUSL-04", f"Race condition in process timing: {data.get('successful_requests')} concurrent request(s) succeeded", severity="high", evidence={"successful_requests": data.get("successful_requests"), "total_requests": data.get("total_requests"), "status_codes_received": data.get("status_codes_received", [])})
                 except Exception as e:
                     self.log("warning", f"test_process_timing_race_condition failed: {e}")
 
@@ -475,8 +471,8 @@ Write to shared_context:
                         self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
-                        if data.get("vulnerable"):
-                            self.add_finding("WSTG-BUSL-06", "No usage limits: burst requests accepted", severity="medium", evidence=data)
+                        if not data.get("rate_limit_enforced"):
+                            self.add_finding("WSTG-BUSL-06", f"No usage limits: burst of {data.get('total_requests', 0)} requests accepted without rate limiting", severity="medium", evidence={"total_requests": data.get("total_requests"), "status_codes_received": data.get("status_codes_received", [])})
                 except Exception as e:
                     self.log("warning", f"test_usage_limits_burst failed: {e}")
 
@@ -494,8 +490,8 @@ Write to shared_context:
                         self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
-                        if data.get("vulnerable"):
-                            self.add_finding("WSTG-BUSL-08", "Unexpected file types accepted in upload", severity="high", evidence=data)
+                        if data.get("unsafe_uploads_accepted", 0) > 0:
+                            self.add_finding("WSTG-BUSL-08", f"Unexpected file types accepted in upload: {data.get('unsafe_uploads_accepted')} file(s)", severity="high", evidence={"findings": data.get("findings", [])[:3], "unsafe_uploads_accepted": data.get("unsafe_uploads_accepted")})
                 except Exception as e:
                     self.log("warning", f"test_unexpected_file_upload failed: {e}")
 
