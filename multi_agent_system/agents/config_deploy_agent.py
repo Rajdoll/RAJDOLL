@@ -447,28 +447,6 @@ Write to shared_context:
             except Exception as e:
                 self.log("warning", f"test_hidden_endpoints failed: {e}")
 
-        # WSTG-CONF-02: npm/package vulnerability scanning
-        if self.should_run_tool("test_npm_vulnerabilities"):
-            try:
-                res = await self.run_tool_with_timeout(
-                    client.call_tool(
-                        server="configuration-and-deployment-management",
-                        tool="test_npm_vulnerabilities",
-                        args={"url": target}, auth_session=auth_data), timeout=60
-                )
-                if isinstance(res, dict) and res.get("status") == "success":
-                    data = res.get("data", {})
-                    if data.get("vulnerable"):
-                        for finding in data.get("findings", []):
-                            self.add_finding(
-                                "WSTG-CONF-02",
-                                f"Vulnerable component: {finding.get('type', 'unknown')}",
-                                severity=finding.get("severity", "medium"),
-                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
-                            )
-            except Exception as e:
-                self.log("warning", f"test_npm_vulnerabilities failed: {e}")
-
         # WSTG-CONF-01: Vulnerable npm packages via /ftp/package.json.bak null byte bypass
         await self._check_ftp_packages(target)
 
@@ -539,7 +517,6 @@ Write to shared_context:
             'test_subdomain_takeover',
             'test_vulnerable_components',
             'test_hidden_endpoints',
-            'test_npm_vulnerabilities',
         ]
 
     def _domain_from_target(self, target: str) -> str:

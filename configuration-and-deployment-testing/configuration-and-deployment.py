@@ -1378,122 +1378,6 @@ async def test_hidden_endpoints(url: str, auth_session: Optional[Dict[str, Any]]
         return {"status": "error", "message": f"Hidden endpoint testing failed: {str(e)}"}
 
 
-async def test_npm_vulnerabilities(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Scan for known npm/package vulnerabilities via exposed package.json and JS libraries (WSTG-CONF-02)."""
-    try:
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        base_url = f"{parsed.scheme}://{parsed.netloc}"
-
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        if auth_session:
-            if auth_session.get("token"):
-                headers["Authorization"] = f"Bearer {auth_session['token']}"
-            if auth_session.get("cookies"):
-                headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in auth_session["cookies"].items())
-
-        findings = []
-
-        # Known vulnerable JS libraries and their CVEs
-        known_vuln_libs = {
-            "sanitize-html": {"vuln_below": "2.0.0", "cve": "CVE-2021-26539", "severity": "high", "desc": "Prototype pollution in sanitize-html"},
-            "express-jwt": {"vuln_below": "6.0.0", "cve": "CVE-2020-15084", "severity": "high", "desc": "Authorization bypass in express-jwt"},
-            "jsonwebtoken": {"vuln_below": "9.0.0", "cve": "CVE-2022-23529", "severity": "critical", "desc": "Insecure key retrieval in jsonwebtoken"},
-            "lodash": {"vuln_below": "4.17.21", "cve": "CVE-2021-23337", "severity": "high", "desc": "Command injection via template"},
-            "minimist": {"vuln_below": "1.2.6", "cve": "CVE-2021-44906", "severity": "critical", "desc": "Prototype pollution in minimist"},
-            "glob-parent": {"vuln_below": "5.1.2", "cve": "CVE-2020-28469", "severity": "high", "desc": "ReDoS in glob-parent"},
-            "ansi-regex": {"vuln_below": "6.0.1", "cve": "CVE-2021-3807", "severity": "high", "desc": "ReDoS in ansi-regex"},
-            "ua-parser-js": {"vuln_below": "1.0.33", "cve": "CVE-2022-25927", "severity": "high", "desc": "ReDoS in ua-parser-js"},
-        }
-
-        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True, headers=headers) as client:
-            # 1. Try to access package.json
-            package_json_paths = ["/package.json", "/.package.json", "/package.json.bak"]
-            for path in package_json_paths:
-                try:
-                    resp = await client.get(f"{base_url}{path}")
-                    if resp.status_code == 200:
-                        try:
-                            pkg = resp.json()
-                            if pkg.get("dependencies") or pkg.get("devDependencies"):
-                                all_deps = {}
-                                all_deps.update(pkg.get("dependencies", {}))
-                                all_deps.update(pkg.get("devDependencies", {}))
-
-                                findings.append({
-                                    "type": "Package manifest exposed",
-                                    "endpoint": path,
-                                    "severity": "high",
-                                    "description": f"package.json exposed with {len(all_deps)} dependencies",
-                                    "evidence": f"Dependencies: {list(all_deps.keys())[:10]}"
-                                })
-
-                                # Check for known vulnerable packages
-                                for lib_name, vuln_info in known_vuln_libs.items():
-                                    if lib_name in all_deps:
-                                        version = all_deps[lib_name].lstrip("^~>=<")
-                                        findings.append({
-                                            "type": f"Vulnerable dependency: {lib_name}",
-                                            "endpoint": path,
-                                            "severity": vuln_info["severity"],
-                                            "description": f"{vuln_info['desc']} ({vuln_info['cve']}). Installed: {version}",
-                                            "evidence": f"{lib_name}@{all_deps[lib_name]} - {vuln_info['cve']}"
-                                        })
-                        except Exception:
-                            # Not valid JSON but still accessible
-                            findings.append({
-                                "type": "Package file accessible",
-                                "endpoint": path,
-                                "severity": "medium",
-                                "description": f"Package file accessible at {path}",
-                                "evidence": resp.text[:200]
-                            })
-                except Exception:
-                    continue
-
-            # 2. Check main page for frontend library versions
-            try:
-                resp = await client.get(base_url)
-                html = resp.text if resp.status_code == 200 else ""
-
-                # Check for Angular version in HTML
-                import re
-                angular_match = re.search(r'ng-version="([\d.]+)"', html)
-                if angular_match:
-                    version = angular_match.group(1)
-                    major = int(version.split('.')[0]) if version.split('.')[0].isdigit() else 0
-                    if major < 13:
-                        findings.append({
-                            "type": "Outdated Angular version",
-                            "endpoint": "/",
-                            "severity": "medium",
-                            "description": f"Angular {version} detected - may have known CVEs",
-                            "evidence": f"ng-version=\"{version}\""
-                        })
-
-                # Check for jQuery version
-                jquery_match = re.search(r'jquery[.-]?([\d.]+(?:\.min)?\.js)', html, re.I)
-                if jquery_match:
-                    version = jquery_match.group(1).replace('.min.js', '').replace('.js', '')
-                    findings.append({
-                        "type": "jQuery version detected",
-                        "endpoint": "/",
-                        "severity": "low",
-                        "description": f"jQuery {version} detected in page source",
-                        "evidence": f"jquery-{version}"
-                    })
-            except Exception:
-                pass
-
-        return {"status": "success", "data": {
-            "vulnerable": any(f.get("severity") in ("high", "critical") for f in findings),
-            "findings": findings,
-            "vulnerabilities_found": len(findings)
-        }}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
 __all__ = [
     'execute_wsl_command',
     'find_sensitive_files_and_dirs',
@@ -1510,7 +1394,6 @@ __all__ = [
     'test_subdomain_takeover',
     'test_vulnerable_components',
     'test_hidden_endpoints',
-    'test_npm_vulnerabilities',
 ]
 
 
