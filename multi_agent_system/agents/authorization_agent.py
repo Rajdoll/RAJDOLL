@@ -362,10 +362,21 @@ Write to shared_context:
                     self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                 if isinstance(res, dict) and res.get("status") == "success":
                     results = res.get("data", {}).get("results", [])
-                    if results:
-                        # Ensure results is list before slicing
-                        sample = results[:3] if isinstance(results, list) else list(results.items())[:3] if isinstance(results, dict) else str(results)[:200]
-                        self.add_finding("WSTG-ATHZ-02", "Different responses to method tampering", severity="low", evidence={"sample": sample})
+                    confirmed = _confirmed_access_control_results(results)
+                    if confirmed:
+                        self.add_finding(
+                            "WSTG-ATHZ-02",
+                            "Different responses to method tampering",
+                            severity="low",
+                            evidence={
+                                "proof_type": "method_tampering_confirmed",
+                                "impact": "Method tampering had impact proof beyond a bare status-code difference",
+                                "sample": confirmed[:3],
+                            },
+                            details="Requires proof beyond a status-code difference, such as owner mismatch, sensitive data, or verified state change.",
+                        )
+                    elif results:
+                        self.log("info", "method tampering results had no impact proof beyond status code")
             except Exception as e:
                 self.log("warning", f"test_http_method_tampering failed: {e}")
 
@@ -402,13 +413,17 @@ Write to shared_context:
                 if isinstance(res, dict) and res.get("status") == "success":
                     data = res.get("data", {})
                     if data.get("vulnerable"):
-                        for finding in data.get("findings", []):
-                            self.add_finding(
-                                "WSTG-ATHZ-02",
-                                f"User spoofing: {finding['type']}",
-                                severity=finding.get("severity", "high"),
-                                evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
-                            )
+                        confirmed = _confirmed_access_control_results(data.get("findings", []))
+                        if confirmed:
+                            for finding in confirmed:
+                                self.add_finding(
+                                    "WSTG-ATHZ-02",
+                                    f"User spoofing: {finding['type']}",
+                                    severity=finding.get("severity", "high"),
+                                    evidence={"endpoint": finding.get("endpoint", ""), "evidence": str(finding.get("evidence", ""))[:200]}
+                                )
+                        else:
+                            self.log("info", "user spoofing results had no impact proof beyond status code")
             except Exception as e:
                 self.log("warning", f"test_user_spoofing failed: {e}")
 
