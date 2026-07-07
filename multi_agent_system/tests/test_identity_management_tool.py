@@ -165,6 +165,46 @@ async def test_identical_length_usernames_with_real_difference_still_flagged(mon
     assert "username_enumeration_registration" in types, f"expected enumeration still flagged, got: {findings}"
 
 
+async def test_short_json_enumeration_signal_is_caught_not_swallowed_as_noise(monkeypatch):
+    """A compact JSON API where "admin" already exists and gets an extra
+    ~40-byte "username already taken" style differentiator, while the other
+    (non-existent) usernames get a plain "not found" body. Page is small
+    (~100 bytes total, not an 89KB SPA), so this is exactly the shape the
+    length-normalization is supposed to catch. After normalizing out each
+    username's own length: admin=100, administrator=60, root=60 -- a 40-byte
+    real spread. This must be flagged as enumeration."""
+    module = _load_identity_management_tool()
+    usernames = ["admin", "administrator", "root"]
+
+    # not-found body = 60 bytes of fixed JSON wrapper + len(username) (echoed
+    # back in the payload); "admin" additionally gets 40 bytes of genuine
+    # distinguishing text ("username already taken" style message).
+    base_len = 60
+    distinguishing_extra = 40
+    lengths = {
+        "admin": base_len + len("admin") + distinguishing_extra,
+        "administrator": base_len + len("administrator"),
+        "root": base_len + len("root"),
+    }
+
+    register_responses = [_resp(200, text="x" * lengths[u]) for u in usernames]
+    # Reset and timing sub-tests carry no signal -- isolate the assertion to
+    # the registration sub-test.
+    reset_responses = [_resp(200, text="x" * 50) for _ in usernames]
+    timing_responses = [_resp(200, text="") for _ in range(len(usernames) * 3)]
+
+    module.httpx = _mock_client(post_side_effect=register_responses + reset_responses + timing_responses)
+    monkeypatch.setattr(module.time, "time", MagicMock(side_effect=_flat_times([0.05] * (len(usernames) * 3))))
+
+    result = await module.test_username_policy("https://example.com", test_usernames=usernames)
+
+    findings = result["data"]["findings"]
+    types = [f["type"] for f in findings]
+    assert "username_enumeration_registration" in types, (
+        f"expected a 40-byte real distinguishing signal on a small page to be flagged, got: {findings}"
+    )
+
+
 async def test_timing_subtest_uses_repeated_samples_and_median(monkeypatch):
     """A single one-off slow request for one username (out of several
     repeated samples) must not trip the timing signal -- the median across

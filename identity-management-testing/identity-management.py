@@ -512,9 +512,11 @@ async def test_account_provisioning(base_url: str, auth_session: Optional[Dict[s
 # subtracting each username's own length, admin/administrator/root on a
 # ~89KB dynamic page still differed by up to 11 bytes (CSRF tokens,
 # timestamps, analytics ids embedded in the page -- unrelated to the
-# username). 100 bytes comfortably absorbs that jitter while remaining far
-# below any realistic distinguishing message (e.g. "username already taken").
-_ENUMERATION_LENGTH_NOISE_TOLERANCE = 100
+# username). 25 bytes comfortably absorbs that jitter (>2x margin) while
+# staying well below a realistic short distinguishing message on a compact
+# JSON API (e.g. "username already taken", ~30-50 bytes) -- a value of 100
+# would silently swallow exactly that signal as noise.
+_ENUMERATION_LENGTH_NOISE_TOLERANCE = 25
 
 
 def _has_enumeration_signal(responses_by_user: Dict[str, Dict[str, Any]]) -> bool:
