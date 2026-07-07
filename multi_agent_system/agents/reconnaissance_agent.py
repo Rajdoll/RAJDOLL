@@ -1754,7 +1754,7 @@ Operate autonomously without human guidance.
                             severity="medium",
                             evidence={
                                 "route_count": _n_routes,
-                                "proof_type": "sensitive_data_exposure",
+                                "proof_type": "inventory_only",
                                 "sample_routes": [r["path"] for r in _js_result.get("routes", [])[:10]],
                                 "impact": "Hidden routes extracted from JS bundle may bypass server-side auth checks.",
                             },
@@ -1786,7 +1786,7 @@ Operate autonomously without human guidance.
                                         evidence={
                                             "library": _name,
                                             "source_file": _src_url,
-                                            "proof_type": "data_exposure",
+                                            "proof_type": "source_observation",
                                             "impact": _impact,
                                         },
                                         details=f"Vendor signature for {_name} found in {_src_url}. Update or replace.",

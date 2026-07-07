@@ -61,6 +61,18 @@ SENSITIVE_KEYWORDS = [
     "database", "mysql", "postgresql", "mongodb"
 ]
 
+# Asset file extensions that look like a valid email TLD to the regex but are not
+EMAIL_ASSET_EXTENSIONS = {
+    "jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico",
+    "css", "js", "woff", "woff2", "ttf", "eot", "pdf",
+}
+
+
+def _filter_asset_filenames(emails: list) -> list:
+    """Drop regex matches whose apparent TLD is actually an image/asset file extension."""
+    return [e for e in emails if e.rsplit(".", 1)[-1].lower() not in EMAIL_ASSET_EXTENSIONS]
+
+
 # Meta files to check
 META_FILES = [
     "/robots.txt", "/sitemap.xml", "/.well-known/security.txt", 
@@ -1262,7 +1274,7 @@ async def analyze_content(domain: str) -> Dict[str, Any]:
                 return {"status": "error", "message": "Unable to fetch homepage content"}
         
         # Email extraction
-        emails = list(set(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', content)))
+        emails = _filter_asset_filenames(list(set(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', content))))
         
         # HTML comments extraction
         comments = re.findall(r'<!--(.*?)-->', content, re.DOTALL)
@@ -1377,7 +1389,7 @@ async def analyze_webpage_content(domain: str) -> Dict[str, Any]:
             javascript_leaks.append({"file": base_url or "/", "finding": "API key-like token found (redacted)", "severity": "high"})
 
         # Sensitive patterns
-        emails = list(set(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', html)))[:50]
+        emails = _filter_asset_filenames(list(set(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', html))))[:50]
         internal_ips = list(set(re.findall(r'\b(?:10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.)\d{1,3}\.\d{1,3}\b', html)))
         usernames = list(set(re.findall(r'\b(admin|root|test|user\d{0,3})\b', html, re.I)))
 
@@ -2808,8 +2820,12 @@ async def analyze_javascript_routes(url: str, auth_session: Optional[Dict[str, A
             api_endpoints.update(matches)
 
         # === Extract Hardcoded Secrets ===
+        # Requires a recognizable credential SHAPE (long random-looking run) next to a
+        # credential keyword, or a known provider-key prefix -- bare dictionary words like
+        # "register"/"componentDidMount" no longer qualify (they're too short/plain).
         secret_patterns = [
-            (r'(?:password|passwd|secret|key|token|api_key)\s*[:=]\s*["\']([^"\']{8,})["\']', "hardcoded_secret"),
+            (r'(?:password|passwd|secret|key|token|api_key)\s*[:=]\s*["\']([A-Za-z0-9_\-]{20,})["\']', "hardcoded_secret"),
+            (r'["\'](sk_live_[A-Za-z0-9]{10,}|AKIA[A-Z0-9]{16}|ghp_[A-Za-z0-9]{20,})["\']', "provider_key"),
             (r'["\']([A-Za-z0-9+/]{40,}={0,2})["\']', "base64_string"),  # Long base64
             (r'eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+', "jwt_token"),  # JWT pattern
         ]
