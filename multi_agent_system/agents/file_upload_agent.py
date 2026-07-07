@@ -16,6 +16,13 @@ COMMON_UPLOAD_PATHS = (
     "/rest/upload",
 )
 
+# test_xxe_via_svg finding types where the tool observed the actual malicious
+# payload effect (leaked file content, SSRF metadata, entity-expansion size) —
+# not merely the upload request's own status code. Everything else from that
+# tool ("xxe_possible", "xxe_xml_upload_accepted") is speculative by the
+# tool's own description text ("may be vulnerable", "should be reviewed").
+CONFIRMED_XXE_FINDING_TYPES = frozenset({"xxe_file_disclosure", "xxe_ssrf", "xxe_dos"})
+
 
 def _absolute_target_url(target: str, candidate: str) -> str:
     if candidate.startswith(("http://", "https://")):
@@ -138,18 +145,26 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
+                                # Tool only re-fetches to confirm storage/retrieval when it
+                                # found an upload_url ("unrestricted_upload"); the
+                                # "_unverified" variant trusts nothing but the initial
+                                # POST's own status code.
+                                confirmed_url = finding.get("upload_url")
+                                evidence = {
+                                    "url": upload_url,
+                                    "filename": finding.get('filename', 'unknown'),
+                                    "extension": finding.get('extension', ''),
+                                    "proof_type": "validated_file_upload" if confirmed_url else "heuristic",
+                                    "description": finding.get('description', ''),
+                                    "recommendation": finding.get('recommendation', 'Review upload security controls')
+                                }
+                                if confirmed_url:
+                                    evidence["confirmed_upload_url"] = confirmed_url
                                 self.add_finding(
                                     "WSTG-BUSL-08",
                                     f"Unrestricted file upload: {finding.get('filename', 'unknown')}",
                                     severity="critical",
-                                    evidence={
-                                        "url": upload_url,
-                                        "filename": finding.get('filename', 'unknown'),
-                                        "extension": finding.get('extension', ''),
-                                        "proof_type": "validated_file_upload",
-                                        "description": finding.get('description', ''),
-                                        "recommendation": finding.get('recommendation', 'Review upload security controls')
-                                    }
+                                    evidence=evidence
                                 )
                             self.log("info", f"✓ Found {len(findings)} unrestricted upload vulnerabilities")
                 except Exception as e:
@@ -173,6 +188,9 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
+                                # Tool never re-fetches to confirm; it only pattern-matches
+                                # the initial upload response's own body. No automated
+                                # verdict is earned here — surface as a human-review lead.
                                 self.add_finding(
                                     "WSTG-BUSL-08",
                                     f"Path traversal in upload: {finding.get('filename', 'unknown')}",
@@ -180,7 +198,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                                     evidence={
                                         "url": upload_url,
                                         "filename": finding.get('filename', 'unknown'),
-                                        "proof_type": "validated_file_upload_path_traversal",
+                                        "proof_type": "heuristic",
                                         "description": finding.get('description', ''),
                                         "recommendation": finding.get('recommendation', 'Review upload security controls')
                                     }
@@ -207,6 +225,11 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
+                                # Only file-disclosure/SSRF/DoS types reflect the actual
+                                # malicious-payload effect; "xxe_possible" and
+                                # "xxe_xml_upload_accepted" are speculative (own
+                                # description says "may be" / "should be reviewed").
+                                confirmed = finding.get("type") in CONFIRMED_XXE_FINDING_TYPES
                                 self.add_finding(
                                     "WSTG-INPV-07",
                                     f"XXE via SVG upload: {finding.get('filename', 'unknown')}",
@@ -214,7 +237,7 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                                     evidence={
                                         "url": upload_url,
                                         "filename": finding.get('filename', 'unknown'),
-                                        "proof_type": "validated_xxe_upload",
+                                        "proof_type": "validated_xxe_upload" if confirmed else "heuristic",
                                         "description": finding.get('description', ''),
                                         "evidence": finding['evidence'][:200],
                                         "recommendation": finding.get('recommendation', 'Review upload security controls')
@@ -242,18 +265,26 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
+                                # "code_execution" and "upload" both re-fetch the stored
+                                # file via a follow-up GET (upload_url present);
+                                # "mime_bypass_accepted" never re-fetches, it only trusts
+                                # the initial POST's status code.
+                                confirmed_url = finding.get("upload_url")
+                                evidence = {
+                                    "url": upload_url,
+                                    "filename": finding.get('filename', 'unknown'),
+                                    "mime_type": finding.get('mime_type', 'unknown'),
+                                    "proof_type": "validated_mime_bypass" if confirmed_url else "heuristic",
+                                    "description": finding.get('description', ''),
+                                    "recommendation": finding.get('recommendation', 'Review upload security controls')
+                                }
+                                if confirmed_url:
+                                    evidence["confirmed_upload_url"] = confirmed_url
                                 self.add_finding(
                                     "WSTG-BUSL-08",
                                     f"MIME type bypass: {finding.get('filename', 'unknown')}",
                                     severity="high",
-                                    evidence={
-                                        "url": upload_url,
-                                        "filename": finding.get('filename', 'unknown'),
-                                        "mime_type": finding.get('mime_type', 'unknown'),
-                                        "proof_type": "validated_mime_bypass",
-                                        "description": finding.get('description', ''),
-                                        "recommendation": finding.get('recommendation', 'Review upload security controls')
-                                    }
+                                    evidence=evidence
                                 )
                             self.log("info", f"✓ Found {len(findings)} MIME type bypass vulnerabilities")
                 except Exception as e:
@@ -278,13 +309,15 @@ You are FileUploadAgent, OWASP WSTG-BUSL-08/09 expert specializing in file uploa
                         if data.get("vulnerable"):
                             findings = data.get("findings", [])
                             for finding in findings:
+                                # Both finding types here only check the initial upload
+                                # POST's own status code — no confirming second request.
                                 self.add_finding(
                                     "WSTG-BUSL-08",
                                     f"Upload size limit bypass: {finding.get('file_size', 'unknown')}",
                                     severity=finding.get("severity", "medium"),
                                     evidence={
                                         "url": upload_url,
-                                        "proof_type": "validated_upload_size_bypass",
+                                        "proof_type": "heuristic",
                                         "description": finding.get("description", ""),
                                     }
                                 )
