@@ -961,7 +961,7 @@ async def _check_coupon_replay(client, target_url, headers):
 
         if not isinstance(first_discount, (int, float)) or not isinstance(applied_discount, (int, float)):
             return None
-        if applied_discount < first_discount * 2:
+        if first_discount <= 0 or applied_discount < first_discount * 2:
             return None
 
         return {

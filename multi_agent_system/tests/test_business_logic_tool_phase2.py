@@ -228,6 +228,22 @@ async def test_coupon_replay_unconfirmed_when_discount_not_reapplied():
     assert finding is None
 
 
+async def test_coupon_replay_unconfirmed_when_zero_discount_both_times():
+    # Unrecognized/inert coupon: server echoes discount=0 both before and after
+    # replay. 0 < 0*2 is False, so the naive doubling check would wrongly fire.
+    first_resp = _resp(200, text='{"discount":0}')
+    second_resp = _resp(200, text='{"discount":0}')
+    readback_resp = _resp(200, text='{"data":{"discount":0}}')
+    client = _client(
+        put=AsyncMock(side_effect=[first_resp, second_resp]),
+        get=AsyncMock(return_value=readback_resp),
+    )
+
+    finding = await business_logic._check_coupon_replay(client, "https://example.com/basket", {})
+
+    assert finding is None
+
+
 # --- QUANTITY_TAMPERING (_check_quantity_tampering) ---
 
 async def test_quantity_tampering_confirmed_when_persisted():
