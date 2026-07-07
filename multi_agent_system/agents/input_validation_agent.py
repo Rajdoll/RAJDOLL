@@ -1221,13 +1221,24 @@ Based on reconnaissance findings, CONSTRUCT optimal tool commands:
                 _headers["Authorization"] = f"Bearer {auth_data['token']}"
             # Use resolved upload endpoint if available, otherwise fall back to url
             _svg_target = _upload_ep if _upload_ep else url
+            def _has_real_file_markers(text):
+                return "root:" in text or "/bin/bash" in text
+
             async with httpx.AsyncClient(verify=False, timeout=20) as _c:
                 r = await _c.post(_svg_target, files=files, headers=_headers)
-                if "root:" in r.text or "/bin/bash" in r.text or "xxe" in r.text.lower():
-                    all_findings.setdefault("xxe", []).append({
-                        "url": url, "technique": "SVG file upload XXE",
-                        "evidence": r.text[:300]
-                    })
+                if _has_real_file_markers(r.text):
+                    # Differential control: benign upload with a distinct, non-XXE
+                    # filename must NOT reproduce the real-file-content markers,
+                    # otherwise the page just always contains them (false positive).
+                    control_svg = b'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"><text>control</text></svg>'''
+                    control_files = {"file": ("raj_control_benign.svg", control_svg, "image/svg+xml")}
+                    control_r = await _c.post(_svg_target, files=control_files, headers=_headers)
+                    if not _has_real_file_markers(control_r.text):
+                        all_findings.setdefault("xxe", []).append({
+                            "url": url, "technique": "SVG file upload XXE",
+                            "evidence": r.text[:300]
+                        })
         except Exception:
             pass
 

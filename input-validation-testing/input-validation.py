@@ -3803,13 +3803,14 @@ async def test_http_verb_tampering(url: str, auth_session: Optional[Dict[str, An
 
                     # Non-standard method accepted
                     if method in non_standard and resp.status_code not in (400, 405, 501):
-                        findings.append({
-                            "type": "non_standard_method",
-                            "method": method,
-                            "severity": "Low",
-                            "status_code": resp.status_code,
-                            "description": f"Non-standard HTTP method {method} not rejected"
-                        })
+                        if baseline_status and baseline_status != resp.status_code:
+                            findings.append({
+                                "type": "non_standard_method",
+                                "method": method,
+                                "severity": "Low",
+                                "status_code": resp.status_code,
+                                "description": f"Non-standard HTTP method {method} not rejected"
+                            })
 
                 except Exception:
                     continue
@@ -4291,6 +4292,24 @@ async def test_redos(url: str, auth_session: Optional[Dict[str, Any]] = None) ->
 
         async with httpx.AsyncClient(timeout=30.0, verify=False, follow_redirects=True, headers=headers) as client:
             for method, path, param_name in test_endpoints:
+                # Baseline timing: benign payload on the same endpoint, so the
+                # ReDoS payload is judged against this endpoint's own normal
+                # latency instead of a fixed absolute threshold.
+                baseline_elapsed = 0.0
+                try:
+                    baseline_payload = "__redos_baseline_probe__"
+                    start = time.monotonic()
+                    if method == "GET" and param_name:
+                        await client.get(f"{base_url}{path}", params={param_name: baseline_payload})
+                    elif method == "POST":
+                        if "login" in path or "Users" in path:
+                            await client.post(f"{base_url}{path}", json={"email": baseline_payload, "password": "x"})
+                        elif "Feedbacks" in path:
+                            await client.post(f"{base_url}{path}", json={"comment": baseline_payload, "rating": 1})
+                    baseline_elapsed = time.monotonic() - start
+                except Exception:
+                    baseline_elapsed = 0.0
+
                 # Test ReDoS payloads
                 for payload, payload_type in redos_payloads:
                     try:
@@ -4308,14 +4327,16 @@ async def test_redos(url: str, auth_session: Optional[Dict[str, Any]] = None) ->
                                 continue
                         elapsed = time.monotonic() - start
 
-                        # If response takes >5s, likely ReDoS
-                        if elapsed > 5.0:
+                        # Flag only if timing is a large multiple of this endpoint's
+                        # own baseline, not just an absolute threshold (avoids false
+                        # positives on endpoints that are naturally slow).
+                        if elapsed > max(5.0, baseline_elapsed * 10):
                             findings.append({
                                 "type": f"ReDoS: {payload_type}",
                                 "endpoint": path,
                                 "severity": "high",
-                                "description": f"Response took {elapsed:.1f}s with ReDoS payload ({payload_type})",
-                                "evidence": f"Endpoint: {path}, Time: {elapsed:.1f}s, Status: {resp.status_code}"
+                                "description": f"Response took {elapsed:.1f}s with ReDoS payload ({payload_type}), baseline {baseline_elapsed:.1f}s",
+                                "evidence": f"Endpoint: {path}, Time: {elapsed:.1f}s, Baseline: {baseline_elapsed:.1f}s, Status: {resp.status_code}"
                             })
                     except httpx.ReadTimeout:
                         findings.append({
