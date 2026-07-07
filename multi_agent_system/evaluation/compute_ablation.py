@@ -7,7 +7,7 @@ Usage (from /mnt/d/MCP/RAJDOLL/):
     --baseline juiceshop_run3 \\
     --agents AuthenticationAgent SessionManagementAgent InputValidationAgent \\
              AuthorizationAgent ConfigDeploymentAgent ClientSideAgent \\
-             FileUploadAgent APITestingAgent ErrorHandlingAgent \\
+             FileUploadAgent ErrorHandlingAgent \\
              WeakCryptographyAgent BusinessLogicAgent IdentityManagementAgent
 
 Output:

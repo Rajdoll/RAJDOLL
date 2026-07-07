@@ -181,8 +181,6 @@ class MCPClient:
             "identity-management-testing": os.path.join(self.workspace_root, "identity-management-testing", "identity-management.py"),
             # File Upload
             "file-upload-testing": os.path.join(self.workspace_root, "file-upload-testing", "file_upload.py"),
-            # API Testing
-            "api-testing": os.path.join(self.workspace_root, "api-testing", "api_testing.py"),
         }
 
         module_path = server_module_map.get(server)

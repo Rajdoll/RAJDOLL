@@ -15,5 +15,4 @@ from .business_logic_agent import BusinessLogicAgent  # noqa: F401
 from .config_deploy_agent import ConfigDeploymentAgent  # noqa: F401
 from .identity_management_agent import IdentityManagementAgent  # noqa: F401
 from .report_generation_agent import ReportGenerationAgent  # noqa: F401  # 🆕 Final: OWASP WSTG 4.2 Report
-from .api_testing_agent import APITestingAgent  # noqa: F401
 

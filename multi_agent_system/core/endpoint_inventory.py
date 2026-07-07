@@ -36,7 +36,6 @@ AGENT_TAG_MAP: dict[str, list[str]] = {
     "WeakCryptoAgent": ["auth_token_endpoint", "user_login"],
     "ErrorHandlingAgent": ["error_prone_param"],
     "FileUploadAgent": ["file_upload"],
-    "ApiTestingAgent": ["api_generic"],
     "ReactAgent": ["api_generic", "client_render_sink"],
     "AuthenticationAgent": ["user_login", "password_recovery", "auth_token_endpoint"],
     "SessionManagementAgent": ["auth_token_endpoint", "user_login"],
