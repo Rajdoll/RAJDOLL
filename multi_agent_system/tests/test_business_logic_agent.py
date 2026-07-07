@@ -1,0 +1,86 @@
+"""Tests for the WSTG-BUSL-02 parameter-tampering key-mismatch bug in
+business_logic_agent.py (line ~389).
+
+business-logic-testing/business-logic.py's test_parameter_tampering (fixed in
+commit 86e14a1) returns {"tampering_detected": bool, "original_response": ...,
+"tampered_response": ..., "control_response": ..., "description": ...} -- it
+has never returned a "vulnerable" key. The agent read data.get("vulnerable"),
+so the WSTG-BUSL-02 finding could never fire regardless of the tool's verdict.
+"""
+from multi_agent_system.agents.business_logic_agent import BusinessLogicAgent
+
+
+def _agent(tool_name):
+    a = BusinessLogicAgent.__new__(BusinessLogicAgent)
+    a.log = lambda *args, **kw: None
+    a.log_tool_execution_plan = lambda: None
+    a.get_auth_session = lambda: None
+    a._get_target = lambda: "https://example.com"
+    a._shared_context_snapshot = {
+        "endpoint_inventory": {
+            "by_tag": {"state_changing_money": ["ep1"]},
+            "endpoints": [
+                {"id": "ep1", "url": "https://example.com/api/basket/1?price=9.99"},
+            ],
+        }
+    }
+    a.should_run_tool = lambda name: name == tool_name
+    a.findings = []
+    a.add_finding = lambda *args, **kw: a.findings.append((args, kw))
+    return a
+
+
+def _fake_mcp(payload):
+    class FakeMCP:
+        async def call_tool(self, server, tool, args, timeout=300, auth_session=None):
+            return payload
+    return FakeMCP()
+
+
+# Real return shape of the fixed test_parameter_tampering (commit 86e14a1).
+_TAMPERING_DETECTED_DATA = {
+    "tampering_detected": True,
+    "original_response": {"status": 200, "length": 512},
+    "tampered_response": {"status": 200, "length": 512},
+    "control_response": {"status": 403, "length": 40},
+    "description": (
+        "If the tampered (parameter-removed) response matches the original "
+        "but the control (bogus-value) response does not, the server is not "
+        "re-validating data after parameter removal."
+    ),
+}
+
+
+async def test_parameter_tampering_detected_adds_finding(monkeypatch):
+    agent = _agent("test_parameter_tampering")
+
+    monkeypatch.setattr(
+        "multi_agent_system.agents.business_logic_agent.MCPClient",
+        lambda: _fake_mcp({"status": "success", "data": dict(_TAMPERING_DETECTED_DATA)}),
+    )
+
+    await agent.run()
+
+    assert any(args[0] == "WSTG-BUSL-02" and "Parameter tampering" in args[1] for args, kw in agent.findings), (
+        f"expected a WSTG-BUSL-02 parameter-tampering finding, got {agent.findings}"
+    )
+    finding_kw = next(kw for args, kw in agent.findings if args[0] == "WSTG-BUSL-02" and "Parameter tampering" in args[1])
+    evidence = finding_kw["evidence"]
+    assert evidence["tampering_detected"] is True
+    assert evidence["control_response"] == _TAMPERING_DETECTED_DATA["control_response"]
+
+
+async def test_parameter_tampering_not_detected_adds_no_finding(monkeypatch):
+    agent = _agent("test_parameter_tampering")
+
+    not_detected_data = dict(_TAMPERING_DETECTED_DATA)
+    not_detected_data["tampering_detected"] = False
+
+    monkeypatch.setattr(
+        "multi_agent_system.agents.business_logic_agent.MCPClient",
+        lambda: _fake_mcp({"status": "success", "data": not_detected_data}),
+    )
+
+    await agent.run()
+
+    assert agent.findings == []

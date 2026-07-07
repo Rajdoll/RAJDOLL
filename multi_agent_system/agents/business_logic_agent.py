@@ -386,7 +386,7 @@ Write to shared_context:
                             self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                         if isinstance(res, dict) and res.get("status") == "success":
                             data = res.get("data", {})
-                            if data.get("vulnerable"):
+                            if data.get("tampering_detected"):
                                 self.add_finding("WSTG-BUSL-02", f"Parameter tampering: removing '{param}' bypasses validation", severity="high", evidence=data)
                                 break
             except Exception as e:
