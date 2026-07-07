@@ -437,7 +437,7 @@ Write to shared_context:
                         self._adjudication_artifacts.extend(res.get("artifacts", []) or [])
                     if isinstance(res, dict) and res.get("status") == "success":
                         data = res.get("data", {})
-                        if data.get("vulnerable"):
+                        if data.get("successful_bypasses", 0) > 0:
                             self.add_finding("WSTG-BUSL-05", "Forged payment request accepted", severity="critical", evidence=data)
                 except Exception as e:
                     self.log("warning", f"test_forge_requests failed: {e}")

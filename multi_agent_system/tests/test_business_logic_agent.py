@@ -1,11 +1,18 @@
-"""Tests for the WSTG-BUSL-02 parameter-tampering key-mismatch bug in
-business_logic_agent.py (line ~389).
+"""Tests for key-mismatch bugs in business_logic_agent.py where the agent read
+a key the underlying tool never returns, so a finding could never fire.
 
-business-logic-testing/business-logic.py's test_parameter_tampering (fixed in
-commit 86e14a1) returns {"tampering_detected": bool, "original_response": ...,
-"tampered_response": ..., "control_response": ..., "description": ...} -- it
-has never returned a "vulnerable" key. The agent read data.get("vulnerable"),
-so the WSTG-BUSL-02 finding could never fire regardless of the tool's verdict.
+WSTG-BUSL-02 (line ~389): business-logic-testing/business-logic.py's
+test_parameter_tampering (fixed in commit 86e14a1) returns
+{"tampering_detected": bool, "original_response": ..., "tampered_response": ...,
+"control_response": ..., "description": ...} -- it has never returned a
+"vulnerable" key. The agent read data.get("vulnerable"), so the WSTG-BUSL-02
+finding could never fire regardless of the tool's verdict.
+
+WSTG-BUSL-05 (line ~440): test_forge_requests returns {"forgery_attempts": int,
+"successful_bypasses": int (count of findings), "findings": [...],
+"description": ...} -- it has never returned a "vulnerable" key either. The
+agent read data.get("vulnerable"), so the critical forged-payment-request
+finding could never fire regardless of successful_bypasses.
 """
 from multi_agent_system.agents.business_logic_agent import BusinessLogicAgent
 
@@ -79,6 +86,70 @@ async def test_parameter_tampering_not_detected_adds_no_finding(monkeypatch):
     monkeypatch.setattr(
         "multi_agent_system.agents.business_logic_agent.MCPClient",
         lambda: _fake_mcp({"status": "success", "data": not_detected_data}),
+    )
+
+    await agent.run()
+
+    assert agent.findings == []
+
+
+# Real return shape of test_forge_requests (business-logic-testing/business-logic.py
+# lines 364-428). It has never returned a "vulnerable" key -- only
+# "forgery_attempts", "successful_bypasses" (a count: len(findings)), "findings",
+# and "description". The agent read data.get("vulnerable"), so the WSTG-BUSL-05
+# critical finding could never fire regardless of successful_bypasses.
+_FORGE_BYPASS_DATA = {
+    "forgery_attempts": 5,
+    "successful_bypasses": 2,
+    "findings": [
+        {
+            "test_name": "mark_as_paid",
+            "forged_parameters": {"paid": True},
+            "status_code": 200,
+            "severity": "Critical",
+            "description": "Payment bypass: mark_as_paid succeeded",
+        },
+        {
+            "test_name": "modify_amount_zero",
+            "forged_parameters": {"amount": 0},
+            "status_code": 200,
+            "severity": "Critical",
+            "description": "Payment bypass: modify_amount_zero succeeded",
+        },
+    ],
+    "description": "Payment systems must validate all order parameters server-side",
+}
+
+
+async def test_forge_requests_bypass_detected_adds_finding(monkeypatch):
+    agent = _agent("test_forge_requests")
+
+    monkeypatch.setattr(
+        "multi_agent_system.agents.business_logic_agent.MCPClient",
+        lambda: _fake_mcp({"status": "success", "data": dict(_FORGE_BYPASS_DATA)}),
+    )
+
+    await agent.run()
+
+    assert any(args[0] == "WSTG-BUSL-05" for args, kw in agent.findings), (
+        f"expected a WSTG-BUSL-05 forged-payment-request finding, got {agent.findings}"
+    )
+    finding_kw = next(kw for args, kw in agent.findings if args[0] == "WSTG-BUSL-05")
+    evidence = finding_kw["evidence"]
+    assert evidence["successful_bypasses"] == 2
+    assert evidence["findings"] == _FORGE_BYPASS_DATA["findings"]
+
+
+async def test_forge_requests_no_bypass_adds_no_finding(monkeypatch):
+    agent = _agent("test_forge_requests")
+
+    no_bypass_data = dict(_FORGE_BYPASS_DATA)
+    no_bypass_data["successful_bypasses"] = 0
+    no_bypass_data["findings"] = []
+
+    monkeypatch.setattr(
+        "multi_agent_system.agents.business_logic_agent.MCPClient",
+        lambda: _fake_mcp({"status": "success", "data": no_bypass_data}),
     )
 
     await agent.run()
