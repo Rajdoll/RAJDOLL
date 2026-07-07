@@ -86,11 +86,28 @@ async def test_vertical_privilege_escalation(
 
                     # Kerentanan ada jika server merespons dengan 2xx (Success)
                     if 200 <= resp.status_code < 300:
+                        # A bare 2xx is not proof by itself. Confirm the URL is
+                        # actually gated by re-requesting it with no session at
+                        # all: if anonymous access is rejected but the
+                        # low-privilege session gets real content back, that is
+                        # genuine cross-role access proof.
+                        try:
+                            anon_resp = await client.get(url, follow_redirects=False, timeout=10)
+                        except Exception:
+                            anon_resp = None
+                        anon_blocked = anon_resp is None or not (200 <= anon_resp.status_code < 300)
+                        has_content = bool(resp.text and resp.text.strip())
+                        confirmed = anon_blocked and has_content
                         findings.append({
                             "url": url,
-                            "status": "VULNERABLE",
+                            "status": "VULNERABLE" if confirmed else "POTENTIALLY VULNERABLE",
                             "status_code": resp.status_code,
-                            "description": "Low-privilege user successfully accessed a high-privilege URL."
+                            "description": "Low-privilege user successfully accessed a high-privilege URL.",
+                            **({"evidence": {
+                                "data_extracted": True,
+                                "anonymous_status_code": anon_resp.status_code if anon_resp else None,
+                                "low_priv_status_code": resp.status_code,
+                            }} if confirmed else {}),
                         })
                         _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
                                        role=(low_priv_session.get("username") if isinstance(low_priv_session, dict) else low_priv_session) or "anonymous",
@@ -127,6 +144,7 @@ async def test_idor_vulnerability(
     if placeholder not in base_url_with_placeholder:
         return {"status": "error", "message": f"base_url_with_placeholder must contain '{{ID}}'."}
 
+    seen_bodies = {}
     try:
         async with httpx.AsyncClient(verify=False) as client:
             for i in range(start_id, start_id + count):
@@ -141,13 +159,23 @@ async def test_idor_vulnerability(
 
                     # Kerentanan ada jika server merespons dengan 200 OK untuk ID yang berbeda
                     if resp.status_code == 200:
-                        findings.append({
+                        # A bare 200 does not prove a different user's object was
+                        # reached. If a later ID's body genuinely differs from an
+                        # earlier ID's body, that proves each ID maps to a real,
+                        # distinct object (not a static/cached page) -- strong
+                        # cross-object access proof.
+                        distinct = any(resp.text != prior for prior in seen_bodies.values())
+                        seen_bodies[i] = resp.text
+                        finding = {
                             "id_tested": i,
                             "url": url,
-                            "status": "POTENTIALLY VULNERABLE",
+                            "status": "VULNERABLE" if distinct else "POTENTIALLY VULNERABLE",
                             "status_code": resp.status_code,
                             "response_size": len(resp.content)
-                        })
+                        }
+                        if distinct:
+                            finding["evidence"] = {"data_extracted": True, "distinct_from_other_ids": True}
+                        findings.append(finding)
                         _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method="GET", url=url,
                                        role=(session.get("username") if isinstance(session, dict) else session) or "anonymous",
                                        status=resp.status_code, headers=dict(resp.headers), body=resp.text,
@@ -173,6 +201,7 @@ async def test_http_method_tampering(
     findings = []
     artifacts = []
     methods_to_test = ["HEAD", "POST", "PUT", "DELETE", "PATCH"]
+    state_changing_methods = {"PUT", "DELETE", "PATCH"}
     try:
         async with httpx.AsyncClient(verify=False) as client:
             req_kwargs = {
@@ -187,13 +216,34 @@ async def test_http_method_tampering(
                 try:
                     resp = await client.request(method, url, **req_kwargs)
                     if resp.status_code != base_resp.status_code and resp.status_code < 500:
-                        findings.append({
+                        finding = {
                             "method": method,
                             "status": "INTERESTING_RESPONSE",
                             "original_status": base_resp.status_code,
                             "new_status": resp.status_code,
                             "description": "The server responded differently to a tampered HTTP method."
-                        })
+                        }
+                        # A status-code difference alone is not proof of impact.
+                        # For state-changing methods that returned 2xx, re-read
+                        # the resource and confirm the change actually took
+                        # effect (e.g. DELETE -> now 404, PUT/PATCH -> body
+                        # changed) before treating it as confirmed.
+                        if method in state_changing_methods and 200 <= resp.status_code < 300:
+                            try:
+                                followup = await client.get(url, **req_kwargs)
+                                if method == "DELETE":
+                                    state_changed = followup.status_code in (404, 410)
+                                else:
+                                    state_changed = followup.text != base_resp.text
+                            except Exception:
+                                state_changed = False
+                            if state_changed:
+                                finding["status"] = "VULNERABLE"
+                                finding["evidence"] = {
+                                    "state_change_verified": True,
+                                    "followup_status_code": followup.status_code,
+                                }
+                        findings.append(finding)
                         if 200 <= resp.status_code < 300:
                             _emit_artifact(artifacts, wstg="WSTG-ATHZ-04", method=method, url=url,
                                            role=(session.get("username") if isinstance(session, dict) else session) or "anonymous",
@@ -299,17 +349,22 @@ async def test_idor_comprehensive(
                             except:
                                 data = {}
 
+                            # A bare 200 is not proof of authorization bypass by
+                            # itself. Real, non-empty JSON object data proves the
+                            # endpoint actually returned a resource, not just a
+                            # generic 200 wrapper (empty/binary/non-JSON body).
+                            has_real_data = bool(data)
                             findings.append({
                                 "endpoint": pattern,
                                 "id_tested": test_id,
                                 "url": url,
-                                "severity": "High",
-                                "status": "VULNERABLE",
+                                "severity": "High" if has_real_data else "Low",
+                                "status": "VULNERABLE" if has_real_data else "POTENTIALLY VULNERABLE",
                                 "status_code": resp.status_code,
                                 "response_size": len(resp.content),
                                 "description": f"Can access resource {test_id} without proper authorization check",
                                 "evidence": {
-                                    "accessible": True,
+                                    "data_extracted": has_real_data,
                                     "data_sample": str(data)[:200] if data else "Binary or non-JSON response"
                                 }
                             })
@@ -412,10 +467,17 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
                             if actual_uid == uid:
                                 findings.append({
                                     "type": "user_spoofing",
+                                    "status": "VULNERABLE",
                                     "severity": "high",
                                     "description": f"Content posted as {id_field}={uid} (different from authenticated user)",
                                     "endpoint": endpoint_url,
-                                    "evidence": str(resp_data)[:300],
+                                    "evidence": {
+                                        "owner_mismatch": True,
+                                        "spoofed_id_field": id_field,
+                                        "spoofed_uid": uid,
+                                        "echoed_uid": actual_uid,
+                                        "raw_response": str(resp_data)[:300],
+                                    },
                                     "recommendation": f"Enforce server-side {id_field} from session, ignore client-sent value",
                                 })
                                 _emit_artifact(artifacts, wstg="WSTG-ATHZ-03", method="POST", url=endpoint_url,
@@ -442,10 +504,15 @@ async def test_user_spoofing(url: str, auth_session: Optional[Dict[str, Any]] = 
                     if isinstance(modified, int) and modified > 1:
                         findings.append({
                             "type": "nosql_mass_update",
+                            "status": "VULNERABLE",
                             "severity": "critical",
                             "description": f"NoSQL injection: mass update affected {modified} records",
                             "endpoint": endpoint_url,
-                            "evidence": str(resp_data)[:300],
+                            "evidence": {
+                                "state_change_verified": True,
+                                "modified_count": modified,
+                                "raw_response": str(resp_data)[:300],
+                            },
                         })
                     elif resp.status_code == 200:
                         # 200 alone does not prove the $ne operator was effective.
