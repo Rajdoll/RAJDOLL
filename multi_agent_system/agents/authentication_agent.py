@@ -214,7 +214,7 @@ Write to shared_context:
 					self.add_finding(
 						"WSTG-ATHN-01",
 						"Possible missing CSRF token on login form",
-						severity="medium",
+						severity="info",
 						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Login form did not expose a recognizable CSRF token in static HTML"},
 						details="Heuristic only; confirm whether framework injects CSRF through headers or JavaScript before submission.",
 					)
@@ -222,7 +222,7 @@ Write to shared_context:
 					self.add_finding(
 						"WSTG-ATHN-01",
 						"Login form may not use POST method",
-						severity="medium",
+						severity="info",
 						evidence={"endpoint": login_url, "proof_type": "passive_form_analysis", "impact": "Static login form did not declare method=POST"},
 						details="Heuristic only; validate the actual browser request before reporting.",
 					)
@@ -328,12 +328,23 @@ Write to shared_context:
 					if isinstance(res, dict) and res.get("status") == "success":
 						data = res.get("data", {})
 						if data.get("security_questions_found"):
-							severity = "medium" if data.get("rate_limiting") else "high"
 							# Sanitize questions - might contain unhashable objects
 							questions = data.get("sample_questions", [])
 							safe_questions = str(questions) if not isinstance(questions, (list, dict, str, int, float, bool, type(None))) else questions
-							self.add_finding("WSTG-ATHN-08", "Security questions may be predictable", severity=severity,
-										   evidence={"questions": safe_questions, "rate_limiting": data.get("rate_limiting")})
+							if data.get("answer_accepted"):
+								self.add_finding(
+									"WSTG-ATHN-08",
+									f"Security question answer guessed and accepted: '{data.get('accepted_answer')}'",
+									severity="high",
+									evidence={"questions": safe_questions, "rate_limiting": data.get("rate_limiting"), "accepted_answer": data.get("accepted_answer")},
+								)
+							else:
+								self.add_finding(
+									"WSTG-ATHN-08",
+									"Security questions present",
+									severity="info",
+									evidence={"questions": safe_questions, "rate_limiting": data.get("rate_limiting")},
+								)
 							break
 			except Exception as e:
 				self.log("warning", f"test_security_questions failed: {e}")
@@ -363,7 +374,8 @@ Write to shared_context:
 									safe_evidence = {
 										"description": finding.get("description", ""),
 										"severity": finding.get("severity", "medium"),
-										"email": test_email
+										"email": test_email,
+										"endpoint": reset_url,
 									}
 									self.add_finding(
 										"WSTG-ATHN-09",
@@ -476,7 +488,12 @@ Write to shared_context:
 						for finding in data.get("findings", []):
 							severity_map = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
 							# Sanitize finding to remove unhashable objects
-							safe_evidence = {"description": finding.get("description", ""), "severity": finding.get("severity", "medium")}
+							endpoint_path = finding.get("endpoint", "")
+							safe_evidence = {
+								"description": finding.get("description", ""),
+								"severity": finding.get("severity", "medium"),
+								"endpoint": f"{target.rstrip('/')}{endpoint_path}" if endpoint_path else target,
+							}
 							self.add_finding("WSTG-ATHN-10", f"Alt channel: {finding.get('description')}", 
 										   severity=severity_map.get(finding.get("severity"), "medium"),
 										   evidence=safe_evidence)
@@ -521,7 +538,20 @@ Write to shared_context:
 					data = res.get("data", {})
 					if data.get("vulnerabilities_found", 0) > 0:
 						for finding in data.get("findings", [])[:5]:
-							safe_evidence = {"username": finding.get("username", ""), "service": finding.get("service", "")}
+							status_code = finding.get("status_code")
+							token_present = bool(finding.get("token_present"))
+							set_cookie = finding.get("set_cookie") or ""
+							# Only report a genuine authenticated-session confirmation:
+							# a success status plus a real token/session cookie signal.
+							if status_code not in (200, 302) or not (token_present or set_cookie):
+								continue
+							safe_evidence = {
+								"username": finding.get("username", ""),
+								"password": finding.get("password", ""),
+								"service": finding.get("service", ""),
+								"status_code": status_code,
+								"token_present": token_present,
+							}
 							self.add_finding("WSTG-ATHN-02", f"Default credentials: {finding.get('description', 'Default credentials found')}",
 										   severity="critical", evidence=safe_evidence)
 			except Exception as e:
@@ -574,30 +604,32 @@ Write to shared_context:
 			except Exception as e:
 				self.log("warning", f"test_remember_me failed: {e}")
 
-		# Analyze JWT tokens if available
-		if self.should_run_tool("analyze_jwt"):
-			try:
-				jwt_token = None
-				if auth_data:
-					jwt_token = auth_data.get("token") or auth_data.get("jwt_token")
-				if jwt_token:
-					res = await self.run_tool_with_timeout(
-						client.call_tool(
-							server="authentication-testing",
-							tool="analyze_jwt",
-							args={"token": jwt_token}, auth_session=auth_data
-						),
-						timeout=30
-					)
-					if isinstance(res, dict) and res.get("status") == "success":
-						data = res.get("data", {})
-						if data.get("vulnerabilities_found", 0) > 0:
-							for finding in data.get("findings", [])[:5]:
-								safe_evidence = {"type": finding.get("type", ""), "description": finding.get("description", "")}
-								self.add_finding("WSTG-ATHN-09", f"JWT vulnerability: {finding.get('description', 'JWT issue found')}",
-											   severity=finding.get("severity", "high").lower(), evidence=safe_evidence)
-			except Exception as e:
-				self.log("warning", f"analyze_jwt failed: {e}")
+		# JWT: forge-and-send confirmation via ActiveFlowTester (analyze_jwt's
+		# static decode-only path never confirms exploitability, so it cannot
+		# produce a finding on its own -- same proven pattern as weak_crypto_agent.py)
+		if _settings.use_framework and _settings.use_active_flow and getattr(self, "active_flow", None):
+			from multi_agent_system.framework.types import EndpointSpec
+			jwt_token = None
+			if auth_data:
+				jwt_token = auth_data.get("token") or auth_data.get("jwt_token")
+			if jwt_token:
+				token_eps = read_tag(inventory, "auth_token_endpoint")
+				target_url = (token_eps[0].get("url") if isinstance(token_eps[0], dict) else token_eps[0]) \
+					if token_eps else target + "/api/whoami"
+				ep = EndpointSpec(url=target_url, method="GET")
+				try:
+					jwt_result = await self.active_flow.test_jwt_manipulation(jwt_token, ep)
+				except Exception as exc:
+					self.log("warning", f"JWT manipulation test errored: {exc}")
+				else:
+					if jwt_result.success:
+						self.add_finding(
+							category="WSTG-ATHN-09",
+							title=f"JWT vulnerability: {jwt_result.evidence.get('technique', 'forged accepted')}",
+							severity=jwt_result.severity,
+							evidence=jwt_result.evidence,
+							details="JWT signature verification bypass confirmed via forge+send.",
+						)
 
 		# WSTG-ATHN-11: 2FA/TOTP bypass testing
 		if self.should_run_tool("test_2fa_bypass"):

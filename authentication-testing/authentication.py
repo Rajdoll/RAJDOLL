@@ -374,48 +374,70 @@ async def test_lockout_mechanism(login_url: str, username: str, wrong_password: 
 async def test_security_questions(url: str, common_answers: List[str] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests security questions for weak implementation.
-    Checks for predictable answers and lack of rate limiting.
+    Only claims a "predictable answer" when a guessed answer is actually
+    ACCEPTED by the server (response differs from a deliberately-wrong
+    baseline answer and carries an acceptance signal, not a rejection one).
+    Also checks for rate limiting.
     WSTG-ATHN-08: Testing for Weak Security Question/Answer
     """
     if common_answers is None:
         common_answers = ["password", "admin", "123456", "blue", "pizza", "dog", "smith", "john", "london", "2000"]
-    
+
+    reject_keywords = ["incorrect", "wrong", "invalid", "denied", "failed", "does not match"]
+    accept_keywords = ["verified", "correct", "success", "accepted", "reset link", "token sent", "valid answer"]
+
     try:
         # 1. Fetch the security question page
         async with httpx.AsyncClient(timeout=10, follow_redirects=True, verify=False) as client:
             resp = await client.get(url)
-            
+
             if resp.status_code != 200:
                 return {"status": "error", "message": f"Cannot access {url}"}
-            
+
             # 2. Look for security question patterns
             question_patterns = [
                 r'what is your (mother|father|pet|favorite|first)',
                 r'where (were you born|did you meet)',
                 r'what was your (childhood|first)',
             ]
-            
+
             found_questions = []
             for pattern in question_patterns:
                 matches = re.findall(pattern, resp.text, re.I)
                 found_questions.extend(matches)
-            
-            # 3. Check if form has rate limiting (try multiple submissions)
+
+            # 3. Establish a rejection baseline, then test candidate answers for
+            # an actual ACCEPTED signal (not just "no rejection"), plus rate limiting.
             rate_limit_detected = False
+            answer_accepted = False
+            accepted_answer = None
             if found_questions:
+                baseline_resp = await client.post(url, data={"security_answer": "definitely-not-the-real-answer-xyz"})
+                baseline_text = baseline_resp.text
                 for i in range(3):
-                    test_resp = await client.post(url, data={"security_answer": common_answers[i % len(common_answers)]})
-                    if "rate" in test_resp.text.lower() or "too many" in test_resp.text.lower():
+                    candidate = common_answers[i % len(common_answers)]
+                    test_resp = await client.post(url, data={"security_answer": candidate})
+                    lc = test_resp.text.lower()
+                    if "rate" in lc or "too many" in lc:
                         rate_limit_detected = True
                         break
+                    if (test_resp.text != baseline_text
+                            and not any(k in lc for k in reject_keywords)
+                            and any(k in lc for k in accept_keywords)):
+                        answer_accepted = True
+                        accepted_answer = candidate
+                        break
                     await asyncio.sleep(0.3)
-            
+
             return {"status": "success", "data": {
                 "security_questions_found": len(found_questions) > 0,
                 "sample_questions": list(set(found_questions))[:3],
                 "rate_limiting": rate_limit_detected,
                 "predictable_answers_tested": len(common_answers),
-                "description": "Security questions may be weak if predictable and without rate limiting"
+                "answer_accepted": answer_accepted,
+                "accepted_answer": accepted_answer,
+                "description": (f"Security question answer '{accepted_answer}' was accepted by the server"
+                                 if answer_accepted else "Security questions present; no answer guessed was confirmed accepted")
             }}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -705,9 +727,16 @@ async def test_2fa_bypass(url: str, auth_session: Optional[Dict[str, Any]] = Non
     """
     WSTG-ATHN-09: Test 2FA/TOTP bypass techniques.
     Attempts to bypass two-factor authentication via:
-    1. Direct access to post-auth endpoints without completing 2FA
-    2. TOTP brute force with common values and rate-limit detection
-    3. 2FA setup/disable bypass without valid TOTP
+    1. TOTP brute force with common values and rate-limit detection
+    2. 2FA setup/disable bypass without valid TOTP
+
+    NOTE: a direct-access-to-post-auth-endpoints sub-check was intentionally
+    removed. A normal fully-authenticated session reaching post-auth endpoints
+    proves nothing about 2FA bypass unless the session is first confirmed to be
+    in a genuine "password-validated, 2FA-pending" state -- this codebase has
+    no mechanism to establish that state, so the sub-check was trivially true
+    for any authenticated session and has been removed rather than left to
+    fire false positives.
     """
     from urllib.parse import urlparse
 
@@ -735,44 +764,7 @@ async def test_2fa_bypass(url: str, auth_session: Optional[Dict[str, Any]] = Non
         ) as client:
 
             # ------------------------------------------------------------------
-            # 1. Direct access to post-auth endpoints without completing 2FA
-            # ------------------------------------------------------------------
-            post_auth_endpoints = [
-                "/api/Users",
-                "/rest/user/whoami",
-                "/api/Products",
-                "/api/Feedbacks",
-                "/api/Complaints",
-                "/profile",
-                "/administration",
-            ]
-
-            for ep in post_auth_endpoints:
-                try:
-                    resp = await client.get(f"{base}{ep}")
-                    if resp.status_code == 200 and len(resp.text) > 50:
-                        # Check if real data was returned (not a login redirect)
-                        body_lower = resp.text.lower()[:500]
-                        if 'login' not in body_lower and 'sign in' not in body_lower:
-                            try:
-                                data = resp.json()
-                                has_data = bool(data) if isinstance(data, (list, dict)) else False
-                            except Exception:
-                                has_data = len(resp.text) > 100
-
-                            if has_data:
-                                findings.append({
-                                    "type": "2fa_direct_access_bypass",
-                                    "endpoint": ep,
-                                    "severity": "critical",
-                                    "description": f"Post-auth endpoint {ep} accessible without completing 2FA step",
-                                    "evidence": resp.text[:200]
-                                })
-                except Exception:
-                    continue
-
-            # ------------------------------------------------------------------
-            # 2. TOTP brute force — common values + rate-limit check
+            # 1. TOTP brute force — common values + rate-limit check
             # ------------------------------------------------------------------
             totp_endpoints = [
                 "/rest/2fa/verify",
@@ -850,9 +842,9 @@ async def test_2fa_bypass(url: str, auth_session: Optional[Dict[str, Any]] = Non
                         pass
 
             # ------------------------------------------------------------------
-            # 3. 2FA setup/disable bypass
+            # 2. 2FA setup/disable bypass
             # ------------------------------------------------------------------
-            # 3a. Check 2FA status
+            # 2a. Check 2FA status
             status_endpoints = ["/rest/2fa/status", "/api/2fa/status", "/api/mfa/status"]
             for status_ep in status_endpoints:
                 try:
@@ -873,7 +865,7 @@ async def test_2fa_bypass(url: str, auth_session: Optional[Dict[str, Any]] = Non
                 except Exception:
                     continue
 
-            # 3b. Try disabling 2FA without TOTP
+            # 2b. Try disabling 2FA without TOTP
             disable_endpoints = ["/rest/2fa/disable", "/api/2fa/disable", "/api/mfa/disable"]
             for disable_ep in disable_endpoints:
                 try:
@@ -900,7 +892,7 @@ async def test_2fa_bypass(url: str, auth_session: Optional[Dict[str, Any]] = Non
                 except Exception:
                     continue
 
-            # 3c. Check if 2FA setup leaks the TOTP secret
+            # 2c. Check if 2FA setup leaks the TOTP secret
             setup_endpoints = ["/rest/2fa/setup", "/api/2fa/setup", "/api/mfa/setup"]
             for setup_ep in setup_endpoints:
                 try:
