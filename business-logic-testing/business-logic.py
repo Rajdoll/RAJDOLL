@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from urllib.parse import urlparse, parse_qs, urlunparse
+from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
 
 _BODY_LIMIT = 8192
 _HEADER_KEYS = {"content-type", "content-length", "location", "server", "x-powered-by", "www-authenticate"}

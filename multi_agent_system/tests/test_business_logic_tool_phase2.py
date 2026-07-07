@@ -329,31 +329,55 @@ async def test_shopping_cart_manipulation_surfaces_confirmed_idor():
     assert result["data"]["tests_performed"] == 6
 
 
-# --- regression: test_parameter_tampering and test_application_misuse_defenses
-# were already confirmed good in an earlier audit pass and must stay unaffected
-# by this fix (this file only touches test_shopping_cart_manipulation and its
-# new helpers). Lightweight smoke tests only.
+# --- test_parameter_tampering ---
+# Was completely non-functional: called urlencode() at line 106 but the file
+# only imported urlparse/parse_qs/urlunparse from urllib.parse (line 23),
+# never urlencode. Every call raised NameError, silently caught by the
+# function's own broad except, so it returned status: "error" on every
+# invocation. Fixed by adding urlencode to the urllib.parse import. These
+# tests exercise the real (now reachable) detection logic.
 
-async def test_parameter_tampering_unaffected():
-    # NOTE: test_parameter_tampering has a PRE-EXISTING, out-of-scope bug
-    # unrelated to this task: it calls urlencode() at line 106 but the file
-    # only imports urlparse/parse_qs/urlunparse from urllib.parse (line 23),
-    # never urlencode. Every call raises NameError. This is not part of Task 9
-    # (only test_shopping_cart_manipulation is in scope) -- this smoke test
-    # pins down the CURRENT (broken) behavior to prove it is unaffected by
-    # this fix, not that the behavior is correct.
+async def test_parameter_tampering_flags_when_response_unchanged():
+    # Removing the parameter yields a behaviorally identical response ->
+    # server isn't re-validating after the param is stripped.
     original_resp = _resp(200, text="a" * 100)
-    stripped_resp = _resp(404, text="not found")
+    stripped_resp = _resp(200, text="a" * 100)
 
     async def fake_req(method, url, auth_session=None, **kwargs):
-        return original_resp if "keep=1" in url else stripped_resp
+        return original_resp if "remove=x" in url else stripped_resp
 
     business_logic.req = fake_req
 
-    result = await business_logic.test_parameter_tampering("https://example.com/x?keep=1", "keep")
+    result = await business_logic.test_parameter_tampering(
+        "https://example.com/x?keep=1&remove=x", "remove"
+    )
 
-    assert result["status"] == "error"
-    assert "urlencode" in result["message"]
+    assert result["status"] == "success"
+    assert result["data"]["tampering_detected"] is True
+
+
+async def test_parameter_tampering_no_finding_when_response_differs():
+    # Removing the parameter changes the response (different status) ->
+    # server is validating it; not a finding.
+    original_resp = _resp(200, text="a" * 100)
+    stripped_resp = _resp(400, text="missing required parameter")
+
+    async def fake_req(method, url, auth_session=None, **kwargs):
+        return original_resp if "remove=x" in url else stripped_resp
+
+    business_logic.req = fake_req
+
+    result = await business_logic.test_parameter_tampering(
+        "https://example.com/x?keep=1&remove=x", "remove"
+    )
+
+    assert result["status"] == "success"
+    assert result["data"]["tampering_detected"] is False
+
+
+# --- regression: test_application_misuse_defenses was already confirmed good
+# in an earlier audit pass and must stay unaffected by this fix. Lightweight
+# smoke test only.
 
 
 async def test_application_misuse_defenses_unaffected():
