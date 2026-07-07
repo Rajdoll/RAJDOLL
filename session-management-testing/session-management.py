@@ -178,19 +178,31 @@ async def test_session_timeout(url: str, session: Dict[str, Any], wait_seconds: 
     try:
         # Ganti time.sleep dengan asyncio.sleep
         await asyncio.sleep(wait_seconds)
-        
+
         resp_after_wait = await quick_req("GET", url, cookies=session.get("cookies"))
-        
+
         if not resp_after_wait:
             return {"status": "error", "message": "Request after wait failed."}
-            
-        session_still_valid = resp_after_wait.status_code == 200
+
+        # Control request: same URL with a deliberately-invalidated cookie, to
+        # confirm a 200 means "session still authenticated" rather than "page
+        # is public regardless of session".
+        control_resp = await quick_req("GET", url, cookies={"session_timeout_control": rand_id(16)})
+        control_status = control_resp.status_code if control_resp else None
+        page_requires_auth = control_status is not None and control_status != 200
+
+        session_still_valid = (
+            resp_after_wait.status_code == 200
+            and page_requires_auth
+        )
 
         return {"status": "success", "data": {
             "wait_duration_seconds": wait_seconds,
             "session_still_valid": session_still_valid,
             "status_code_after_wait": resp_after_wait.status_code,
-            "description": "If session is still valid, it may indicate a long or non-existent timeout."
+            "control_status_code": control_status,
+            "page_requires_auth": page_requires_auth,
+            "description": "session_still_valid is only True when the original session got 200 AND a garbage-cookie control request did NOT get 200 (confirms the page genuinely requires auth)."
         }}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -291,20 +303,26 @@ async def test_session_puzzling(url: str, test_params: Dict[str, str], auth_sess
             # Try to inject via GET parameter
             test_url = f"{url}?{var}=attacker_value&{var}=1&session[{var}]=malicious"
             resp = await quick_req("GET", test_url, auth_session=auth_session)
-            
+
             if resp:
-                # Check if the injected value appears reflected
-                reflected = "attacker_value" in resp.text or "malicious" in resp.text
+                # Check which injected value appears reflected, if any
+                reflected_value = None
+                if "attacker_value" in resp.text:
+                    reflected_value = "attacker_value"
+                elif "malicious" in resp.text:
+                    reflected_value = "malicious"
                 pollution_tests.append({
                     "variable": var,
-                    "reflected_in_response": reflected,
+                    "test_url": test_url,
+                    "reflected_in_response": reflected_value is not None,
+                    "reflected_value": reflected_value,
                     "status_code": resp.status_code
                 })
-        
+
         # Test 2: Try session array injection (PHP-style)
         array_injection_url = f"{url}?_SESSION[user]=attacker&_SESSION[role]=admin"
         array_resp = await quick_req("GET", array_injection_url, auth_session=auth_session)
-        array_vulnerable = array_resp and "attacker" in array_resp.text
+        array_vulnerable = bool(array_resp and "attacker" in array_resp.text)
         
         # Test 3: Custom test params if provided
         custom_results = {}
@@ -320,6 +338,8 @@ async def test_session_puzzling(url: str, test_params: Dict[str, str], auth_sess
         return {"status": "success", "data": {
             "parameter_pollution_tests": pollution_tests,
             "array_injection_vulnerable": array_vulnerable,
+            "array_injection_url": array_injection_url,
+            "array_injection_status_code": array_resp.status_code if array_resp else None,
             "custom_tests": custom_results,
             "description": "Session puzzling occurs when attackers can overwrite session variables via URL parameters"
         }}
@@ -327,7 +347,7 @@ async def test_session_puzzling(url: str, test_params: Dict[str, str], auth_sess
         return {"status": "error", "message": str(e)}
 
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
-async def test_session_hijacking(url: str, session_cookies: Dict[str, str], auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def test_session_hijacking(url: str, session_cookies: Dict[str, str], auth_session: Optional[Dict[str, Any]] = None, logout_url: Optional[str] = None) -> Dict[str, Any]:
     """
     [OPSI B] Tests for session hijacking vulnerabilities.
     logger.info(f"🔍 Executing test_session_hijacking")
@@ -364,26 +384,44 @@ async def test_session_hijacking(url: str, session_cookies: Dict[str, str], auth
         # Test 2: Check if session cookie is HTTPOnly (prevents XSS hijacking)
         resp = await quick_req("GET", url, auth_session=auth_session)
         httponly_protected = False
+        httponly_cookie_name = None
         if resp:
             for header in resp.headers.get_list('set-cookie'):
-                if any(name in header for name in session_cookies.keys()):
+                matched_name = next((name for name in session_cookies.keys() if name in header), None)
+                if matched_name:
                     httponly_protected = "httponly" in header.lower()
+                    httponly_cookie_name = matched_name
                     break
-        
-        # Test 3: Session reuse after logout attempt
-        logout_url = url.replace('/profile', '/logout').replace('/dashboard', '/logout')
-        if logout_url != url:
+
+        # Test 3: Session reuse after logout attempt. Prefer a real logout URL
+        # (from caller context / endpoint inventory) over guessing via string
+        # substitution -- and explicitly report when reuse could not be
+        # determined instead of silently defaulting to None.
+        effective_logout_url = logout_url
+        logout_test_skipped_reason = None
+        if not effective_logout_url:
+            guessed = url.replace('/profile', '/logout').replace('/dashboard', '/logout')
+            effective_logout_url = guessed if guessed != url else None
+
+        if effective_logout_url:
             # Try to use session after logout
-            await quick_req("GET", logout_url, auth_session=auth_session, cookies=session_cookies)
+            await quick_req("GET", effective_logout_url, auth_session=auth_session, cookies=session_cookies)
             reuse_resp = await quick_req("GET", url, auth_session=auth_session, cookies=session_cookies)
-            session_reusable = reuse_resp and reuse_resp.status_code == 200
+            session_reusable = bool(reuse_resp and reuse_resp.status_code == 200)
         else:
             session_reusable = None
-        
+            logout_test_skipped_reason = (
+                "no logout URL available: caller did not provide logout_url and the "
+                "target URL did not contain '/profile' or '/dashboard' to guess from"
+            )
+
         return {"status": "success", "data": {
             "token_analysis": token_analysis,
             "httponly_protection": httponly_protected,
+            "httponly_cookie_name": httponly_cookie_name,
             "session_reusable_after_logout": session_reusable,
+            "logout_url_tested": effective_logout_url,
+            "logout_test_skipped_reason": logout_test_skipped_reason,
             "description": "Strong sessions need: high entropy (128+ bits), HTTPOnly flag, invalidation after logout"
         }}
     except Exception as e:

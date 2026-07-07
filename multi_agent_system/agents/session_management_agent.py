@@ -345,8 +345,14 @@ Write to shared_context:
                     data = res.get("data", {})
                     if data.get("csrf_vulnerable") or not data.get("has_csrf_token_in_form"):
                         self.add_finding("WSTG-SESS-05", "Missing or weak CSRF protection", severity="high",
-                                       evidence={"csrf_token_present": data.get("has_csrf_token_in_form"),
-                                               "vulnerable": data.get("csrf_vulnerable")})
+                                       evidence={
+                                           "endpoint": target,
+                                           "proof_type": "csrf_protection_check",
+                                           "csrf_token_present": data.get("has_csrf_token_in_form"),
+                                           "vulnerable": data.get("csrf_vulnerable"),
+                                           "cookies_samesite_check": data.get("cookies_samesite_check"),
+                                           "description": data.get("description"),
+                                       })
                     weak_samesite = [c for c in data.get("cookies_samesite_check", []) if c.get("samesite") == "Not Set"]
                     if weak_samesite:
                         self.add_finding("WSTG-SESS-05", "Session cookies without SameSite protection", severity="medium",
@@ -374,11 +380,28 @@ Write to shared_context:
                     data = res.get("data", {})
                     if data.get("array_injection_vulnerable"):
                         self.add_finding("WSTG-SESS-08", "Session puzzling: array injection possible", severity="high",
-                                       evidence={"array_injection": True})
+                                       evidence={
+                                           "endpoint": data.get("array_injection_url"),
+                                           "proof_type": "session_array_injection",
+                                           "payload": "_SESSION[user]=attacker&_SESSION[role]=admin",
+                                           "status_code": data.get("array_injection_status_code"),
+                                           "observed_effect": "response body reflected the injected 'attacker' value",
+                                       })
                     reflected_vars = [t for t in data.get("parameter_pollution_tests", []) if t.get("reflected_in_response")]
                     if reflected_vars:
                         self.add_finding("WSTG-SESS-08", "Session variable pollution possible", severity="medium",
-                                       evidence={"reflected_variables": [v["variable"] for v in reflected_vars]})
+                                       evidence={
+                                           "endpoint": target,
+                                           "proof_type": "session_variable_pollution",
+                                           "reflected_variables": [
+                                               {
+                                                   "variable": v["variable"],
+                                                   "reflected_value": v.get("reflected_value"),
+                                                   "test_url": v.get("test_url"),
+                                               }
+                                               for v in reflected_vars
+                                           ],
+                                       })
             except Exception as e:
                 self.log("warning", f"test_session_puzzling failed: {e}")
 
@@ -394,7 +417,11 @@ Write to shared_context:
                     client.call_tool(
                         server="session-management-testing",
                         tool="test_session_hijacking",
-                        args={"url": target, "session_cookies": session_cookies}, auth_session=auth_data
+                        args={
+                            "url": target,
+                            "session_cookies": session_cookies,
+                            "logout_url": (auth_data or {}).get("logout_url"),
+                        }, auth_session=auth_data
                     ),
                     timeout=60
                 )
@@ -406,10 +433,20 @@ Write to shared_context:
                                        evidence={"weak_tokens": weak_tokens})
                     if not data.get("httponly_protection"):
                         self.add_finding("WSTG-SESS-09", "Session cookies without HTTPOnly - XSS hijacking risk", severity="high",
-                                       evidence={"httponly": False})
+                                       evidence={
+                                           "endpoint": target,
+                                           "proof_type": "httponly_cookie_check",
+                                           "cookie_name": data.get("httponly_cookie_name"),
+                                           "httponly": False,
+                                       })
                     if data.get("session_reusable_after_logout"):
                         self.add_finding("WSTG-SESS-09", "Session remains valid after logout", severity="high",
-                                       evidence={"session_reuse": True})
+                                       evidence={
+                                           "endpoint": target,
+                                           "proof_type": "session_reuse_after_logout",
+                                           "logout_url_tested": data.get("logout_url_tested"),
+                                           "session_reusable_after_logout": True,
+                                       })
             except Exception as e:
                 self.log("warning", f"test_session_hijacking failed: {e}")
 
