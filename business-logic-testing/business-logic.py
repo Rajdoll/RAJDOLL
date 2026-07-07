@@ -796,6 +796,257 @@ async def test_malicious_file_upload(upload_url: str, auth_session: Optional[Dic
         return {"status": "error", "message": str(e)}
 
 
+def _cart_safe_json(resp):
+    """Parse a response body as JSON, returning None on any failure (e.g. an
+    SPA serving generic HTML instead of a real API response)."""
+    if resp is None:
+        return None
+    try:
+        return resp.json()
+    except Exception:
+        return None
+
+
+def _cart_find_field(obj, keys, depth=5):
+    """Recursively search a JSON-like structure for the first matching key."""
+    if depth < 0:
+        return None
+    if isinstance(obj, dict):
+        for k in keys:
+            if k in obj:
+                return obj[k]
+        for v in obj.values():
+            found = _cart_find_field(v, keys, depth - 1)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _cart_find_field(item, keys, depth - 1)
+            if found is not None:
+                return found
+    return None
+
+
+def _cart_responses_equivalent(r1, r2):
+    """True if two responses are behaviorally indistinguishable (same status
+    and identical body) -- the signature of an endpoint that returns the same
+    generic content regardless of input (e.g. an SPA catch-all route)."""
+    if r1 is None or r2 is None:
+        return False
+    return r1.status_code == r2.status_code and r1.text == r2.text
+
+
+def _cart_own_identifiers(auth_session):
+    """Identifiers for the CURRENTLY authenticated user, derived from the
+    session dict, used to detect BASKET_IDOR owner mismatches."""
+    own = set()
+    if isinstance(auth_session, dict):
+        for key in ("user_id", "userId", "id", "username", "email"):
+            val = auth_session.get(key)
+            if val is not None:
+                own.add(str(val).lower())
+    return own
+
+
+async def _check_negative_quantity(client, target_url, headers):
+    try:
+        tampered_payload = {"ProductId": 1, "BasketId": "1", "quantity": -100}
+        control_payload = {"ProductId": 1, "BasketId": "1", "quantity": 1}
+
+        resp = await client.post(target_url, json=tampered_payload, headers=headers)
+        if resp.status_code not in (200, 201):
+            return None
+
+        control_resp = await client.post(target_url, json=control_payload, headers=headers)
+        if _cart_responses_equivalent(control_resp, resp):
+            # Legit and malicious requests behave identically -- not proof
+            # (e.g. an SPA catch-all returning the same shell for everything).
+            return None
+
+        readback = await client.get(target_url, headers=headers)
+        if readback is None or readback.status_code != 200:
+            return None
+        persisted_qty = _cart_find_field(_cart_safe_json(readback), ["quantity", "qty", "Quantity"])
+        if persisted_qty != -100:
+            return None
+
+        return {
+            "type": "NEGATIVE_QUANTITY",
+            "severity": "HIGH",
+            "endpoint": target_url,
+            "evidence": f"Negative quantity (-100) accepted and persisted (read-back confirmed quantity={persisted_qty}); differs from a legitimate control request",
+            "description": "Shopping cart accepts negative quantities, allowing price manipulation"
+        }
+    except Exception as e:
+        logger.warning(f"[shopping_cart] Negative quantity test failed: {e}")
+        return None
+
+
+async def _check_price_manipulation(client, target_url, headers):
+    try:
+        tampered_payload = {"ProductId": 1, "BasketId": "1", "quantity": 1, "price": 0.01}
+        control_payload = {"ProductId": 1, "BasketId": "1", "quantity": 1}
+
+        resp = await client.post(target_url, json=tampered_payload, headers=headers)
+        if resp.status_code not in (200, 201):
+            return None
+
+        control_resp = await client.post(target_url, json=control_payload, headers=headers)
+        if _cart_responses_equivalent(control_resp, resp):
+            return None
+
+        readback = await client.get(target_url, headers=headers)
+        if readback is None or readback.status_code != 200:
+            return None
+        persisted_price = _cart_find_field(_cart_safe_json(readback), ["price", "Price", "unitPrice"])
+        if persisted_price != 0.01:
+            return None
+
+        return {
+            "type": "PRICE_MANIPULATION",
+            "severity": "HIGH",
+            "endpoint": target_url,
+            "evidence": f"Custom price=0.01 accepted and persisted (read-back confirmed price={persisted_price}); differs from a legitimate control request",
+            "description": "Application allows client to set product price"
+        }
+    except Exception as e:
+        logger.warning(f"[shopping_cart] Price manipulation test failed: {e}")
+        return None
+
+
+async def _check_basket_idor(client, target_url, headers, own_identifiers):
+    try:
+        resp = await client.get(target_url, headers=headers)
+        if resp.status_code != 200:
+            return None
+
+        data = _cart_safe_json(resp)
+        if not isinstance(data, dict):
+            return None
+
+        owner_val = _cart_find_field(data, ["UserId", "userId", "user_id", "owner", "ownerId", "email", "username"])
+        if owner_val is None or not own_identifiers:
+            # Can't prove a cross-user leak without knowing who "we" are.
+            return None
+        if str(owner_val).lower() in own_identifiers:
+            return None
+
+        return {
+            "type": "BASKET_IDOR",
+            "severity": "MEDIUM",
+            "endpoint": target_url,
+            "evidence": f"Basket owner identifier '{owner_val}' does not match the authenticated session's own identifiers {sorted(own_identifiers)}",
+            "description": "IDOR vulnerability allows viewing other users' data"
+        }
+    except Exception as e:
+        logger.warning(f"[shopping_cart] IDOR test failed: {e}")
+        return None
+
+
+async def _check_coupon_replay(client, target_url, headers):
+    try:
+        first_resp = await client.put(target_url, headers=headers, json={"coupon": "REPLAY_TEST"})
+        if first_resp.status_code != 200:
+            return None
+        first_discount = _cart_find_field(_cart_safe_json(first_resp), ["discount", "discountAmount", "totalDiscount"])
+
+        second_resp = await client.put(target_url, headers=headers, json={"coupon": "REPLAY_TEST"})
+        if second_resp.status_code != 200:
+            return None
+
+        readback = await client.get(target_url, headers=headers)
+        if readback is None or readback.status_code != 200:
+            return None
+        applied_discount = _cart_find_field(_cart_safe_json(readback), ["discount", "discountAmount", "totalDiscount", "appliedDiscount"])
+
+        if not isinstance(first_discount, (int, float)) or not isinstance(applied_discount, (int, float)):
+            return None
+        if applied_discount < first_discount * 2:
+            return None
+
+        return {
+            "type": "COUPON_REPLAY",
+            "severity": "MEDIUM",
+            "endpoint": target_url,
+            "evidence": f"Coupon reapplied: first_discount={first_discount}, cumulative_discount={applied_discount} (read-back confirmed)",
+            "description": "Application allows same coupon to be applied multiple times"
+        }
+    except Exception as e:
+        logger.warning(f"[shopping_cart] Coupon replay test failed: {e}")
+        return None
+
+
+async def _check_quantity_tampering(client, target_url, headers):
+    try:
+        tampered_payload = {"quantity": -999}
+        control_payload = {"quantity": 1}
+
+        resp = await client.put(target_url, json=tampered_payload, headers=headers)
+        if resp.status_code not in (200, 201):
+            return None
+
+        control_resp = await client.put(target_url, json=control_payload, headers=headers)
+        if _cart_responses_equivalent(control_resp, resp):
+            return None
+
+        readback = await client.get(target_url, headers=headers)
+        if readback is None or readback.status_code != 200:
+            return None
+        persisted_qty = _cart_find_field(_cart_safe_json(readback), ["quantity", "qty", "Quantity"])
+        if persisted_qty != -999:
+            return None
+
+        return {
+            "type": "QUANTITY_TAMPERING",
+            "severity": "HIGH",
+            "endpoint": target_url,
+            "evidence": f"Negative quantity accepted via PUT and persisted (read-back confirmed quantity={persisted_qty}); differs from a legitimate control request",
+            "description": "Quantity update endpoint lacks validation"
+        }
+    except Exception as e:
+        logger.warning(f"[shopping_cart] Quantity tampering test failed: {e}")
+        return None
+
+
+async def _check_zero_price_checkout(client, target_url, headers):
+    try:
+        zero_qty_payload = {"ProductId": 1, "BasketId": "1", "quantity": 0}
+        control_qty_payload = {"ProductId": 1, "BasketId": "1", "quantity": 1}
+
+        resp = await client.post(target_url, json=zero_qty_payload, headers=headers)
+        if resp.status_code not in (200, 201):
+            return None
+
+        checkout_resp = await client.post(target_url, headers=headers, json={"checkout": True})
+        if checkout_resp.status_code != 200:
+            return None
+
+        control_resp = await client.post(target_url, json=control_qty_payload, headers=headers)
+        if control_resp.status_code not in (200, 201):
+            return None
+        control_checkout_resp = await client.post(target_url, headers=headers, json={"checkout": True})
+        if _cart_responses_equivalent(control_checkout_resp, checkout_resp):
+            # Checkout behaves identically for a normal cart and a zero-qty
+            # cart -- not proof (e.g. a checkout endpoint that never reports
+            # a real total, or an SPA catch-all).
+            return None
+
+        order_total = _cart_find_field(_cart_safe_json(checkout_resp), ["totalPrice", "total", "orderTotal", "amount"])
+        if order_total != 0:
+            return None
+
+        return {
+            "type": "ZERO_PRICE_CHECKOUT",
+            "severity": "HIGH",
+            "endpoint": target_url,
+            "evidence": f"Checkout completed with a confirmed order total of {order_total} for zero-quantity items; differs from a legitimate control checkout",
+            "description": "Application allows checkout without validating cart contents"
+        }
+    except Exception as e:
+        logger.warning(f"[shopping_cart] Zero-price checkout test failed: {e}")
+        return None
+
+
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
 async def test_shopping_cart_manipulation(
     base_url: str,
@@ -812,6 +1063,14 @@ async def test_shopping_cart_manipulation(
     4. Coupon code replay attacks
     5. Quantity update tampering
     6. Zero-price checkout
+
+    Each sub-test requires proof beyond a bare status code: a legitimate
+    control request must behave differently from the tampered request (guards
+    against SPA catch-all routes that return 200 for everything), and a
+    read-back confirms the tampered value was actually persisted (not just
+    accepted at the transport layer). BASKET_IDOR additionally requires the
+    returned owner identifier to differ from the authenticated session's own
+    identifiers.
 
     Args:
         base_url: Target application base URL
@@ -835,152 +1094,42 @@ async def test_shopping_cart_manipulation(
                 cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
                 headers["Cookie"] = cookie_str
 
+        own_identifiers = _cart_own_identifiers(auth_session)
+
         # Use provided endpoints or fall back to base_url
         test_targets = endpoints if endpoints else [base_url.rstrip('/')]
 
         async with httpx.AsyncClient(timeout=30, verify=False, follow_redirects=True) as client:
             for target_url in test_targets:
-                # TEST 1: Negative Quantity Vulnerability
-                try:
-                    negative_qty_payload = {
-                        "ProductId": 1,
-                        "BasketId": "1",
-                        "quantity": -100
-                    }
+                finding = await _check_negative_quantity(client, target_url, headers)
+                if finding:
+                    findings.append(finding)
+                    logger.info(f"[shopping_cart] HIGH: Negative quantity confirmed at {target_url}")
 
-                    resp = await client.post(
-                        target_url,
-                        json=negative_qty_payload,
-                        headers=headers
-                    )
+                finding = await _check_price_manipulation(client, target_url, headers)
+                if finding:
+                    findings.append(finding)
+                    logger.info(f"[shopping_cart] HIGH: Price manipulation confirmed at {target_url}")
 
-                    if resp.status_code in [200, 201]:
-                        findings.append({
-                            "type": "NEGATIVE_QUANTITY",
-                            "severity": "HIGH",
-                            "endpoint": target_url,
-                            "evidence": "Negative quantity (-100) accepted by server",
-                            "description": "Shopping cart accepts negative quantities, allowing price manipulation"
-                        })
-                        logger.info(f"[shopping_cart] HIGH: Negative quantity accepted at {target_url}")
-                except Exception as e:
-                    logger.warning(f"[shopping_cart] Negative quantity test failed: {e}")
+                finding = await _check_basket_idor(client, target_url, headers, own_identifiers)
+                if finding:
+                    findings.append(finding)
+                    logger.info(f"[shopping_cart] MEDIUM: IDOR confirmed at {target_url}")
 
-                # TEST 2: Price Manipulation
-                try:
-                    price_manip_payload = {
-                        "ProductId": 1,
-                        "BasketId": "1",
-                        "quantity": 1,
-                        "price": 0.01
-                    }
+                finding = await _check_coupon_replay(client, target_url, headers)
+                if finding:
+                    findings.append(finding)
+                    logger.info(f"[shopping_cart] MEDIUM: Coupon replay confirmed at {target_url}")
 
-                    resp = await client.post(
-                        target_url,
-                        json=price_manip_payload,
-                        headers=headers
-                    )
+                finding = await _check_quantity_tampering(client, target_url, headers)
+                if finding:
+                    findings.append(finding)
+                    logger.info(f"[shopping_cart] HIGH: Quantity tampering confirmed at {target_url}")
 
-                    if resp.status_code in [200, 201]:
-                        findings.append({
-                            "type": "PRICE_MANIPULATION",
-                            "severity": "HIGH",
-                            "endpoint": target_url,
-                            "evidence": "Server accepted custom 'price' parameter in basket",
-                            "description": "Application allows client to set product price"
-                        })
-                        logger.info(f"[shopping_cart] HIGH: Price manipulation possible at {target_url}")
-                except Exception as e:
-                    logger.warning(f"[shopping_cart] Price manipulation test failed: {e}")
-
-                # TEST 3: IDOR - Access resource with different IDs
-                try:
-                    resp = await client.get(target_url, headers=headers)
-                    if resp.status_code == 200:
-                        try:
-                            data = resp.json()
-                            if data and "data" in data:
-                                findings.append({
-                                    "type": "BASKET_IDOR",
-                                    "severity": "MEDIUM",
-                                    "endpoint": target_url,
-                                    "evidence": "Accessed resource without proper authorization check",
-                                    "description": "IDOR vulnerability allows viewing other users' data"
-                                })
-                                logger.info(f"[shopping_cart] MEDIUM: IDOR found at {target_url}")
-                        except Exception:
-                            pass
-                except Exception as e:
-                    logger.warning(f"[shopping_cart] IDOR test failed: {e}")
-
-                # TEST 4: Coupon Code Replay
-                try:
-                    for attempt in range(3):
-                        resp = await client.put(target_url, headers=headers, json={"coupon": "REPLAY_TEST"})
-
-                        if resp.status_code == 200:
-                            if attempt > 0:
-                                findings.append({
-                                    "type": "COUPON_REPLAY",
-                                    "severity": "MEDIUM",
-                                    "endpoint": target_url,
-                                    "evidence": f"Coupon applied {attempt + 1} times successfully",
-                                    "description": "Application allows same coupon to be applied multiple times"
-                                })
-                                logger.info(f"[shopping_cart] MEDIUM: Coupon replay possible at {target_url}")
-                                break
-                except Exception as e:
-                    logger.warning(f"[shopping_cart] Coupon replay test failed: {e}")
-
-                # TEST 5: Quantity Update Tampering
-                try:
-                    tampered_qty = {"quantity": -999}
-                    resp = await client.put(
-                        target_url,
-                        json=tampered_qty,
-                        headers=headers
-                    )
-
-                    if resp.status_code in [200, 201]:
-                        findings.append({
-                            "type": "QUANTITY_TAMPERING",
-                            "severity": "HIGH",
-                            "endpoint": target_url,
-                            "evidence": "Negative quantity accepted via PUT request",
-                            "description": "Quantity update endpoint lacks validation"
-                        })
-                        logger.info(f"[shopping_cart] HIGH: Quantity tampering successful at {target_url}")
-                except Exception as e:
-                    logger.warning(f"[shopping_cart] Quantity tampering test failed: {e}")
-
-                # TEST 6: Zero-Price Checkout
-                try:
-                    zero_qty_payload = {
-                        "ProductId": 1,
-                        "BasketId": "1",
-                        "quantity": 0
-                    }
-
-                    resp = await client.post(
-                        target_url,
-                        json=zero_qty_payload,
-                        headers=headers
-                    )
-
-                    if resp.status_code in [200, 201]:
-                        checkout_resp = await client.post(target_url, headers=headers, json={"checkout": True})
-
-                        if checkout_resp.status_code == 200:
-                            findings.append({
-                                "type": "ZERO_PRICE_CHECKOUT",
-                                "severity": "HIGH",
-                                "endpoint": target_url,
-                                "evidence": "Checkout succeeded with zero quantity items",
-                                "description": "Application allows checkout without validating cart contents"
-                            })
-                            logger.info(f"[shopping_cart] HIGH: Zero-price checkout possible at {target_url}")
-                except Exception as e:
-                    logger.warning(f"[shopping_cart] Zero-price checkout test failed: {e}")
+                finding = await _check_zero_price_checkout(client, target_url, headers)
+                if finding:
+                    findings.append(finding)
+                    logger.info(f"[shopping_cart] HIGH: Zero-price checkout confirmed at {target_url}")
 
         return {
             "status": "success",
