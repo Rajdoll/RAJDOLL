@@ -334,19 +334,51 @@ async def test_shopping_cart_manipulation_surfaces_confirmed_idor():
 # only imported urlparse/parse_qs/urlunparse from urllib.parse (line 23),
 # never urlencode. Every call raised NameError, silently caught by the
 # function's own broad except, so it returned status: "error" on every
-# invocation. Fixed by adding urlencode to the urllib.parse import. These
-# tests exercise the real (now reachable) detection logic.
+# invocation. Fixed by adding urlencode to the urllib.parse import.
+#
+# Once reachable, the detection logic itself had no baseline/control-request
+# guard: it flagged tampering_detected=True whenever the stripped-parameter
+# response merely matched the original, with nothing to rule out an endpoint
+# that behaves identically no matter what (e.g. an SPA catch-all route).
+# Fixed by adding a third "control" request -- same param, present but set to
+# an obviously bogus value -- and only flagging when the stripped response
+# matches the original AND the control response does NOT (proving the
+# endpoint does react to this parameter, just not to its absence).
 
-async def test_parameter_tampering_flags_when_response_unchanged():
-    # Removing the parameter yields a behaviorally identical response ->
-    # server isn't re-validating after the param is stripped.
+def _fake_req_for(original_resp, stripped_resp, control_resp):
+    async def fake_req(method, url, auth_session=None, **kwargs):
+        if "remove=__rajdoll_tamper_control__" in url:
+            return control_resp
+        if "remove=x" in url:
+            return original_resp
+        return stripped_resp
+    return fake_req
+
+
+async def test_parameter_tampering_no_finding_when_endpoint_is_spa_catchall():
+    # Original, stripped, AND control all return the exact same generic
+    # response -- the endpoint reacts to nothing, so "removal had no effect"
+    # proves nothing. Must not be reported as tampering.
+    same = _resp(200, text="a" * 100)
+    business_logic.req = _fake_req_for(same, same, same)
+
+    result = await business_logic.test_parameter_tampering(
+        "https://example.com/x?keep=1&remove=x", "remove"
+    )
+
+    assert result["status"] == "success"
+    assert result["data"]["tampering_detected"] is not True
+
+
+async def test_parameter_tampering_flags_when_removal_unchecked_but_value_is_validated():
+    # Removing the parameter yields a behaviorally identical response to the
+    # original, but a bogus value for the SAME parameter is rejected -- proof
+    # the endpoint does validate this parameter when present, just not when
+    # it's missing entirely.
     original_resp = _resp(200, text="a" * 100)
     stripped_resp = _resp(200, text="a" * 100)
-
-    async def fake_req(method, url, auth_session=None, **kwargs):
-        return original_resp if "remove=x" in url else stripped_resp
-
-    business_logic.req = fake_req
+    control_resp = _resp(403, text="invalid value")
+    business_logic.req = _fake_req_for(original_resp, stripped_resp, control_resp)
 
     result = await business_logic.test_parameter_tampering(
         "https://example.com/x?keep=1&remove=x", "remove"
@@ -358,14 +390,11 @@ async def test_parameter_tampering_flags_when_response_unchanged():
 
 async def test_parameter_tampering_no_finding_when_response_differs():
     # Removing the parameter changes the response (different status) ->
-    # server is validating it; not a finding.
+    # server is validating it; not a finding, regardless of the control.
     original_resp = _resp(200, text="a" * 100)
     stripped_resp = _resp(400, text="missing required parameter")
-
-    async def fake_req(method, url, auth_session=None, **kwargs):
-        return original_resp if "remove=x" in url else stripped_resp
-
-    business_logic.req = fake_req
+    control_resp = _resp(403, text="invalid value")
+    business_logic.req = _fake_req_for(original_resp, stripped_resp, control_resp)
 
     result = await business_logic.test_parameter_tampering(
         "https://example.com/x?keep=1&remove=x", "remove"

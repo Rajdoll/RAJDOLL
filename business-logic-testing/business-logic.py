@@ -102,24 +102,47 @@ async def test_parameter_tampering(url: str, param_to_remove: str, auth_session:
         params = parse_qs(parsed_url.query)
         if param_to_remove in params:
             del params[param_to_remove]
-        
+
         new_query = urlencode(params, doseq=True)
         stripped_url = urlunparse(parsed_url._replace(query=new_query))
 
+        # Control: same endpoint, same parameter present but set to an obviously
+        # bogus value (not removed). Establishes whether this endpoint reacts to
+        # the parameter AT ALL. Without this, a static/SPA-catch-all endpoint
+        # (identical response regardless of input) would look indistinguishable
+        # from "removal isn't re-validated".
+        control_params = parse_qs(parsed_url.query)
+        control_params[param_to_remove] = ["__rajdoll_tamper_control__"]
+        control_query = urlencode(control_params, doseq=True)
+        control_url = urlunparse(parsed_url._replace(query=control_query))
+
         original_resp = await req("GET", url, auth_session=auth_session)
         stripped_resp = await req("GET", stripped_url, auth_session=auth_session)
+        control_resp = await req("GET", control_url, auth_session=auth_session)
 
-        if not original_resp or not stripped_resp:
+        if not original_resp or not stripped_resp or not control_resp:
             return {"status": "error", "message": "One or more requests failed."}
 
-        is_different = (original_resp.status_code != stripped_resp.status_code) or \
-                       (abs(len(original_resp.content) - len(stripped_resp.content)) > 50) # Toleransi kecil
+        def _similar(r1, r2):
+            return (r1.status_code == r2.status_code) and \
+                   (abs(len(r1.content) - len(r2.content)) <= 50) # Toleransi kecil
+
+        stripped_matches_original = _similar(original_resp, stripped_resp)
+        control_matches_original = _similar(original_resp, control_resp)
+
+        # Only a finding if removing the parameter has no effect BUT the
+        # endpoint demonstrably reacts to that same parameter when it's present
+        # with a bogus value -- otherwise "no effect" just means this endpoint
+        # is insensitive to everything (e.g. an SPA catch-all route), which is
+        # not evidence of a missing re-validation check.
+        tampering_detected = stripped_matches_original and not control_matches_original
 
         return {"status": "success", "data": {
-            "tampering_detected": not is_different,
+            "tampering_detected": tampering_detected,
             "original_response": {"status": original_resp.status_code, "length": len(original_resp.content)},
             "tampered_response": {"status": stripped_resp.status_code, "length": len(stripped_resp.content)},
-            "description": "If responses are similar, the server may not be re-validating data after parameter removal."
+            "control_response": {"status": control_resp.status_code, "length": len(control_resp.content)},
+            "description": "If the tampered (parameter-removed) response matches the original but the control (bogus-value) response does not, the server is not re-validating data after parameter removal."
         }}
     except Exception as e:
         return {"status": "error", "message": str(e)}
