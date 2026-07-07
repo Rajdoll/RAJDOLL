@@ -1,6 +1,7 @@
 from multi_agent_system.utils.finding_policy import (
     assess_finding_contract,
     build_finding_meta,
+    is_auto_validated_finding,
     DIFFERENTIAL_PROOF_TYPES,
 )
 
@@ -89,3 +90,36 @@ def test_build_finding_meta_true_positive_overrides_differential_requirement():
         is_true_positive=True, evidence=evidence, details="d", title="t", category="WSTG-X",
     )
     assert meta["reportability_status"] == "reportable"
+
+
+def test_build_finding_meta_does_not_reelevate_rejected_false_positive():
+    evidence = {"proof_type": "exploit_success", "url": "http://x/a", "endpoint": "http://x/a", "status_code": 200}
+    meta = build_finding_meta(
+        severity="critical", confidence_score=None, confidence_level=None,
+        is_true_positive=False, evidence=evidence, details="d", title="t", category="WSTG-X",
+    )
+    assert meta["reportability_status"] == "excluded_false_positive"
+    assert meta["finding_state"] == "rejected_false_positive"
+
+
+class _FakeFinding:
+    def __init__(self, evidence, is_true_positive=None):
+        self.evidence = evidence
+        self.is_true_positive = is_true_positive
+        self.confidence_score = None
+        self.confidence_level = None
+
+
+def test_is_auto_validated_finding_rejects_self_certified_without_differential_proof():
+    finding = _FakeFinding({"proof_type": "exploit_success"})
+    assert is_auto_validated_finding(finding) is False
+
+
+def test_is_auto_validated_finding_accepts_with_full_differential_proof():
+    finding = _FakeFinding({"proof_type": "exploit_success", "baseline_absent": True, "raw_reflected": False})
+    assert is_auto_validated_finding(finding) is True
+
+
+def test_is_auto_validated_finding_unaffected_for_non_differential_proof_type():
+    finding = _FakeFinding({"proof_type": "accessible_file"})
+    assert is_auto_validated_finding(finding) is True

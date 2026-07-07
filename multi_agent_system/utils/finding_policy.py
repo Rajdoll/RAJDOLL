@@ -381,7 +381,7 @@ def build_finding_meta(
         reportability_status = "needs_validation"
         evidence_quality = "weak"
         proof_type = meta.get("proof_type") or "partial"
-    if "missing_differential_proof" in contract_errors and is_true_positive is not True:
+    if "missing_differential_proof" in contract_errors and is_true_positive is None:
         finding_state = "lead"
         reportability_status = "needs_validation"
         evidence_quality = "weak"
@@ -477,6 +477,8 @@ def is_auto_validated_finding(finding: Any) -> bool:
     meta = extract_finding_meta(finding)
     proof_type = str(evidence.get("proof_type") or meta.get("proof_type") or "").lower()
     if not _is_strong_proof_type(proof_type):
+        return False
+    if proof_type in DIFFERENTIAL_PROOF_TYPES and not _has_differential_proof(evidence):
         return False
     score = get_finding_confidence_score(finding)
     level = get_finding_confidence_level(finding)
