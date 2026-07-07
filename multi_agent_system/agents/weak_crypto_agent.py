@@ -291,7 +291,7 @@ Write to shared_context:
                     )
                     if isinstance(res, dict) and res.get("status") == "success":
                         analysis = res.get("data", {})
-                        if analysis.get("weak_randomness"):
+                        if analysis.get("is_low_entropy"):
                             self.add_finding("WSTG-CRYP", "Weak session token randomness detected", severity="high", evidence=analysis)
                 else:
                     self.log("info", "Insufficient tokens for randomness analysis (need >= 10)")
