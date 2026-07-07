@@ -5,6 +5,7 @@ import json
 import base64
 import httpx
 import time
+import statistics
 import asyncio
 from typing import Dict, Any, List, Optional
 
@@ -276,6 +277,25 @@ async def test_user_registration(register_url: str, validation_checks: Dict[str,
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
         
         async with httpx.AsyncClient(**req_kwargs) as client:
+            # Baseline: a deliberately-invalid registration attempt to the
+            # same endpoint. "success" in resp.text.lower() alone is a
+            # generic keyword match -- if the page always contains the word
+            # "success" somewhere (nav text, boilerplate, etc.), that
+            # substring is not proof of anything. Require the signal to be
+            # present in the test response AND absent from this baseline.
+            baseline_text = ""
+            try:
+                baseline_resp = await client.post(register_url, data={
+                    "username": "",
+                    "email": "not-an-email",
+                    "password": "",
+                    "password_confirm": "mismatch"
+                })
+                baseline_text = baseline_resp.text
+            except Exception:
+                pass
+            baseline_has_success = "success" in baseline_text.lower()
+
             # Test 1: Weak password acceptance
             for weak_pass in validation_checks.get("weak_passwords", []):
                 try:
@@ -285,8 +305,8 @@ async def test_user_registration(register_url: str, validation_checks: Dict[str,
                         "password": weak_pass,
                         "password_confirm": weak_pass
                     })
-                    
-                    if resp.status_code in [200, 302] and "success" in resp.text.lower():
+
+                    if resp.status_code in [200, 302] and "success" in resp.text.lower() and not baseline_has_success:
                         findings.append({
                             "type": "weak_password_accepted",
                             "password": weak_pass,
@@ -306,7 +326,7 @@ async def test_user_registration(register_url: str, validation_checks: Dict[str,
                         "password_confirm": "ValidPassword123!"
                     })
                     
-                    if resp.status_code in [200, 302] and "success" in resp.text.lower():
+                    if resp.status_code in [200, 302] and "success" in resp.text.lower() and not baseline_has_success:
                         findings.append({
                             "type": "invalid_email_accepted",
                             "email": invalid_email,
@@ -355,7 +375,7 @@ async def test_user_registration(register_url: str, validation_checks: Dict[str,
                     "password_confirm": "Test123!"
                 })
                 
-                if resp2.status_code in [200, 302] and "success" in resp2.text.lower():
+                if resp2.status_code in [200, 302] and "success" in resp2.text.lower() and not baseline_has_success:
                     findings.append({
                         "type": "duplicate_username_allowed",
                         "username": unique_user,
@@ -487,6 +507,32 @@ async def test_account_provisioning(base_url: str, auth_session: Optional[Dict[s
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# Bytes of length-normalized noise to tolerate before treating a variance as
+# a real enumeration signal. Confirmed against real job-164 evidence: after
+# subtracting each username's own length, admin/administrator/root on a
+# ~89KB dynamic page still differed by up to 11 bytes (CSRF tokens,
+# timestamps, analytics ids embedded in the page -- unrelated to the
+# username). 100 bytes comfortably absorbs that jitter while remaining far
+# below any realistic distinguishing message (e.g. "username already taken").
+_ENUMERATION_LENGTH_NOISE_TOLERANCE = 100
+
+
+def _has_enumeration_signal(responses_by_user: Dict[str, Dict[str, Any]]) -> bool:
+    """True if usernames got genuinely different responses -- different
+    status codes, or a length spread (after normalizing out each username's
+    own length) beyond the noise tolerance above."""
+    normalized = [
+        (v["status_code"], v["response_length"] - len(u))
+        for u, v in responses_by_user.items()
+    ]
+    if not normalized:
+        return False
+    if len({sc for sc, _ in normalized}) > 1:
+        return True
+    lengths = [ln for _, ln in normalized]
+    return (max(lengths) - min(lengths)) > _ENUMERATION_LENGTH_NOISE_TOLERANCE
+
+
 # @mcp.tool()  # REMOVED: Using JSON-RPC adapter
 async def test_username_policy(base_url: str, test_usernames: List[str] = None, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
@@ -533,9 +579,13 @@ async def test_username_policy(base_url: str, test_usernames: List[str] = None, 
                 except Exception:
                     continue
             
-            # Analyze for enumeration
-            unique_responses = set((v["status_code"], v["response_length"]) for v in registration_responses.values())
-            if len(unique_responses) > 1:
+            # Analyze for enumeration -- normalize response_length by the
+            # username's own length first. Without this, comparing usernames
+            # like "admin"/"administrator"/"root" always shows a length
+            # difference (it's just the length of the echoed username itself),
+            # even when the server treats every username identically (job-164
+            # root cause: all 404, zero real enumeration signal).
+            if _has_enumeration_signal(registration_responses):
                 findings.append({
                     "type": "username_enumeration_registration",
                     "method": "registration_response_difference",
@@ -558,8 +608,8 @@ async def test_username_policy(base_url: str, test_usernames: List[str] = None, 
                 except Exception:
                     continue
             
-            unique_reset_responses = set((v["status_code"], v["response_length"]) for v in reset_responses.values())
-            if len(unique_reset_responses) > 1:
+            # Same length-normalization fix as the registration check above.
+            if _has_enumeration_signal(reset_responses):
                 findings.append({
                     "type": "username_enumeration_reset",
                     "method": "password_reset_response_difference",
@@ -568,22 +618,28 @@ async def test_username_policy(base_url: str, test_usernames: List[str] = None, 
                     "evidence": {k: v for k, v in list(reset_responses.items())[:3]}
                 })
             
-            # Test 3: Timing-based enumeration
-            import time
+            # Test 3: Timing-based enumeration -- take several repeated
+            # samples per username and compare medians (not a single request
+            # each), so one slow/fast request due to network jitter can't be
+            # mistaken for a real timing signal.
             timing_results = {}
+            samples_per_user = 3
             for username in test_usernames[:3]:  # Limit to prevent slowdown
-                try:
-                    start = time.time()
-                    await client.post(reset_url, data={"username": username})
-                    elapsed = time.time() - start
-                    timing_results[username] = elapsed
-                except Exception:
-                    continue
-            
+                samples = []
+                for _ in range(samples_per_user):
+                    try:
+                        start = time.time()
+                        await client.post(reset_url, data={"username": username})
+                        samples.append(time.time() - start)
+                    except Exception:
+                        continue
+                if samples:
+                    timing_results[username] = statistics.median(samples)
+
             if timing_results:
-                avg_time = sum(timing_results.values()) / len(timing_results)
-                suspicious_timing = [u for u, t in timing_results.items() if abs(t - avg_time) > 0.5]
-                
+                overall_median = statistics.median(timing_results.values())
+                suspicious_timing = [u for u, t in timing_results.items() if abs(t - overall_median) > 0.5]
+
                 if suspicious_timing:
                     findings.append({
                         "type": "timing_based_enumeration",
@@ -859,17 +915,6 @@ async def test_registration_mass_assignment(url: str, auth_session: Optional[Dic
                                     "description": "Registration accepted with empty email and password",
                                     "evidence": str(resp_data)[:300],
                                 })
-
-                        # Even if check field not in response, registration succeeded with extra params
-                        if check and resp.status_code == 201:
-                            findings.append({
-                                "type": "extra_fields_accepted",
-                                "test": test["name"],
-                                "endpoint": endpoint,
-                                "severity": "high",
-                                "description": f"Registration accepted extra field '{check}' without rejection",
-                                "evidence": str(resp_data)[:300],
-                            })
                 except Exception:
                     continue
 
