@@ -4349,6 +4349,24 @@ async def test_redos(url: str, auth_session: Optional[Dict[str, Any]] = None) ->
                     except Exception:
                         continue
 
+                # Baseline timing: benign payload on the same endpoint, so the
+                # long-string payload is judged against this endpoint's own
+                # normal latency instead of a fixed absolute threshold.
+                long_string_baseline_elapsed = 0.0
+                try:
+                    long_string_baseline_payload = "__long_string_baseline_probe__"
+                    start = time.monotonic()
+                    if method == "GET" and param_name:
+                        await client.get(f"{base_url}{path}", params={param_name: long_string_baseline_payload})
+                    elif method == "POST":
+                        if "login" in path:
+                            await client.post(f"{base_url}{path}", json={"email": long_string_baseline_payload, "password": "x"})
+                        elif "Feedbacks" in path:
+                            await client.post(f"{base_url}{path}", json={"comment": long_string_baseline_payload, "rating": 1})
+                    long_string_baseline_elapsed = time.monotonic() - start
+                except Exception:
+                    long_string_baseline_elapsed = 0.0
+
                 # Test algorithmic complexity (long strings)
                 for payload, payload_type in long_payloads:
                     try:
@@ -4364,13 +4382,16 @@ async def test_redos(url: str, auth_session: Optional[Dict[str, Any]] = None) ->
                                 continue
                         elapsed = time.monotonic() - start
 
-                        if elapsed > 5.0:
+                        # Flag only if timing is a large multiple of this endpoint's
+                        # own baseline, not just an absolute threshold (avoids false
+                        # positives on endpoints that are naturally slow).
+                        if elapsed > max(5.0, long_string_baseline_elapsed * 10):
                             findings.append({
                                 "type": f"Algorithmic complexity: {payload_type}",
                                 "endpoint": path,
                                 "severity": "medium",
-                                "description": f"Long input caused {elapsed:.1f}s response ({payload_type})",
-                                "evidence": f"Endpoint: {path}, Time: {elapsed:.1f}s, Payload size: {len(payload)}"
+                                "description": f"Long input caused {elapsed:.1f}s response ({payload_type}), baseline {long_string_baseline_elapsed:.1f}s",
+                                "evidence": f"Endpoint: {path}, Time: {elapsed:.1f}s, Baseline: {long_string_baseline_elapsed:.1f}s, Payload size: {len(payload)}"
                             })
                         # Also check if server accepted huge input without validation
                         elif resp.status_code == 200 and len(payload) > 50000:

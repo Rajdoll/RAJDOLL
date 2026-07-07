@@ -214,3 +214,63 @@ async def test_redos_genuine_exponential_blowup_still_fires(monkeypatch):
 
     redos_findings = [f for f in result["data"]["findings"] if f["type"].startswith("ReDoS:")]
     assert len(redos_findings) >= 1, f"expected at least one ReDoS finding, got {result['data']['findings']}"
+
+
+# ============================================================================
+# (d) Algorithmic complexity (long strings) -- same baseline-relative fix as
+# ReDoS: flag only when payload timing is a large multiple of a same-endpoint
+# baseline timing, not just an absolute >5.0s threshold.
+# ============================================================================
+
+def _long_string_client(clock, baseline_delay, payload_delay):
+    async def get_side_effect(url, params=None, **kwargs):
+        value = list(params.values())[0] if params else None
+        if "/rest/products/search" in url and value is not None:
+            if value == "__long_string_baseline_probe__":
+                clock["t"] += baseline_delay
+            elif len(value) > 1000:
+                clock["t"] += payload_delay
+            # else: ReDoS payload/baseline probe -- not under test here, no delay
+        return _resp(200)
+
+    async def post_side_effect(*args, **kwargs):
+        return _resp(200)
+
+    client = AsyncMock()
+    client.get = AsyncMock(side_effect=get_side_effect)
+    client.post = AsyncMock(side_effect=post_side_effect)
+    mock_httpx = MagicMock()
+    mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=client)
+    mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+    return mock_httpx
+
+
+async def test_long_string_naturally_slow_endpoint_marginal_payload_no_finding(monkeypatch):
+    # Baseline already 5.5s (naturally slow endpoint), long-string payload only
+    # 5.6s (marginally slower, NOT a large multiple). Old absolute ->5.0s
+    # threshold would flag this as algorithmic complexity; baseline-relative
+    # comparison must not.
+    clock = {"t": 0.0}
+    monkeypatch.setattr(iv.time, "monotonic", lambda: clock["t"])
+    mock_httpx = _long_string_client(clock, baseline_delay=5.5, payload_delay=5.6)
+
+    with patch.object(iv, "httpx", mock_httpx):
+        result = await iv.test_redos("http://example.com/rest/products/search")
+
+    algo_findings = [f for f in result["data"]["findings"] if f["type"].startswith("Algorithmic complexity:")]
+    assert algo_findings == [], f"expected no algorithmic complexity finding, got {algo_findings}"
+
+
+async def test_long_string_genuine_blowup_still_fires(monkeypatch):
+    # Baseline fast (0.1s), long-string payload 6.0s -- both > 5.0s absolute
+    # floor AND a large (60x) multiple of baseline -- genuine algorithmic
+    # complexity blowup, must still fire.
+    clock = {"t": 0.0}
+    monkeypatch.setattr(iv.time, "monotonic", lambda: clock["t"])
+    mock_httpx = _long_string_client(clock, baseline_delay=0.1, payload_delay=6.0)
+
+    with patch.object(iv, "httpx", mock_httpx):
+        result = await iv.test_redos("http://example.com/rest/products/search")
+
+    algo_findings = [f for f in result["data"]["findings"] if f["type"].startswith("Algorithmic complexity:")]
+    assert len(algo_findings) >= 1, f"expected at least one algorithmic complexity finding, got {result['data']['findings']}"
