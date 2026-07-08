@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 from urllib.parse import urlparse, quote, unquote
 
+from multi_agent_system.utils.differential_verify import verify_differential
+
 # mcp = FastMCP(  # REMOVED: Using JSON-RPC adapter"client-side-testing-enhanced")
 
 # ============================================================================
@@ -159,10 +161,12 @@ async def test_dom_xss(url: str, check_sources: bool = True, auth_session: Optio
                         test_url = url + payload
                     
                     response = await client.get(test_url)
-                    
-                    # Check if payload appears in script context without encoding
+
+                    # Check if payload appears in script context without encoding,
+                    # and confirm it's absent from the baseline (no-payload) page --
+                    # rules out sink patterns/strings that occur there naturally.
                     decoded_payload = unquote(payload.strip('#?'))
-                    if decoded_payload in response.text:
+                    if verify_differential(html_content, response.text, decoded_payload):
                         # Check if it's in dangerous context
                         for pattern, description, severity in sink_patterns:
                             if re.search(pattern, response.text):
@@ -419,24 +423,27 @@ async def test_html_injection(url: str, param: Optional[str] = None, auth_sessio
             elif 'token' in auth_session:
                 req_kwargs['headers'] = {"Authorization": f"Bearer {auth_session['token']}"}
         async with httpx.AsyncClient(**req_kwargs) as client:
+            # Baseline (no payload) -- rules out params/tags that occur naturally on the page.
+            baseline_resp = await client.get(url)
+            baseline_text = baseline_resp.text
+
             # Discover parameters
-            test_params = []
             if param:
                 test_params = [param]
             else:
-                resp = await client.get(url)
-                found_params = re.findall(r'name=["\']([^"\']+)["\']', resp.text)
+                found_params = re.findall(r'name=["\']([^"\']+)["\']', baseline_text)
                 test_params = list(set(found_params))[:5] or ['q', 'search', 'input']
-            
+
             for param_name in test_params:
                 for payload, attack_type in html_payloads:
                     try:
                         # Test GET
                         test_url = f"{url}?{param_name}={quote(payload)}"
                         response = await client.get(test_url)
-                        
-                        # Check if HTML tags are present in response without encoding
-                        if payload in response.text or unquote(payload) in response.text:
+
+                        # Check if HTML tags are present in response without encoding,
+                        # and absent from the baseline (no-payload) page.
+                        if verify_differential(baseline_text, response.text, payload):
                             # Check if it's in JavaScript context (DOM manipulation)
                             if re.search(r'innerHTML|outerHTML|insertAdjacentHTML', response.text):
                                 findings.append({
@@ -667,9 +674,10 @@ async def test_css_injection(url: str, auth_session: Optional[Dict[str, Any]] = 
                     try:
                         test_url = f"{url}?{param}={quote(payload)}"
                         resp = await client.get(test_url)
-                        
-                        # Check if injected CSS is present
-                        if payload in resp.text or unquote(payload) in resp.text:
+
+                        # Check if injected CSS is present and absent from the
+                        # baseline (no-payload) page.
+                        if verify_differential(html, resp.text, payload):
                             findings.append({
                                 "type": "CSS_INJECTION",
                                 "parameter": param,
@@ -1479,6 +1487,25 @@ async def test_postmessage_vulnerabilities(url: str, auth_session: Optional[Dict
 # WSTG-CLNT-15: Test for Client-Side Template Injection
 # ============================================================================
 
+def _csti_payloads(a: int, b: int, marker: str) -> list:
+    """Return (payload, payload_type, expected_signal, raw_payload) tuples for CSTI
+    probing. Math payloads use a distinctive product from random operands -- not a
+    fixed {{7*7}}/49 -- and constructor payloads return a distinctive random marker
+    instead of firing alert(1), so neither signal can collide with a page's own
+    naturally occurring "49" or "alert" text (e.g. Bootstrap's alert-danger class)."""
+    raw_expr = f"{a}*{b}"
+    product = str(a * b)
+    ctor_a = '{{constructor.constructor("return \'' + marker + '\'")()}}'
+    ctor_vue = '{{_c.constructor("return \'' + marker + '\'")()}}'
+    return [
+        ("{{" + raw_expr + "}}", "AngularJS/Vue expression", product, "{{" + raw_expr + "}}"),
+        ("${" + raw_expr + "}", "Template literal", product, "${" + raw_expr + "}"),
+        ("#{" + raw_expr + "}", "Ruby-style interpolation", product, "#{" + raw_expr + "}"),
+        (ctor_a, "AngularJS constructor", marker, ctor_a),
+        (ctor_vue, "Vue.js constructor", marker, ctor_vue),
+    ]
+
+
 async def test_client_side_template_injection(url: str, auth_session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     WSTG-CLNT-15: Test for Client-Side Template Injection (CSTI)
@@ -1498,22 +1525,17 @@ async def test_client_side_template_injection(url: str, auth_session: Optional[D
     Reference: https://portswigger.net/web-security/server-side-template-injection
     """
     try:
+        import random
+        import string
+
         findings = []
-        
-        # Template injection payloads
-        template_payloads = [
-            # AngularJS
-            ('{{7*7}}', 'AngularJS expression', '49'),
-            ('{{constructor.constructor("alert(1)")()}}', 'AngularJS constructor', 'alert'),
-            
-            # Vue.js
-            ('{{_c.constructor("alert(1)")()}}', 'Vue.js constructor', 'alert'),
-            
-            # General
-            ('${7*7}', 'Template literal', '49'),
-            ('#{7*7}', 'Ruby-style interpolation', '49'),
-        ]
-        
+
+        # Template injection payloads: random operands + a random marker so the
+        # expected signal can't naturally occur on the page (see _csti_payloads).
+        _a, _b = random.randint(10000, 99999), random.randint(10000, 99999)
+        _marker = "raj" + "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        template_payloads = _csti_payloads(_a, _b, _marker)
+
         # Framework detection patterns
         framework_patterns = [
             (r'ng-app', 'AngularJS', 'HIGH'),
@@ -1550,7 +1572,7 @@ async def test_client_side_template_injection(url: str, auth_session: Optional[D
                         })
             
             # Test for template injection
-            for payload, payload_type, expected_result in template_payloads:
+            for payload, payload_type, expected_result, raw_payload in template_payloads:
                 try:
                     # Test via URL parameters
                     test_urls = [
@@ -1559,12 +1581,14 @@ async def test_client_side_template_injection(url: str, auth_session: Optional[D
                         f"{url}?name={payload}",
                         f"{url}#{payload}",  # Hash-based for SPAs
                     ]
-                    
+
                     for test_url in test_urls:
                         test_response = await client.get(test_url)
-                        
-                        # Check if payload was evaluated (result appears in response)
-                        if expected_result in test_response.text and payload not in test_response.text:
+
+                        # Confirm the expression was evaluated: signal present here,
+                        # absent from the baseline page, and the raw payload not
+                        # merely echoed back unevaluated.
+                        if verify_differential(html_content, test_response.text, expected_result, raw_payload):
                             findings.append({
                                 "type": "TEMPLATE_INJECTION",
                                 "payload": payload,

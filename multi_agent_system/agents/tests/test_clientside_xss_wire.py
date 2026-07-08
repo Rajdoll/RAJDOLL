@@ -23,8 +23,13 @@ def test_both_xss_blocks_use_shared_candidate_helper():
 def test_aggressive_block_uses_hash_aware_url_builder():
     src = SRC.read_text()
     block = src[src.index("Aggressive-mode"):src.index("Headless-browser XSS confirmation")]
-    assert "_build_probe_url(" in block, (
-        "aggressive-mode block must build probe URLs via a hash-aware builder, "
+    assert "_run_xss_probe(" in block, (
+        "aggressive-mode block must probe via _run_xss_probe (baseline-then-payload, "
+        "differential-verified)"
+    )
+    probe_src = src[src.index("async def _run_xss_probe"):src.index("@AgentRegistry.register")]
+    assert "_build_probe_url(" in probe_src, (
+        "_run_xss_probe must build probe URLs via a hash-aware builder, "
         "not raw httpx params= (which puts the query OUTSIDE a #fragment, "
         "breaking SPA hash-routed candidates)"
     )

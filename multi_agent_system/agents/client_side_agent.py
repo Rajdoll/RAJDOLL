@@ -5,6 +5,7 @@ import os
 
 from .base_agent import BaseAgent, AgentRegistry
 from ..utils.mcp_client import MCPClient
+from ..utils.differential_verify import verify_differential
 from ..core.endpoint_inventory import read_tag
 from urllib.parse import urlsplit, parse_qs
 
@@ -77,6 +78,29 @@ def _build_probe_url(url: str, param: str, payload: str) -> str:
     new_q = f"{parts.query}{sep}{param}={payload}" if parts.query else f"{param}={payload}"
     from urllib.parse import urlunsplit
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_q, parts.fragment))
+
+
+async def _run_xss_probe(client, candidates: list[tuple[str, str]], payloads: list[str], marker: str) -> list[dict]:
+    """For each (url, param), take a baseline request with a benign `marker` in the
+    same param, then try each payload. Confirms only when the marker is absent from
+    the baseline and present in the payload response -- rules out pages that
+    naturally echo the marker/param regardless of what's sent (e.g. SPA catch-alls)."""
+    confirmed: list[dict] = []
+    for url, param in candidates:
+        try:
+            baseline = await client.get(_build_probe_url(url, param, marker))
+        except Exception:
+            continue
+        baseline_text = baseline.text
+        for payload in payloads:
+            try:
+                resp = await client.get(_build_probe_url(url, param, payload))
+            except Exception:
+                continue
+            if verify_differential(baseline_text, resp.text, marker):
+                confirmed.append({"url": url, "parameter": param, "payload": payload})
+                break
+    return confirmed
 
 
 @AgentRegistry.register("ClientSideAgent")
@@ -561,31 +585,23 @@ You are ClientSideAgent, an OWASP WSTG-CLNT expert specializing in client-side s
                 f"<img src=x onerror=alert('{_marker}')>",
                 f"<svg onload=alert('{_marker}')>",
             ]
+            _cand_pairs = [(cand["url"], cand["params"][0]) for cand in _candidates]
             async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=10) as _xss_client:
-                for cand in _candidates:
-                    _url = cand["url"]
-                    _params = cand["params"]
-                    for _payload in _xss_payloads:
-                        try:
-                            _probe_url = _build_probe_url(_url, _params[0], _payload)
-                            _resp = await _xss_client.get(_probe_url)
-                            if _payload in _resp.text or _marker in _resp.text:
-                                self.add_finding(
-                                    "WSTG-CLNT-01",
-                                    f"Reflected XSS via {_params[0]} on {_url}",
-                                    severity="high",
-                                    evidence={
-                                        "url": _url,
-                                        "parameter": _params[0],
-                                        "payload": _payload,
-                                        "proof_type": "reflection_detected",
-                                        "marker_in_response": _marker in _resp.text,
-                                    },
-                                    details="Aggressive mode forced reflected XSS probe — payload reflected unfiltered in response body.",
-                                )
-                                break
-                        except Exception:
-                            continue
+                _confirmed = await _run_xss_probe(_xss_client, _cand_pairs, _xss_payloads, _marker)
+            for _c in _confirmed:
+                self.add_finding(
+                    "WSTG-CLNT-01",
+                    f"Reflected XSS via {_c['parameter']} on {_c['url']}",
+                    severity="high",
+                    evidence={
+                        "url": _c["url"],
+                        "parameter": _c["parameter"],
+                        "payload": _c["payload"],
+                        "proof_type": "reflection_detected",
+                        "baseline_absent": True,
+                    },
+                    details="Aggressive mode forced reflected XSS probe — payload reflected unfiltered in response body, confirmed absent from a same-page baseline.",
+                )
 
         # Headless-browser XSS confirmation (WSTG-CLNT-01) — catches SPA/DOM XSS that
         # response-based checks miss. Candidates from discovery + SPA routes; payloads generic.
