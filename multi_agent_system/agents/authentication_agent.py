@@ -569,11 +569,10 @@ Write to shared_context:
 				)
 				if isinstance(res, dict) and res.get("status") == "success":
 					data = res.get("data", {})
-					if data.get("vulnerabilities_found", 0) > 0:
-						for finding in data.get("findings", [])[:5]:
-							safe_evidence = {"path": finding.get("path", ""), "status_code": finding.get("status_code", "")}
-							self.add_finding("WSTG-ATHN-04", f"Auth bypass: {finding.get('description', 'Authentication bypass found')}",
-										   severity="high", evidence=safe_evidence)
+					for bypass_line in data.get("bypasses_found", [])[:5]:
+						safe_evidence = {"raw_ffuf_output": bypass_line}
+						self.add_finding("WSTG-ATHN-04", f"Auth bypass: {bypass_line}",
+									   severity="high", evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_auth_bypass failed: {e}")
 

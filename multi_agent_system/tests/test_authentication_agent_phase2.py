@@ -554,3 +554,63 @@ async def test_security_questions_agent_reports_predictable_when_accepted(monkey
     assert len(sq) == 1, calls
     assert sq[0]["severity"] == "high", sq
     assert "guessed" in sq[0]["title"].lower() or "accepted" in sq[0]["title"].lower(), sq
+
+
+# ============================================================================
+# Item 7: test_auth_bypass (ffuf) -- dead outer gate + wrong inner key
+# (authentication-testing/authentication.py:167-189 only ever returns
+# {"status": "success", "data": {"bypasses_found": [...], "message": ...}} --
+# bypasses_found is a list of raw ffuf stdout lines, e.g.
+# "admin -> [Status: 200, Size: 512, Words: 10, Lines: 5, Duration: 42ms]",
+# never a "vulnerabilities_found" key and never a list of dicts under "findings".)
+# ============================================================================
+
+async def test_auth_bypass_real_tool_shape_fires_on_raw_lines(monkeypatch):
+    mock_httpx = _default_httpx_mock()
+    monkeypatch.setitem(sys.modules, "httpx", mock_httpx)
+
+    responses = {
+        "test_auth_bypass": {
+            "status": "success",
+            "data": {
+                "bypasses_found": [
+                    "admin -> [Status: 200, Size: 512, Words: 10, Lines: 5, Duration: 42ms]",
+                    "backup -> [Status: 302, Size: 0, Words: 1, Lines: 1, Duration: 11ms]",
+                ],
+                "message": "Found 2 potential bypasses.",
+            },
+        },
+    }
+    monkeypatch.setattr(authentication_agent, "MCPClient", lambda: _FakeMCPClient(responses))
+
+    agent = _auth_agent(should_run_tool=lambda name: name == "test_auth_bypass")
+    await agent.run()
+
+    calls = _calls(agent)
+    bypasses = [c for c in calls if c["category"] == "WSTG-ATHN-04"]
+    assert len(bypasses) == 2, calls
+    assert "admin -> [Status: 200" in bypasses[0]["evidence"].get("raw_ffuf_output", ""), bypasses[0]
+    assert "backup -> [Status: 302" in bypasses[1]["evidence"].get("raw_ffuf_output", ""), bypasses[1]
+
+
+async def test_auth_bypass_real_tool_shape_empty_list_no_finding(monkeypatch):
+    mock_httpx = _default_httpx_mock()
+    monkeypatch.setitem(sys.modules, "httpx", mock_httpx)
+
+    responses = {
+        "test_auth_bypass": {
+            "status": "success",
+            "data": {
+                "bypasses_found": [],
+                "message": "No simple auth bypasses found.",
+            },
+        },
+    }
+    monkeypatch.setattr(authentication_agent, "MCPClient", lambda: _FakeMCPClient(responses))
+
+    agent = _auth_agent(should_run_tool=lambda name: name == "test_auth_bypass")
+    await agent.run()
+
+    calls = _calls(agent)
+    bypasses = [c for c in calls if c["category"] == "WSTG-ATHN-04"]
+    assert bypasses == [], calls
