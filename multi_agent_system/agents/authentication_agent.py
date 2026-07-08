@@ -536,24 +536,23 @@ Write to shared_context:
 				)
 				if isinstance(res, dict) and res.get("status") == "success":
 					data = res.get("data", {})
-					if data.get("vulnerabilities_found", 0) > 0:
-						for finding in data.get("findings", [])[:5]:
-							status_code = finding.get("status_code")
-							token_present = bool(finding.get("token_present"))
-							set_cookie = finding.get("set_cookie") or ""
-							# Only report a genuine authenticated-session confirmation:
-							# a success status plus a real token/session cookie signal.
-							if status_code not in (200, 302) or not (token_present or set_cookie):
-								continue
-							safe_evidence = {
-								"username": finding.get("username", ""),
-								"password": finding.get("password", ""),
-								"service": finding.get("service", ""),
-								"status_code": status_code,
-								"token_present": token_present,
-							}
-							self.add_finding("WSTG-ATHN-02", f"Default credentials: {finding.get('description', 'Default credentials found')}",
-										   severity="critical", evidence=safe_evidence)
+					for finding in data.get("findings", [])[:5]:
+						status_code = finding.get("status_code")
+						token_present = bool(finding.get("token_present"))
+						set_cookie = finding.get("set_cookie") or ""
+						# Only report a genuine authenticated-session confirmation:
+						# a success status plus a real token/session cookie signal.
+						if status_code not in (200, 302) or not (token_present or set_cookie):
+							continue
+						safe_evidence = {
+							"username": finding.get("username", ""),
+							"password": finding.get("password", ""),
+							"service": finding.get("service", ""),
+							"status_code": status_code,
+							"token_present": token_present,
+						}
+						self.add_finding("WSTG-ATHN-02", f"Default credentials: {finding.get('description', 'Default credentials found')}",
+									   severity="critical", evidence=safe_evidence)
 			except Exception as e:
 				self.log("warning", f"test_default_credentials failed: {e}")
 

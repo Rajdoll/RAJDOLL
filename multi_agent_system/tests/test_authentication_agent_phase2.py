@@ -218,6 +218,75 @@ async def test_default_credentials_no_finding_without_session_signal(monkeypatch
     assert creds == [], creds
 
 
+async def test_default_credentials_real_tool_shape_no_vulnerabilities_found_key_still_fires(monkeypatch):
+    """
+    Regression guard for the dead outer gate: test_default_credentials
+    (authentication-testing/authentication.py:66-164) has exactly ONE return
+    path and NEVER includes a "vulnerabilities_found" key -- only
+    {"status": "success", "data": {"findings": [...], "tested_endpoints": [...]}}.
+    An outer `if data.get("vulnerabilities_found", 0) > 0:` gate before the
+    findings loop always evaluates False against this real shape, so the
+    already-correct inner confirmation logic (status 200/302 + token/cookie)
+    never runs. This test uses the REAL return shape (no vulnerabilities_found
+    key) with a finding that satisfies the inner confirmation logic, and
+    asserts the finding fires.
+    """
+    mock_httpx = _default_httpx_mock()
+    monkeypatch.setitem(sys.modules, "httpx", mock_httpx)
+
+    responses = {
+        "test_default_credentials": {
+            "status": "success",
+            "data": {
+                "findings": [{
+                    "endpoint": "https://example.test/rest/user/login",
+                    "username": "admin@juice-sh.op", "password": "admin123",
+                    "status_code": 200, "token_present": True, "set_cookie": "",
+                }],
+                "tested_endpoints": ["/rest/user/login"],
+            },
+        },
+    }
+    monkeypatch.setattr(authentication_agent, "MCPClient", lambda: _FakeMCPClient(responses))
+
+    agent = _auth_agent(should_run_tool=lambda name: name == "test_default_credentials")
+    await agent.run()
+
+    calls = _calls(agent)
+    creds = [c for c in calls if c["category"] == "WSTG-ATHN-02"]
+    assert len(creds) == 1, calls
+    assert creds[0]["evidence"].get("password") == "admin123", creds[0]["evidence"]
+
+
+async def test_default_credentials_real_tool_shape_no_signal_no_finding(monkeypatch):
+    """Real return shape (no vulnerabilities_found key) with no confirmation
+    signal in any finding must still produce no finding."""
+    mock_httpx = _default_httpx_mock()
+    monkeypatch.setitem(sys.modules, "httpx", mock_httpx)
+
+    responses = {
+        "test_default_credentials": {
+            "status": "success",
+            "data": {
+                "findings": [{
+                    "endpoint": "https://example.test/rest/user/login",
+                    "username": "admin", "password": "admin",
+                    "status_code": 401, "token_present": False, "set_cookie": "",
+                }],
+                "tested_endpoints": ["/rest/user/login"],
+            },
+        },
+    }
+    monkeypatch.setattr(authentication_agent, "MCPClient", lambda: _FakeMCPClient(responses))
+
+    agent = _auth_agent(should_run_tool=lambda name: name == "test_default_credentials")
+    await agent.run()
+
+    calls = _calls(agent)
+    creds = [c for c in calls if c["category"] == "WSTG-ATHN-02"]
+    assert creds == [], creds
+
+
 async def test_default_credentials_finding_requires_and_includes_session_signal(monkeypatch):
     mock_httpx = _default_httpx_mock()
     monkeypatch.setitem(sys.modules, "httpx", mock_httpx)
