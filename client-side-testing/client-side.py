@@ -1004,13 +1004,16 @@ async def test_clickjacking(url: str, auth_session: Optional[Dict[str, Any]] = N
                 </body>
                 </html>
                 '''
-                # In real scenario, would need browser automation to test
-                # For now, just report based on headers
+                # Framability is inferred purely from absent headers -- no browser
+                # automation actually renders the iframe/attempts a click here, so
+                # this is not a confirmed finding. Report informational only (the
+                # MISSING_X_FRAME_OPTIONS/MISSING_FRAME_ANCESTORS findings above
+                # already carry the real, verified header-absence facts).
                 if not xfo and 'frame-ancestors' not in csp:
                     findings.append({
                         "type": "CLICKJACKING_POSSIBLE",
-                        "severity": "HIGH",
-                        "description": "Page can be framed (no protection headers)",
+                        "severity": "info",
+                        "description": "Page can be framed (no protection headers) -- NOT confirmed via browser automation",
                         "exploitation": "Attacker can overlay transparent iframe to hijack clicks",
                     })
             except Exception:
@@ -1321,10 +1324,15 @@ async def test_prototype_pollution(url: str, auth_session: Optional[Dict[str, An
                 for pattern, description, severity in vulnerable_patterns:
                     matches = re.finditer(pattern, script, re.IGNORECASE)
                     for match in matches:
+                        # Static regex match on JS source with zero runtime
+                        # confirmation -- this exact class matched benign webpack
+                        # polyfill code in a real scan (job 164). Report as
+                        # informational; PROTOTYPE_POLLUTION below (testPolluted
+                        # marker genuinely reflected) is the real, confirmed finding.
                         findings.append({
                             "type": "VULNERABLE_PATTERN",
                             "pattern": description,
-                            "severity": severity,
+                            "severity": "info",
                             "code_snippet": match.group(0),
                             "description": f"Potentially vulnerable code: {description}",
                             "recommendation": "Implement prototype pollution protection (freeze Object.prototype or use hasOwnProperty checks)"
@@ -1353,7 +1361,9 @@ async def test_prototype_pollution(url: str, auth_session: Optional[Dict[str, An
             return {
                 "status": "success",
                 "data": {
-                    "vulnerable": True,
+                    # Only a genuinely confirmed finding (PROTOTYPE_POLLUTION) counts
+                    # as vulnerable -- informational static-pattern matches alone do not.
+                    "vulnerable": any(f.get("severity") in ("HIGH", "CRITICAL") for f in findings),
                     "findings": findings[:5],
                     "message": f"Found {len(findings)} prototype pollution issues"
                 }
@@ -1440,21 +1450,24 @@ async def test_postmessage_vulnerabilities(url: str, auth_session: Optional[Dict
                     # Check for vulnerable patterns
                     for pattern, description, severity in vulnerable_patterns:
                         if re.search(pattern, script, re.IGNORECASE | re.DOTALL):
+                            # Entirely static regex on JS source -- no headless
+                            # browser confirmation performed. Report informational.
                             findings.append({
                                 "type": "POSTMESSAGE_VULNERABILITY",
                                 "pattern": description,
-                                "severity": severity,
+                                "severity": "info",
                                 "description": f"Insecure postMessage: {description}",
                                 "recommendation": "Always validate event.origin and sanitize event.data before use"
                             })
-            
+
             # Check for window.postMessage calls (sending side)
             if re.search(r'postMessage\s*\(', html_content):
                 # Check if targetOrigin is '*'
                 if re.search(r'postMessage\s*\([^,]+,\s*["\'][*]["\']', html_content):
+                    # Same static-regex-only shape as above -- informational.
                     findings.append({
                         "type": "POSTMESSAGE_WILDCARD",
-                        "severity": "MEDIUM",
+                        "severity": "info",
                         "description": "postMessage called with wildcard targetOrigin (*)",
                         "recommendation": "Specify explicit targetOrigin instead of wildcard"
                     })
@@ -1685,10 +1698,14 @@ async def test_resource_manipulation(url: str, auth_session: Optional[Dict[str, 
             for pattern, description, severity in dangerous_patterns:
                 matches = re.findall(pattern, all_js, re.IGNORECASE)
                 if matches:
+                    # Static regex on JS source only, no confirmation the sink
+                    # actually executes with attacker-controlled data. Report
+                    # informational (open_redirect/iframe_manipulation below are
+                    # genuinely checked and keep their real severities).
                     findings.append({
                         "type": "resource_manipulation",
                         "pattern": description,
-                        "severity": severity,
+                        "severity": "info",
                         "description": f"Client-side resource manipulation: {description}",
                         "evidence": matches[0][:200] if matches else "",
                         "recommendation": "Validate and sanitize URL parameters before using them to load resources"
@@ -1771,9 +1788,11 @@ async def test_web_messaging(url: str, auth_session: Optional[Dict[str, Any]] = 
                 all_js, re.IGNORECASE
             )
             if wildcard_sends:
+                # Static regex on JS source only -- no headless browser
+                # confirmation possible. Report informational.
                 findings.append({
                     "type": "postmessage_wildcard_origin",
-                    "severity": "HIGH",
+                    "severity": "info",
                     "description": "postMessage uses wildcard '*' as target origin",
                     "evidence": wildcard_sends[0][:200],
                     "count": len(wildcard_sends),
@@ -1800,9 +1819,11 @@ async def test_web_messaging(url: str, auth_session: Optional[Dict[str, Any]] = 
                     if re.search(r'location\s*[=.]|window\.open', listener):
                         dangerous_ops.append("navigation")
 
+                    # Static regex on JS source only -- same false-positive class
+                    # as postmessage_wildcard_origin above. Report informational.
                     findings.append({
                         "type": "postmessage_no_origin_check",
-                        "severity": "CRITICAL" if dangerous_ops else "HIGH",
+                        "severity": "info",
                         "description": "Message event listener without origin validation",
                         "dangerous_operations": dangerous_ops or ["unknown"],
                         "evidence": listener[:300],
@@ -1817,9 +1838,10 @@ async def test_web_messaging(url: str, auth_session: Optional[Dict[str, Any]] = 
             for pattern, description in sensitive_patterns:
                 matches = re.findall(pattern, all_js, re.IGNORECASE)
                 if matches:
+                    # Static regex on JS source only -- informational.
                     findings.append({
                         "type": "sensitive_postmessage",
-                        "severity": "HIGH",
+                        "severity": "info",
                         "description": description,
                         "evidence": matches[0][:200],
                         "recommendation": "Avoid sending sensitive data via postMessage"
@@ -1847,9 +1869,10 @@ async def test_web_messaging(url: str, auth_session: Optional[Dict[str, Any]] = 
                         if 'postMessage' in js_content:
                             wildcards = re.findall(r'\.postMessage\s*\([^)]+,\s*["\']?\*["\']?\)', js_content)
                             if wildcards:
+                                # Static regex on fetched JS source only -- informational.
                                 findings.append({
                                     "type": "external_js_wildcard_postmessage",
-                                    "severity": "HIGH",
+                                    "severity": "info",
                                     "source": src,
                                     "description": f"External script uses postMessage with wildcard origin",
                                     "count": len(wildcards)
