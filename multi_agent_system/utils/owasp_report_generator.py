@@ -4,6 +4,7 @@ Generates professional security assessment reports with PDF export
 """
 
 import os
+import re
 import json
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -161,21 +162,12 @@ class OWASPReportGenerator:
         return filter_findings(findings, "raw")
     
     def _map_category_to_owasp(self, category: str) -> str:
-        """Map agent category to OWASP WSTG category"""
-        mapping = {
-            "Information Gathering": "WSTG-INFO",
-            "Configuration Testing": "WSTG-CONF",
-            "Identity Management": "WSTG-IDNT",
-            "Authentication": "WSTG-ATHN",
-            "Authorization": "WSTG-ATHZ",
-            "Session Management": "WSTG-SESS",
-            "Input Validation": "WSTG-INPV",
-            "Error Handling": "WSTG-ERRH",
-            "Cryptography": "WSTG-CRYP",
-            "Business Logic": "WSTG-BUSL",
-            "Client-side": "WSTG-CLNT",
-        }
-        return mapping.get(category, "WSTG-MISC")
+        """Map finding category (already a WSTG code, e.g. WSTG-CONF-01) to its parent WSTG category"""
+        if category and category.startswith("WSTG-"):
+            parts = category.split("-")
+            if len(parts) >= 2:
+                return f"{parts[0]}-{parts[1]}"
+        return "WSTG-MISC"
     
     def _fetch_agents_data(self, job_id: int) -> List[Dict]:
         """Fetch agent execution data"""
@@ -268,23 +260,23 @@ class OWASPReportGenerator:
         md.append(f"- **Target URL:** `{job_data['target']}`")
         md.append(f"- **Assessment Type:** Automated Multi-Agent Security Testing")
         md.append(f"- **Testing Standard:** OWASP Web Security Testing Guide (WSTG) v4.2")
-        md.append(f"- **Testing Coverage:** {len([c for c in category_counts.keys() if c.startswith('WSTG-')])} of 12 OWASP WSTG categories\n")
+        md.append(f"- **Testing Coverage:** {len([c for c in category_counts.keys() if c.startswith('WSTG-')])} of {len(self.OWASP_CATEGORIES)} OWASP WSTG categories\n")
         
         md.append("### Testing Methodology\n")
-        md.append("This assessment utilized an autonomous multi-agent system with 14 specialized agents:")
+        md.append("This assessment utilized an autonomous multi-agent system with 13 specialized agents:")
         md.append("1. **ReconnaissanceAgent** - Information gathering (WSTG-INFO)")
-        md.append("2. **AuthenticationAgent** - Authentication testing (WSTG-ATHN)")
-        md.append("3. **AuthorizationAgent** - Authorization testing (WSTG-ATHZ)")
-        md.append("4. **SessionManagementAgent** - Session management (WSTG-SESS)")
-        md.append("5. **InputValidationAgent** - Input validation (WSTG-INPV)")
-        md.append("7. **FileUploadAgent** - File upload testing (WSTG-BUSL)")
-        md.append("8. **ClientSideAgent** - Client-side testing (WSTG-CLNT)")
-        md.append("9. **ErrorHandlingAgent** - Error handling (WSTG-ERRH)")
-        md.append("10. **WeakCryptographyAgent** - Cryptography testing (WSTG-CRYP)")
-        md.append("11. **BusinessLogicAgent** - Business logic testing (WSTG-BUSL)")
-        md.append("12. **IdentityManagementAgent** - Identity management (WSTG-IDNT)")
-        md.append("13. **ConfigDeploymentAgent** - Configuration testing (WSTG-CONF)")
-        md.append("14. **CVEScanAgent** - Known vulnerability scanning\n")
+        md.append("2. **ConfigDeploymentAgent** - Configuration testing (WSTG-CONF)")
+        md.append("3. **IdentityManagementAgent** - Identity management (WSTG-IDNT)")
+        md.append("4. **AuthenticationAgent** - Authentication testing (WSTG-ATHN)")
+        md.append("5. **AuthorizationAgent** - Authorization testing (WSTG-ATHZ)")
+        md.append("6. **SessionManagementAgent** - Session management (WSTG-SESS)")
+        md.append("7. **InputValidationAgent** - Input validation (WSTG-INPV)")
+        md.append("8. **ErrorHandlingAgent** - Error handling (WSTG-ERRH)")
+        md.append("9. **WeakCryptographyAgent** - Cryptography testing (WSTG-CRYP)")
+        md.append("10. **BusinessLogicAgent** - Business logic testing (WSTG-BUSL)")
+        md.append("11. **FileUploadAgent** - File upload testing (WSTG-BUSL)")
+        md.append("12. **ClientSideAgent** - Client-side testing (WSTG-CLNT)")
+        md.append("13. **ReportGenerationAgent** - Report generation\n")
         
         # Findings by Category (OWASP WSTG Section 5.3)
         md.append("---\n")
@@ -571,7 +563,10 @@ class OWASPReportGenerator:
         # Basic Markdown parsing (replace with proper parser in production)
         lines = markdown.split("\n")
         in_code_block = False
-        
+        in_table = False
+        table_row_is_header = False
+        table_sep_pat = re.compile(r"^\s*:?-+:?\s*$")
+
         for line in lines:
             # Code blocks
             if line.startswith("```"):
@@ -581,11 +576,15 @@ class OWASPReportGenerator:
                     html += "<pre><code>"
                 in_code_block = not in_code_block
                 continue
-            
+
             if in_code_block:
                 html += line + "\n"
                 continue
-            
+
+            if in_table and "|" not in line:
+                html += "</table>\n"
+                in_table = False
+
             # Headers
             if line.startswith("# "):
                 html += f"<h1>{line[2:]}</h1>\n"
@@ -600,7 +599,16 @@ class OWASPReportGenerator:
                 html += "<hr>\n"
             # Tables
             elif "|" in line:
-                html += "<tr>" + "".join(f"<td>{cell.strip()}</td>" for cell in line.split("|")[1:-1]) + "</tr>\n"
+                cells = [c.strip() for c in line.split("|")[1:-1]]
+                if all(table_sep_pat.match(c) for c in cells):
+                    continue  # header/body separator row, not rendered
+                if not in_table:
+                    html += "<table>\n"
+                    in_table = True
+                    table_row_is_header = True
+                tag = "th" if table_row_is_header else "td"
+                html += "<tr>" + "".join(f"<{tag}>{cell}</{tag}>" for cell in cells) + "</tr>\n"
+                table_row_is_header = False
             # Bold
             elif "**" in line:
                 line = line.replace("**", "<strong>", 1).replace("**", "</strong>", 1)
@@ -610,7 +618,10 @@ class OWASPReportGenerator:
                 html += f"<p>{line}</p>\n"
             else:
                 html += "\n"
-        
+
+        if in_table:
+            html += "</table>\n"
+
         html += """
     </div>
 </body>
