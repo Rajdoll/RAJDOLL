@@ -104,6 +104,12 @@ async function restoreLastScan() {
         const jobId = lastScan.job_id || lastScan.id;
         if (!jobId) return;
 
+        // Only reconnect to scans still in progress. Finished/cancelled/failed
+        // scans are left off the landing page on a fresh open.
+        const status = lastScan.status || 'unknown';
+        const ACTIVE_STATUSES = ['queued', 'running', 'analyzing', 'waiting_checkpoint', 'paused'];
+        if (!ACTIVE_STATUSES.includes(status)) return;
+
         currentJobId = jobId;
         jobIdDisplay.textContent = jobId;
         targetDisplay.textContent = lastScan.target || '-';
@@ -113,22 +119,10 @@ async function restoreLastScan() {
         monitorPanel.style.display = 'block';
         logsPanel.style.display = 'block';
 
-        const status = lastScan.status || 'unknown';
-        if (['queued', 'running', 'analyzing', 'waiting_checkpoint'].includes(status)) {
-            addLog(`[SYSTEM] Resuming monitoring of scan #${jobId}...`, 'info');
-            await loadHistoricalLogs(jobId);
-            startStatusPolling();
-            connectWebSocket();
-        } else {
-            const detailResp = await fetch(`${API_BASE}/scans/${jobId}`);
-            if (detailResp.ok) {
-                const data = await detailResp.json();
-                updateStatusDisplay(data);
-                if (data.agents) updateAgentsDisplay(data.agents);
-                await loadHistoricalLogs(jobId);
-                addLog(`[SYSTEM] Restored scan #${jobId} (${status})`, 'info');
-            }
-        }
+        addLog(`[SYSTEM] Resuming monitoring of scan #${jobId}...`, 'info');
+        await loadHistoricalLogs(jobId);
+        startStatusPolling();
+        connectWebSocket();
     } catch (e) {
         console.log('[restoreLastScan] No previous scan found:', e.message);
     }

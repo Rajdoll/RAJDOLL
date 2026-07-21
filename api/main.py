@@ -11,8 +11,6 @@ from .routes.logs import router as logs_router
 from .routes.hitl import router as hitl_router
 from .routes.hitl_chat import router as hitl_chat_router
 from .routes.pdf_report import router as pdf_report_router
-from multi_agent_system.core.db import Base, engine
-from starlette.staticfiles import StaticFiles
 
 
 app = FastAPI(title="RAJDOLL Multi-Agent Web Security Scanner")
@@ -28,16 +26,14 @@ app.include_router(logs_router)
 app.include_router(hitl_router)
 app.include_router(hitl_chat_router)
 
-# Serve the frontend
-app.mount(
-	"/",
-	StaticFiles(directory="frontend", html=True),
-	name="static",
-)
-
 
 @app.on_event("startup")
-def _create_tables():
-	from multi_agent_system.models import ground_truth  # noqa: register GroundTruthEntry
-	Base.metadata.create_all(bind=engine)
+def _run_migrations():
+	import os
+	from alembic import command
+	from alembic.config import Config
+
+	repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	alembic_cfg = Config(os.path.join(repo_root, "alembic.ini"))
+	command.upgrade(alembic_cfg, "head")
 

@@ -13,8 +13,6 @@ services:
       - DATABASE_URL=postgresql+psycopg://rajdoll:rajdoll@db:5432/rajdoll
       - REDIS_URL=redis://redis:6379/0
       - MCP_SERVER_URLS={"information-gathering":"http://info-mcp:9001/jsonrpc","authentication-testing":"http://auth-mcp:9002/jsonrpc","authorization-testing":"http://authorz-mcp:9003/jsonrpc","session-management-testing":"http://session-mcp:9004/jsonrpc","input-validation-testing":"http://input-mcp:9005/jsonrpc","error-handling-testing":"http://error-mcp:9006/jsonrpc","weak-cryptography-testing":"http://crypto-mcp:9007/jsonrpc","client-side-testing":"http://client-mcp:9008/jsonrpc","business-logic-testing":"http://biz-mcp:9009/jsonrpc","configuration-and-deployment-management":"http://confdep-mcp:9010/jsonrpc","identity-management-testing":"http://identity-mcp:9011/jsonrpc","file-upload-testing":"http://fileupload-mcp:9012/jsonrpc","katana-crawler":"http://katana-mcp:9015/jsonrpc"}
-    ports:
-      - "8000:8000"
     depends_on:
       - db
       - redis
@@ -31,6 +29,15 @@ services:
       - identity-mcp
       - fileupload-mcp
       - katana-mcp
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8000:80"
+    depends_on:
+      - api
   worker:
     build: .
     command: ["celery", "-A", "multi_agent_system.tasks.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=1"]
