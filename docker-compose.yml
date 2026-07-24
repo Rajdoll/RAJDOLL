@@ -267,7 +267,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_OPTIONS=--max-old-space-size=2048
-    mem_limit: 2g
+    mem_limit: 3g
 
   # NOTE: juice-shop is now managed here with auto-restart.
   # Scan target: http://juice-shop:3000 (internal) or http://localhost:3000 (host)

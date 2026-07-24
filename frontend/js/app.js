@@ -878,9 +878,11 @@ function showDirectiveHelp() {
         'INCLUDE: <url>     — Add URL to scope\n' +
         'EXCLUDE: <pattern> — Exclude URL pattern\n' +
         'DEPTH: shallow|normal|deep  — Set scan intensity\n' +
-        'NOTE: <text>       — Inject context note\n\n' +
-        'Max 5 commands. One per line.\n\n' +
-        'Or just type freeform — the agent will interpret it.'
+        'NOTE: <text>       — Inject any free-text context/instruction\n\n' +
+        'Max 5 commands. One per line. Each line MUST start with one of the\n' +
+        'commands above followed by a colon — plain freeform text without a\n' +
+        'prefix will be rejected. For anything that doesn\'t fit FOCUS/SKIP/\n' +
+        'INCLUDE/EXCLUDE/DEPTH, just prefix it with NOTE: instead.'
     );
 }
 

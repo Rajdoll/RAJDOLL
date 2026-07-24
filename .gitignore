@@ -70,8 +70,14 @@ Penelitian/
 paperwritingskill/
 *.docx
 *.pdf
+*.pptx
 *.tex
 generate_bab4.py
+
+# Local tooling artifacts (not part of the system)
+.codegraph/
+.playwright-mcp/
+.superpowers/
 
 # Claude Code local config (not for repo)
 .claude/

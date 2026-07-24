@@ -4,6 +4,7 @@ Provides PDF download functionality for completed scans.
 """
 from __future__ import annotations
 
+import html as _html
 import io
 import json
 import os
@@ -59,6 +60,22 @@ def _normalize_severity(sev: str) -> str:
     return "INFO" if s in ("INFORMATIONAL", "INFORMATIONAL ") else s
 
 
+def _adjudication_status(f: dict) -> str:
+    """Report-facing adjudication label, distinct from severity.
+
+    info-severity findings are non-exploitable observations, not vulnerabilities;
+    is_true_positive is None for findings the triage LLM could not confidently
+    confirm or reject (never guessed — see triage_findings() system prompt).
+    """
+    if f["severity"] == "INFO":
+        return "informational"
+    if f["is_true_positive"] is True:
+        return "confirmed"
+    if f["is_true_positive"] is False:
+        return "not_confirmed"
+    return "pending_review"
+
+
 def _format_evidence(evidence) -> str:
     if evidence is None:
         return "No evidence recorded."
@@ -75,7 +92,22 @@ def _format_evidence(evidence) -> str:
             text = json.dumps(evidence, indent=2, ensure_ascii=False)
         except Exception:
             text = str(evidence)
-    return text[:2000] + ("\n… (truncated)" if len(text) > 2000 else "")
+    # Cap kept well under WeasyPrint's page-break-inside:avoid ceiling for
+    # .finding: evidence text beyond ~600 chars makes the card taller than
+    # one page, and WeasyPrint silently stops laying out every sibling
+    # .finding after the first oversized one (confirmed by bisection on job
+    # 189 -- cap=600 rendered 1/48 cards, cap=400 rendered 48/48).
+    EVIDENCE_CAP = 400
+    text = text[:EVIDENCE_CAP] + ("\n… (truncated)" if len(text) > EVIDENCE_CAP else "")
+    # Some tool evidence embeds the target's raw page source (HTML comments,
+    # <!DOCTYPE>, full <html> documents captured as proof). Jinja2 autoescape
+    # should neutralize this, but WeasyPrint's CSS/HTML parser demonstrably
+    # chokes on it anyway and silently stops laying out every subsequent
+    # .finding card (confirmed by bisection on job 173: excluding the two
+    # findings with embedded raw HTML fixed all findings after them). Escape
+    # explicitly here and mark safe so this is neutralized before WeasyPrint
+    # ever sees it, independent of Jinja2's own escaping behavior.
+    return Markup(_html.escape(text))
 
 
 def _scan_duration(job: Job) -> str:
@@ -173,6 +205,7 @@ def _render_pdf(job_id: int) -> bytes:
         )
         serialized["severity"] = _normalize_severity(serialized["severity"])
         serialized["evidence"] = _format_evidence(f.evidence)
+        serialized["adjudication_status"] = _adjudication_status(serialized)
         findings.append(serialized)
 
     # Sort by severity
@@ -186,6 +219,14 @@ def _render_pdf(job_id: int) -> bytes:
     sev_counts: dict[str, int] = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
     for f in findings_sorted:
         sev_counts[f["severity"]] = sev_counts.get(f["severity"], 0) + 1
+
+    # Adjudication counts (report transparency: total_findings includes every
+    # raw signal, this breaks down how many are actually confirmed vs still
+    # pending manual review vs informational-only, so the two numbers never
+    # look inconsistent to a reader)
+    adjudication_counts = {"confirmed": 0, "not_confirmed": 0, "pending_review": 0, "informational": 0}
+    for f in findings_sorted:
+        adjudication_counts[f["adjudication_status"]] += 1
 
     # Top findings (critical + high, max 5)
     top_findings = [f for f in findings_sorted if f["severity"] in ("CRITICAL", "HIGH")][:5]
@@ -257,6 +298,7 @@ def _render_pdf(job_id: int) -> bytes:
         findings=findings_sorted,
         top_findings=top_findings,
         sev_counts=sev_counts,
+        adjudication_counts=adjudication_counts,
         wstg_categories=wstg_categories,
         enrichment_stats=enrichment_stats,
         agents=agents_list,

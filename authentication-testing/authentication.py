@@ -459,21 +459,29 @@ async def test_password_reset(reset_url: str, email: str) -> Dict[str, Any]:
             if reset_resp.status_code not in [200, 302]:
                 return {"status": "error", "message": f"Reset request failed with status {reset_resp.status_code}"}
             
+            # 3. Check for user enumeration (fetched early: also used below as a
+            # baseline to filter boilerplate out of the token-exposure check)
+            invalid_reset = await client.post(reset_url, data={"email": "nonexistent@invalid.com"})
+            response_diff = len(reset_resp.text) != len(invalid_reset.text)
+
             # 2. Check for reset token in response (sometimes exposed in dev mode)
+            # A blind regex sweep over the whole body flags framework boilerplate
+            # that appears on every page (e.g. ASP.NET __VIEWSTATE, asset hashes)
+            # as a "reset token". Diff against the invalid-email response, which
+            # renders the same template/boilerplate but never a real token, so
+            # only strings unique to the valid-email response are reported.
             token_pattern = r'[a-f0-9]{32,}|[A-Za-z0-9\-_]{20,}'
-            tokens_in_response = re.findall(token_pattern, reset_resp.text)
-            
+            tokens_in_valid = set(re.findall(token_pattern, reset_resp.text))
+            tokens_in_invalid = set(re.findall(token_pattern, invalid_reset.text))
+            tokens_in_response = tokens_in_valid - tokens_in_invalid
+
             if tokens_in_response:
                 findings.append({
                     "type": "token_exposure",
                     "severity": "Critical",
                     "description": "Reset token exposed in HTTP response",
-                    "evidence": {"tokens_found": len(tokens_in_response)}
+                    "evidence": {"tokens_found": len(tokens_in_response), "boilerplate_excluded": len(tokens_in_valid & tokens_in_invalid)}
                 })
-            
-            # 3. Check for user enumeration
-            invalid_reset = await client.post(reset_url, data={"email": "nonexistent@invalid.com"})
-            response_diff = len(reset_resp.text) != len(invalid_reset.text)
             
             if response_diff:
                 findings.append({

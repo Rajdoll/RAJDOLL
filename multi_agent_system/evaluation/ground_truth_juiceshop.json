@@ -1,9 +1,9 @@
 {
   "target": "juiceshop",
   "target_url": "http://juice-shop:3000",
-  "description": "OWASP Juice Shop v15.0.0 — 80 automatable challenges of 102 total (non-automatable excluded per OSINT/chatbot/visual/external rule). Source: juice-shop v15.0.0 data/static/challenges.yml.",
+  "description": "OWASP Juice Shop v15.0.0 — 101 entries: 102 official documented challenges minus 1 (\"Imaginary Challenge\", confirmed non-existent/meta-joke per official source, not a real vulnerability). Of the 101, 80 were detected-capable at time of evaluation; 21 remain undetected, categorized by limitation type (see 'detection_limitation' field per entry): 19 'model_reasoning' (require OSINT, chatbot interaction, visual/CAPTCHA solving, or external-resource access beyond current Qwen3-4B capacity and MCP tool inventory) and 2 'tool_inventory' (Insecure Deserialization / B2B Order RCE-DoS vector, for which no MCP tool currently exists). Source: juice-shop v15.0.0 data/static/challenges.yml.",
   "source": "https://github.com/juice-shop/juice-shop/blob/master/data/static/challenges.yml",
-  "total_count": 80,
+  "total_count": 101,
   "entries": [
     {
       "id": "jsop-t001",
@@ -320,7 +320,7 @@
     {
       "id": "jsop-h009",
       "challenge": "NoSQL Exfiltration",
-      "difficulty": "4star",
+      "difficulty": "5star",
       "vuln_category": "NoSQL Injection",
       "owasp_wstg": "WSTG-INPV-05",
       "severity": "high"
@@ -352,7 +352,7 @@
     {
       "id": "jsop-c003",
       "challenge": "Deluxe Fraud",
-      "difficulty": "5star",
+      "difficulty": "3star",
       "vuln_category": "Mass Assignment",
       "owasp_wstg": "WSTG-IDNT-02",
       "severity": "high"
@@ -368,7 +368,7 @@
     {
       "id": "jsop-c005",
       "challenge": "Forged Review",
-      "difficulty": "5star",
+      "difficulty": "3star",
       "vuln_category": "IDOR / Privilege Escalation",
       "owasp_wstg": "WSTG-ATHZ-02",
       "severity": "high"
@@ -376,7 +376,7 @@
     {
       "id": "jsop-c006",
       "challenge": "Forged Signed JWT",
-      "difficulty": "5star",
+      "difficulty": "6star",
       "vuln_category": "Weak Cryptography",
       "owasp_wstg": "WSTG-CRYP-04",
       "severity": "high"
@@ -384,7 +384,7 @@
     {
       "id": "jsop-c007",
       "challenge": "Multiple Likes",
-      "difficulty": "5star",
+      "difficulty": "6star",
       "vuln_category": "Race Condition / Rate Limiting",
       "owasp_wstg": "WSTG-BUSL-07",
       "severity": "medium"
@@ -392,7 +392,7 @@
     {
       "id": "jsop-c008",
       "challenge": "SSTi",
-      "difficulty": "5star",
+      "difficulty": "6star",
       "vuln_category": "Server-Side Template Injection",
       "owasp_wstg": "WSTG-INPV-18",
       "severity": "critical"
@@ -416,7 +416,7 @@
     {
       "id": "jsop-c011",
       "challenge": "Vulnerable Library",
-      "difficulty": "5star",
+      "difficulty": "4star",
       "vuln_category": "Vulnerable Component",
       "owasp_wstg": "WSTG-CONF-01",
       "severity": "high"
@@ -432,7 +432,7 @@
     {
       "id": "jsop-x002",
       "challenge": "Allowlist Bypass",
-      "difficulty": "6star",
+      "difficulty": "4star",
       "vuln_category": "Client-Side Allowlist Bypass",
       "owasp_wstg": "WSTG-CLNT-04",
       "severity": "medium"
@@ -440,7 +440,7 @@
     {
       "id": "jsop-x003",
       "challenge": "CSP Bypass",
-      "difficulty": "6star",
+      "difficulty": "4star",
       "vuln_category": "CSP Misconfiguration",
       "owasp_wstg": "WSTG-CLNT-12",
       "severity": "medium"
@@ -448,7 +448,7 @@
     {
       "id": "jsop-x004",
       "challenge": "NoSQL Manipulation",
-      "difficulty": "6star",
+      "difficulty": "4star",
       "vuln_category": "NoSQL Injection",
       "owasp_wstg": "WSTG-INPV-05",
       "severity": "high"
@@ -644,6 +644,195 @@
       "vuln_category": "XXE",
       "owasp_wstg": "WSTG-INPV-07",
       "severity": "medium"
+    },
+    {
+      "id": "jsop-t038",
+      "challenge": "Bjoern's Favorite Pet",
+      "difficulty": "3star",
+      "vuln_category": "Broken Authentication",
+      "owasp_wstg": "WSTG-ATHN-07",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t039",
+      "challenge": "Blockchain Hype",
+      "difficulty": "5star",
+      "vuln_category": "Security through Obscurity",
+      "owasp_wstg": "WSTG-INFO-02",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t040",
+      "challenge": "Blocked RCE DoS",
+      "difficulty": "5star",
+      "vuln_category": "Insecure Deserialization",
+      "owasp_wstg": "WSTG-INPV-13",
+      "severity": "high",
+      "detection_limitation": "tool_inventory"
+    },
+    {
+      "id": "jsop-t041",
+      "challenge": "Extra Language",
+      "difficulty": "5star",
+      "vuln_category": "Broken Anti Automation",
+      "owasp_wstg": "WSTG-BUSL-05",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t042",
+      "challenge": "Leaked Access Logs",
+      "difficulty": "5star",
+      "vuln_category": "Sensitive Data Exposure",
+      "owasp_wstg": "WSTG-CONF-04",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t043",
+      "challenge": "Login Bjoern",
+      "difficulty": "4star",
+      "vuln_category": "Broken Authentication",
+      "owasp_wstg": "WSTG-ATHN-07",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t044",
+      "challenge": "Login Support Team",
+      "difficulty": "6star",
+      "vuln_category": "Security Misconfiguration",
+      "owasp_wstg": "WSTG-CONF-05",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t045",
+      "challenge": "Nested Easter Egg",
+      "difficulty": "4star",
+      "vuln_category": "Cryptographic Issues",
+      "owasp_wstg": "WSTG-CRYP-04",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t046",
+      "challenge": "Premium Paywall",
+      "difficulty": "6star",
+      "vuln_category": "Cryptographic Issues",
+      "owasp_wstg": "WSTG-CRYP-04",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t047",
+      "challenge": "Privacy Policy",
+      "difficulty": "1star",
+      "vuln_category": "Miscellaneous",
+      "owasp_wstg": "WSTG-BUSL-01",
+      "severity": "low",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t048",
+      "challenge": "Privacy Policy Inspection",
+      "difficulty": "3star",
+      "vuln_category": "Security through Obscurity",
+      "owasp_wstg": "WSTG-CONF-04",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t049",
+      "challenge": "Reset Bender's Password",
+      "difficulty": "4star",
+      "vuln_category": "Broken Authentication",
+      "owasp_wstg": "WSTG-ATHN-09",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t050",
+      "challenge": "Reset Bjoern's Password",
+      "difficulty": "5star",
+      "vuln_category": "Broken Authentication",
+      "owasp_wstg": "WSTG-ATHN-09",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t051",
+      "challenge": "Reset Morty's Password",
+      "difficulty": "5star",
+      "vuln_category": "Broken Anti Automation",
+      "owasp_wstg": "WSTG-ATHN-09",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t052",
+      "challenge": "Steganography",
+      "difficulty": "4star",
+      "vuln_category": "Security through Obscurity",
+      "owasp_wstg": "WSTG-CONF-04",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t053",
+      "challenge": "Successful RCE DoS",
+      "difficulty": "6star",
+      "vuln_category": "Insecure Deserialization",
+      "owasp_wstg": "WSTG-INPV-13",
+      "severity": "high",
+      "detection_limitation": "tool_inventory"
+    },
+    {
+      "id": "jsop-t054",
+      "challenge": "Reset Uvogin's Password",
+      "difficulty": "4star",
+      "vuln_category": "Sensitive Data Exposure",
+      "owasp_wstg": "WSTG-ATHN-09",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t055",
+      "challenge": "Visual Geo Stalking",
+      "difficulty": "2star",
+      "vuln_category": "Sensitive Data Exposure",
+      "owasp_wstg": "WSTG-CONF-04",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t056",
+      "challenge": "Kill Chatbot",
+      "difficulty": "5star",
+      "vuln_category": "Vulnerable Components",
+      "owasp_wstg": "WSTG-CONF-01",
+      "severity": "medium",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t057",
+      "challenge": "Bully Chatbot",
+      "difficulty": "1star",
+      "vuln_category": "Miscellaneous",
+      "owasp_wstg": "WSTG-BUSL-01",
+      "severity": "low",
+      "detection_limitation": "model_reasoning"
+    },
+    {
+      "id": "jsop-t058",
+      "challenge": "Mass Dispel",
+      "difficulty": "1star",
+      "vuln_category": "Miscellaneous",
+      "owasp_wstg": "WSTG-BUSL-01",
+      "severity": "low",
+      "detection_limitation": "model_reasoning"
     }
   ]
 }

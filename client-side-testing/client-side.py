@@ -1338,22 +1338,46 @@ async def test_prototype_pollution(url: str, auth_session: Optional[Dict[str, An
                             "recommendation": "Implement prototype pollution protection (freeze Object.prototype or use hasOwnProperty checks)"
                         })
             
+            # Control request: a harmless query param with no relation to
+            # __proto__/constructor, same marker string. If a site blindly
+            # reflects ANY unrecognized query string (e.g. a malformed-URL
+            # error page echoing the request), the control marker shows up
+            # too -- proving 'testPolluted in response' alone can't tell real
+            # pollution from generic echo. Only trust the __proto__ payloads
+            # when the control does NOT reflect.
+            control_reflects = False
+            try:
+                control_response = await client.get(url + '?harmlessControlMarker=testPolluted')
+                control_reflects = 'testPolluted' in control_response.text
+            except Exception:
+                pass
+
             # Test for actual pollution via URL parameters
             for payload, payload_type in pollution_payloads:
                 try:
                     test_url = url + payload
                     test_response = await client.get(test_url)
-                    
+
                     # Check if pollution is reflected in JavaScript
                     if 'testPolluted' in test_response.text:
-                        findings.append({
-                            "type": "PROTOTYPE_POLLUTION",
-                            "payload": payload,
-                            "severity": "CRITICAL",
-                            "description": f"Prototype pollution via {payload_type}",
-                            "evidence": f"Payload reflected in response: {payload}",
-                            "recommendation": "Sanitize URL parameters and object keys. Use Object.create(null) for dictionaries."
-                        })
+                        if control_reflects:
+                            findings.append({
+                                "type": "VULNERABLE_PATTERN",
+                                "payload": payload,
+                                "severity": "info",
+                                "description": f"Payload marker reflected, but a harmless control query string reflects identically -- likely generic echo (e.g. error page), not confirmed prototype pollution",
+                                "evidence": f"Payload reflected in response: {payload}",
+                                "recommendation": "Manually verify whether __proto__/constructor keys actually reach object construction (e.g. via a headless-browser check of Object.prototype)."
+                            })
+                        else:
+                            findings.append({
+                                "type": "PROTOTYPE_POLLUTION",
+                                "payload": payload,
+                                "severity": "CRITICAL",
+                                "description": f"Prototype pollution via {payload_type}",
+                                "evidence": f"Payload reflected in response: {payload} (control marker did NOT reflect, ruling out generic echo)",
+                                "recommendation": "Sanitize URL parameters and object keys. Use Object.create(null) for dictionaries."
+                            })
                 except Exception:
                     pass
         

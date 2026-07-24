@@ -65,6 +65,12 @@
     font-size: 8pt; font-weight: bold; white-space: nowrap;
   }
 
+  /* ── Adjudication status badges ─────────────────────── */
+  .status-confirmed      { background: #2e7d32; color: white; }
+  .status-not_confirmed  { background: #757575; color: white; }
+  .status-pending_review { background: #f9a825; color: #212121; }
+  .status-informational  { background: #1565c0; color: white; }
+
   /* ── Source badges ──────────────────────────────────── */
   .src-kb       { background: #0277bd; color: white; font-size: 7.5pt; padding: 1px 6px; border-radius: 2px; font-weight: bold; }
   .src-llm      { background: #6a1b9a; color: white; font-size: 7.5pt; padding: 1px 6px; border-radius: 2px; font-weight: bold; }
@@ -72,8 +78,14 @@
 
   /* ── Finding card ───────────────────────────────────── */
   .finding {
+    /* No page-break-inside: avoid -- WeasyPrint silently stops laying out
+       every sibling .finding once one avoid-break block doesn't fit a single
+       page (confirmed by bisection: with it on, a report with 100+ findings
+       rendered as few as 1 finding card before giving up). A finding
+       occasionally splitting across a page boundary is a minor cosmetic
+       cost; silently dropping most of the report is not acceptable. */
     border: 1px solid #bdbdbd; border-radius: 4px;
-    margin: 18px 0; page-break-inside: avoid;
+    margin: 18px 0;
     overflow: hidden;
   }
   .finding-header {
@@ -147,7 +159,7 @@
     <tr><td>Target</td><td><strong>{{ target }}</strong><span class="target-str">{{ target }}</span></td></tr>
     <tr><td>Scan Date</td><td>{{ scan_date }}</td></tr>
     <tr><td>Duration</td><td>{{ scan_duration }}</td></tr>
-    <tr><td>Total Findings</td><td><strong>{{ total_findings }}</strong></td></tr>
+    <tr><td>Total Findings</td><td><strong>{{ total_findings }}</strong> ({{ adjudication_counts.confirmed }} confirmed &middot; {{ adjudication_counts.not_confirmed }} not confirmed &middot; {{ adjudication_counts.pending_review }} pending review &middot; {{ adjudication_counts.informational }} informational)</td></tr>
     <tr><td>Framework</td><td>OWASP WSTG 4.2</td></tr>
     {% if scope_whitelist %}<tr><td>Scope</td><td>{{ scope_whitelist | join(', ') }}</td></tr>{% endif %}
   </table>
@@ -177,6 +189,17 @@
     <td><div class="sev-num" style="color:#f57f17">{{ sev_counts.get('MEDIUM', 0) }}</div><div class="sev-lbl">Medium</div></td>
     <td><div class="sev-num" style="color:#2e7d32">{{ sev_counts.get('LOW', 0) }}</div><div class="sev-lbl">Low</div></td>
     <td><div class="sev-num" style="color:#1565c0">{{ sev_counts.get('INFO', 0) }}</div><div class="sev-lbl">Info</div></td>
+  </tr>
+</table>
+
+<h2>Adjudication Status</h2>
+<p style="font-size:9pt;color:#546e7a">Every signal the system flagged is listed in this report ({{ total_findings }} total). Status below shows how each was adjudicated — <strong>Confirmed</strong> and <strong>Not Confirmed</strong> are resolved; <strong>Pending Review</strong> means the evidence was inconclusive and the triager declined to guess rather than force a verdict; <strong>Informational</strong> items are non-exploitable observations and are excluded from vulnerability counts. Only Confirmed findings represent verified vulnerabilities.</p>
+<table class="sev-grid">
+  <tr>
+    <td><div class="sev-num" style="color:#2e7d32">{{ adjudication_counts.confirmed }}</div><div class="sev-lbl">Confirmed</div></td>
+    <td><div class="sev-num" style="color:#757575">{{ adjudication_counts.not_confirmed }}</div><div class="sev-lbl">Not Confirmed</div></td>
+    <td><div class="sev-num" style="color:#f57f17">{{ adjudication_counts.pending_review }}</div><div class="sev-lbl">Pending Review</div></td>
+    <td><div class="sev-num" style="color:#1565c0">{{ adjudication_counts.informational }}</div><div class="sev-lbl">Informational</div></td>
   </tr>
 </table>
 
@@ -291,13 +314,14 @@
 
 <h2>Findings Index</h2>
 <table>
-  <tr><th>#</th><th>Ref</th><th>Title</th><th>Severity</th><th>WSTG</th><th>Agent</th></tr>
+  <tr><th>#</th><th>Ref</th><th>Title</th><th>Severity</th><th>Status</th><th>WSTG</th><th>Agent</th></tr>
   {% for f in findings %}
   <tr>
     <td>{{ loop.index }}</td>
     <td style="font-family:monospace;font-size:8pt;white-space:nowrap">{{ f.ref }}</td>
     <td style="font-size:9pt">{{ f.title }}</td>
     <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+    <td><span class="badge status-{{ f.adjudication_status }}">{{ f.adjudication_status | replace('_',' ') | title }}</span></td>
     <td style="font-size:8.5pt;white-space:nowrap">{{ f.wstg_id or '—' }}</td>
     <td style="font-size:8.5pt;color:#546e7a">{{ f.agent_name }}</td>
   </tr>
@@ -313,7 +337,10 @@
 <div class="finding">
   <div class="finding-header">
     <div class="finding-ref">{{ f.ref }}</div>
-    <div class="finding-sev"><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></div>
+    <div class="finding-sev">
+      <span class="badge sev-{{ f.severity }}">{{ f.severity }}</span>
+      <span class="badge status-{{ f.adjudication_status }}">{{ f.adjudication_status | replace('_',' ') | title }}</span>
+    </div>
   </div>
   <div class="finding-title">{{ f.title }}</div>
   <div class="finding-meta">

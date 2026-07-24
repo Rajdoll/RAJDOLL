@@ -423,9 +423,19 @@ class SimpleLLMClient:
 
         # Build example URLs using actual target (not placeholder!)
         example_base = target_url if target_url else "http://ACTUAL_TARGET_URL"
-        
+
+        # HITL Director directive from the pre-agent checkpoint (if the user
+        # sent one via "Tell Differently") -- must be surfaced here, this is
+        # the only place select_tools_for_agent actually builds the LLM prompt.
+        director_instructions = shared_context.get("director_instructions", "")
+        director_block = (
+            f"**DIRECTOR INSTRUCTIONS (human operator, follow these before anything else):**\n{director_instructions}\n\n"
+            if director_instructions else ""
+        )
+
         prompt = (
             f"You are a security testing expert selecting tools for {agent_name}.\n\n"
+            f"{director_block}"
             f"**IMPORTANT: The target URL is: {target_url}**\n"
             f"You MUST use this exact target URL in all your test cases. Do NOT use placeholder URLs like 'http://target:3000'.\n\n"
             f"Available tools: {', '.join(available_tools)}\n\n"
@@ -844,11 +854,16 @@ class SimpleLLMClient:
             print(f"[SimpleLLMClient] analyze_all_findings failed: {e}")
             return f"Analysis failed: {e}"
 
-    async def triage_findings(self, items: list, target_ctx: dict, chunk_size: int = 8,
+    async def triage_findings(self, items: list, target_ctx: dict, chunk_size: int = 4,
                               max_rounds: int = 3) -> list:
         """Judge findings (validity + severity) from evidence. Returns one verdict per
-        input id. The local model often closes its array early and omits ids, so unanswered
-        ids are re-sent in shrinking rounds; whatever is still missing defaults to needs_review."""
+        input id. The local model's verbosity per item is inconsistent (sometimes terse,
+        sometimes a full "reason" sentence per finding), so a fixed chunk_size can silently
+        flip from safe to fully-truncated depending on content, not just item count --
+        empirically, 14 always fit and 16 always broke the JSON entirely at max_tokens=2000
+        (see triage_probe*.py runs 2026-07-23). chunk_size=4 keeps real headroom below that
+        cliff. Unanswered ids are re-sent in shrinking rounds; whatever is still missing after
+        max_rounds defaults to needs_review."""
         schema = {
             "title": "triage", "type": "object",
             "properties": {"verdicts": {"type": "array", "items": {
