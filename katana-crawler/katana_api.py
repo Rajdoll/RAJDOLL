@@ -2,9 +2,6 @@
 Katana JavaScript Parsing MCP Server - FastAPI HTTP/JSON-RPC Wrapper
 Provides endpoint discovery via JavaScript parsing and crawling
 
-Author: Martua Raja Doli Pangaribuan
-Institution: Politeknik Siber dan Sandi Negara
-Date: January 2, 2026
 """
 
 import asyncio

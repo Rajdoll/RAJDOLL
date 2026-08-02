@@ -4,7 +4,6 @@ Knowledge Graph untuk Shared Context Multi-Agent System
 Implementasi graph-based context untuk menggantikan simple dict.
 Mendukung relasi antar entities dan query berbasis graph.
 
-Author: RAJDOLL Research Project
 """
 
 from __future__ import annotations

@@ -4,9 +4,6 @@ Security Guards Module
 Implements authorization controls, rate limiting, and ethical safeguards
 to prevent misuse of automated penetration testing system.
 
-Author: Martua Raja Doli Pangaribuan
-Version: 2.0
-Last Updated: December 14, 2025
 """
 
 from __future__ import annotations

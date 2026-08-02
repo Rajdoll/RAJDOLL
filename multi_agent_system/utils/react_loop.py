@@ -18,8 +18,6 @@ Benchmark Target: >80% detection rate per category (Izzat et al.)
 - SSTI/XXE/CRLF Injection
 - LFI/Path Traversal
 
-Author: RAJDOLL Security Scanner
-Version: 2.0 - Benchmark-Aligned Implementation (Phase 1)
 """
 
 import json

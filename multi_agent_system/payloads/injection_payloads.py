@@ -20,8 +20,6 @@ Categories:
 - CRLF Injection (Header Injection)
 - Local File Inclusion (LFI) / Path Traversal
 
-Author: RAJDOLL Security Scanner
-Version: 2.0 - Benchmark-Aligned Implementation
 """
 
 from typing import Dict, List, Any

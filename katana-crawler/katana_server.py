@@ -2,9 +2,6 @@
 Katana MCP Server - Standard MCP Protocol Implementation
 Alternative to HTTP/JSON-RPC wrapper for stdio-based MCP communication
 
-Author: Martua Raja Doli Pangaribuan
-Institution: Politeknik Siber dan Sandi Negara
-Date: January 2, 2026
 """
 
 import asyncio

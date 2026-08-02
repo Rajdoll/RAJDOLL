@@ -12,7 +12,6 @@ agent untuk adaptif dan recovery dari kegagalan.
 
 Reference: Yao et al., "ReAct: Synergizing Reasoning and Acting in Language Models"
 
-Author: RAJDOLL Research Project
 """
 
 from __future__ import annotations

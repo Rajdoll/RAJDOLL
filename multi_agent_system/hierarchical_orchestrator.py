@@ -12,7 +12,6 @@ Berbeda dari flat orchestration, hierarchical approach:
 3. Better resource management
 4. Cluster-level decision making
 
-Author: RAJDOLL Research Project
 """
 
 from __future__ import annotations

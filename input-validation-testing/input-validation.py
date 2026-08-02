@@ -9,8 +9,6 @@ Based on:
 - HackerOne disclosed reports
 - Common web application vulnerability patterns
 
-Author: RAJDOLL Security Scanner
-Version: 2.0 - Complete WSTG Coverage
 """
 
 # from mcp.server.fastmcp import FastMCP  # REMOVED: Using JSON-RPC adapter instead

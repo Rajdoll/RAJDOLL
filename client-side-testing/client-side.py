@@ -9,8 +9,6 @@ Based on:
 - DOM XSS methodology
 - Modern browser security features
 
-Author: RAJDOLL Security Scanner
-Version: 2.0 - Complete WSTG Coverage
 """
 
 # from mcp.server.fastmcp import FastMCP  # REMOVED: Using JSON-RPC adapter

@@ -8,9 +8,6 @@ Usage:
     python -m multi_agent_system.evaluation.coverage_matrix [job_id] [--mode raw]
     python -m multi_agent_system.evaluation.coverage_matrix --input findings.json
 
-Author: Martua Raja Doli Pangaribuan
-Version: 1.0
-Date: 2026-03-25
 """
 
 from __future__ import annotations

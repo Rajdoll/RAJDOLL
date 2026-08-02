@@ -4,7 +4,6 @@ Confidence Scoring System untuk Multi-Agent Security Testing
 Sistem scoring yang memberikan confidence level pada setiap finding
 berdasarkan evidence, tool verification, dan multiple indicators.
 
-Author: RAJDOLL Research Project
 """
 
 from __future__ import annotations

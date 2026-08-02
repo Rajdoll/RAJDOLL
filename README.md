@@ -25,12 +25,12 @@ Built as a D4 thesis project at **Politeknik Siber dan Sandi Negara** using the 
 
 - **13 Specialized Agents** — Each expert in one OWASP WSTG category, running sequentially with cumulative context
 - **Local LLM Planning** — Qwen 3-4B via LM Studio generates adaptive tool arguments with `json_schema` enforcement
-- **13 MCP Servers** — 157 security tools via Model Context Protocol (JSON-RPC 2.0)
+- **13 MCP Servers** — 16 open-source security tools via Model Context Protocol (JSON-RPC 2.0)
 - **96 WSTG Test Cases** — Full coverage across all 11 WSTG testing categories
 - **Real-time Monitoring** — WebSocket updates, per-agent status, live findings
 - **Professional Reports** — OWASP-compliant PDF/Markdown with cross-agent correlation
 - **Ethical Safeguards** — Domain whitelist, rate limiting, HITL confirmation, audit logging
-- **Validated Metrics** — Precision 90.55%, Recall 91.23%, F1 90.89%, TCR 88.89% on OWASP Juice Shop (10 benchmark runs)
+- **Validated Metrics** — Precision 85.84%, Recall 70.89%, F1 77.65%, TCR 75.17%, Vulnerability Coverage 45.9% on OWASP Juice Shop (5 benchmark runs, strict validated basis)
 
 ---
 
@@ -164,25 +164,24 @@ curl -X POST http://localhost:8000/api/scans \
   }'
 ```
 
-**Expected Results (10 benchmark runs, Qwen3-4B, May 2026):**
+**Results (5 benchmark runs, Qwen3-4B, strict validated basis):**
 
-| Metric | Result | Target | Status |
-|--------|--------|--------|--------|
-| Precision | 90.55% (±0.27%) | >= 90% | PASS |
-| Recall | 91.23% (±0.00%) | >= 80% | PASS |
-| F1-Score | 90.89% (±0.14%) | >= 85% | PASS |
-| TCR | 88.89% (24/27 WSTG) | >= 70% | PASS |
-| Scan Time | ~62 minutes | <= 4h | PASS |
+| Metric | Result | Baseline (commercial tools) |
+|--------|--------|--------|
+| Precision | 85.84% (±3.36%) | — |
+| Recall / Detection Rate | 70.89% (±1.84%) | 13% – 28.26% |
+| F1-Score | 77.65% (±2.46%) | — |
+| TCR | 75.17% (±5.52%), ~20-24/29 WSTG | — |
+| Vulnerability Coverage | 45.9% (151/329 endpoints) | 28.3% – 71% |
+| Scan Time | ~65.4 minutes (±5.4 min) | budget <= 4h |
 
-Ground truth: 57 Juice Shop challenge entries across 27 WSTG sub-categories.
-Near-zero std dev confirms deterministic behavior with `json_schema` enforcement.
+Ground truth: 101 official Juice Shop challenge entries (v15.0.0) mapped to 29 unique WSTG v4.2 sub-categories.
 
-**5 challenges not detected (genuine system limitations):**
-- WSTG-SESS-05 (CSRF) — requires browser interaction
-- WSTG-ERRH-01 (Error Handling) — Juice Shop does not expose stack traces
-- WSTG-ATHN-09 x2 — requires 2FA setup
-- WSTG-ATHN-07 — password policy requires UI interaction
-- WSTG-CONF-01 (Supply Chain) — server-side package, not visible in HTML
+**25 of 101 ground truth entries not detected (4 root causes):**
+- 2 entries (password reset flows) require multi-step reasoning beyond current local LLM capability (security-question reset + cross-user relationship inference)
+- 2 entries (blind XXE) only surface evidence via an out-of-band channel outside the web application, unreachable by design
+- 19 entries require human-level reasoning or OSINT (guessing security answers, persuading the site chatbot, spotting hidden clues in images) — beyond Qwen3-4B's current capability
+- 2 entries (insecure deserialization on a hidden B2B Order feature) are not covered by any tool in the current inventory
 
 ---
 
@@ -280,11 +279,11 @@ Built-in safeguards:
 
 RAJDOLL uses Precision/Recall/F1/TCR metrics based on OWASP WSTG sub-category ground truth matching. The alias map supports bidirectional WSTG code matching (e.g., WSTG-INPV-01 matches WSTG-CLNT-01 for XSS variants).
 
+The reported figures above use a strict validation gate (only findings with `is_true_positive=true` count as true positives; unconfirmed findings are excluded rather than assumed correct):
+
 ```bash
-# Run evaluation
-python3 multi_agent_system/evaluation/compute_metrics.py \
-  --target juiceshop \
-  --runs juiceshop_benchmark_run1 juiceshop_benchmark_run2 ...
+# Reproduce the strict/validated metrics (standalone, no DB/API required)
+python3 multi_agent_system/evaluation/compute_metrics_strict.py
 ```
 
 ---
@@ -316,4 +315,4 @@ MIT License. See [LICENSE](LICENSE).
 
 **Author:** Martua Raja Doli Pangaribuan
 **Institution:** Politeknik Siber dan Sandi Negara
-**Version:** 2.3 | **Updated:** May 2026
+**Version:** 2.4 | **Updated:** August 2026

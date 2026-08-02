@@ -10,7 +10,6 @@ Examples:
 - Info Disclosure → Credential Leak → Privilege Escalation
 - XSS → Session Stealing → Account Takeover
 
-Author: RAJDOLL Research Project
 """
 
 from __future__ import annotations
