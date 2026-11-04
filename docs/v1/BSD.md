@@ -149,8 +149,8 @@ Inventaris endpoint dikumpulkan per penugasan dan bertambah dari setiap scan.
 | `content_type` | `text` null | |
 | `source` | `text` | `crawl`, `fuzz`, `js`, `openapi`, `manual`, `burp_paste`. `openapi` (dari spesifikasi API, belum tentu teramati langsung) ditambahkan di migrasi `0003`. |
 | `sample_request_enc` | `bytea` null | Contoh request mentah. |
-| `tags` | `text[]` | Misalnya `idor_candidate`, `upload`, `price`, `auth`. |
-| `tag_source` | `text` | `rule`, `llm`, `user`. |
+| `tags` | `text[]` | Taksonomi (F5b, `rajdoll/services/tagging.py`): `idor_candidate`, `admin`, `auth`, `registration`, `password_reset`, `profile`, `upload`, `price`, `state_change`, `has_params`, `redirect_param`, `file_param`, `api`, `graphql`, `hidden`. |
+| `tag_source` | `text` | `rule`, `llm`, `user`. Tanda `rule` dihitung ulang setiap kali parameter endpoint bertambah; tanda `user` (disunting asesor) tidak pernah ditimpa. |
 | `excluded` | `boolean` default `false` | |
 | `exclude_reason` | `text` null | Misalnya `pattern:logout` atau `user`. |
 | `first_seen_scan_id`, `last_seen_scan_id` | FK → `scan` null | |
@@ -508,13 +508,14 @@ Contoh `POST /engagements` (JSON):
 | `GET` | `/scans/{scan_id}/events/stream` | SSE untuk UI. Nama event: `stage`, `task`, `stats`, `finding`, `notice`, `done`. Isi event berupa potongan HTML untuk ekstensi SSE HTMX. |
 | `GET` | `/scans/{scan_id}/checkpoint` | Data checkpoint (lihat contoh). |
 | `POST` | `/scans/{scan_id}/checkpoint/hold` | Menahan hitung mundur (`checkpoint_deadline = null`) saat mulai menyunting. |
-| `PATCH` | `/scans/{scan_id}/checkpoint` | Body: `modules`, `endpoints` (`[{"id", "excluded", "tags"}]`), `add_endpoints` (`[{"method", "url"}]` atau `[{"raw_request"}]`), `add_scope` (`[pattern]`). |
+| `PATCH` | `/scans/{scan_id}/checkpoint` | Body: `modules`, `endpoints` (`[{"id", "excluded", "tags"}]`), `add_endpoints` (`[{"method", "url"}]` atau `[{"raw_request"}]`), `add_scope` (`[pattern]`). Hanya saat `awaiting_checkpoint` (selain itu `409`); suntingan pertama menahan hitung mundur. Halaman checkpoint mengirim satu aksi per form (`action` = `exclude`, `include`, `tags`, `modules`, `add_endpoint`, `raw_request`, `add_scope`). |
 | `POST` | `/scans/{scan_id}/checkpoint/continue` | Lanjut ke tahap pengujian. |
 
 Catatan implementasi (F4b):
 - Stream SSE memakai satu koneksi `LISTEN scan_events` per klien. Setiap ada notifikasi untuk scan itu (dan paling lambat setiap 15 detik), potongan `stage`, `task`, `stats`, dan `finding` dirender ulang dan hanya yang berubah dikirim. `notice` berisi baris log baru dengan `id` = ID event terakhir, sehingga browser yang tersambung ulang (header `Last-Event-ID`) tidak menerima baris lama. `done` dikirim setelah scan selesai, dibatalkan, atau gagal; halaman memakainya sebagai `sse-close` agar browser tidak menyambung ulang. Stream ditutup server setelah 10 menit dan browser menyambung ulang sendiri.
 - `GET /scans/{scan_id}/events` mengembalikan event urut naik (untuk polling); versi HTML berisi 500 baris terbaru.
 - Aksi jeda, lanjut, batal, dan checkpoint menjawab potongan status scan untuk htmx, JSON ringkasan scan untuk klien JSON, atau redirect ke monitor untuk form biasa.
+- Sejak F5b, rencana dihitung dari inventaris setiap kali ditampilkan: setiap endpoint membawa `modules` (modul yang akan mengujinya menurut tanda, `rajdoll/services/planning.py`), `recon_summary.estimated_requests` berisi perkiraan request tahap pengujian, dan `modules` berisi ke-12 modul profil Lengkap dengan `enabled`, `skipped_reason` (`not_available`, `needs_two_accounts`, `disabled`), dan jumlah endpoint. `editable` bernilai `true` selama scan menunggu checkpoint. Request Burp yang ditempel disimpan terenkripsi di `endpoint.sample_request_enc`; endpoint tambahan manual tidak dikenai pola pengecualian.
 - Sejak F5a, `GET /scans/{scan_id}/checkpoint` berisi tenggat, `recon_summary` (lihat `scan.recon_summary`), daftar modul, dan inventaris endpoint penugasan (kolom BSD 4.4 ditambah `url`). Host yang dihubungi tool sendiri (`burpsuite`, probe proxy milik ProjectDiscovery) tidak ditampilkan sebagai host di luar scope. `PATCH /scans/{scan_id}/checkpoint` hadir di F5 dan `POST /scans/{scan_id}/skip-blocked-modules` di F9.
 
 Contoh `GET /scans/{scan_id}/checkpoint`:

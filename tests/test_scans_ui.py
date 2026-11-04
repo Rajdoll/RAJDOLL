@@ -366,8 +366,9 @@ def test_checkpoint_page_and_actions(ui: Ui) -> None:
     assert "443/tcp · https" in page.text
     assert "<code>cdn.luar.test</code>" in page.text
     assert "Endpoint (2)" in page.text
-    assert '<tr class="excluded">' in page.text and "dikecualikan" in page.text
-    assert 'Input Validation <small class="muted">(belum tersedia, dilewati)</small>' in page.text
+    assert 'class="excluded"' in page.text and "dikecualikan (pola)" in page.text
+    assert "(belum tersedia di versi ini)" in page.text
+    assert "Perkiraan request tahap pengujian" in page.text
     assert "Tahan hitung mundur" in page.text
     data = ui.client.get(f"/scans/{scan_id}/checkpoint", headers=JSON).json()
     summary = data["recon_summary"]
@@ -375,14 +376,94 @@ def test_checkpoint_page_and_actions(ui: Ui) -> None:
     # Counted by recon, and by the proxy's refusals in request_log.
     assert summary["out_of_scope_hosts"][0] == {"host": "cdn.luar.test", "count": 2}
     assert "burpsuite" not in {h["host"] for h in summary["out_of_scope_hosts"]}
-    assert data["modules"][0] == {
-        "name": "information_gathering",
-        "enabled": True,
-        "skipped_reason": None,
-    }
+    first = data["modules"][0]
+    assert (first["name"], first["enabled"], first["skipped_reason"]) == (
+        "information_gathering",
+        True,
+        None,
+    )
     endpoints = {e["path_template"]: e for e in data["endpoints"]}
     assert endpoints["/cari"]["query_params"] == ["q"]
+    assert endpoints["/cari"]["tags"] == ["has_params"]
     assert endpoints["/logout"]["exclude_reason"] == "pattern:logout"
+    assert endpoints["/logout"]["modules"] == []
+    assert data["editable"] is True
+    assert (
+        ui.client.get(f"/scans/{scan_id}/checkpoint?filter=dikecualikan").text.count(
+            'class="excluded"'
+        )
+        == 1
+    )
+
+    # htmx edits answer with the plan fragment and stop the countdown.
+    logout_id = endpoints["/logout"]["id"]
+    included = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint",
+        data={"action": "include", "endpoint_id": logout_id, "filter": "semua"},
+        headers=ui.htmx(),
+    )
+    assert included.status_code == 200
+    assert "<html" not in included.text
+    assert "Disimpan: 1 endpoint diubah" in included.text
+    tagged = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint",
+        data={
+            "action": "tags",
+            "endpoint_id": endpoints["/cari"]["id"],
+            "tags": "has_params, upload",
+        },
+        headers=ui.htmx(),
+    )
+    assert "(asesor)" in tagged.text
+    bad = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint",
+        data={"action": "add_endpoint", "method": "GET", "url": "https://other.test/x"},
+        headers=ui.htmx(),
+    )
+    assert bad.status_code == 422
+    assert "di luar scope" in bad.text
+    scoped = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint",
+        data={"action": "add_scope", "pattern": "cdn.luar.test"},
+        headers=ui.htmx(),
+    )
+    assert "sudah di scope" in scoped.text
+    pasted = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint",
+        data={
+            "action": "raw_request",
+            "raw_request": "POST /api/beli HTTP/1.1\nHost: simpeg.instansi.test\n"
+            'Content-Type: application/json\n\n{"harga": 1}',
+        },
+        headers=ui.htmx(),
+    )
+    assert "simpeg.instansi.test/api/beli" in pasted.text
+    modules = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint",
+        content="action=modules&modules=authorization&modules=business_logic",
+        headers={**ui.htmx(), "content-type": "application/x-www-form-urlencoded"},
+    )
+    assert modules.status_code == 200
+    data = ui.client.get(f"/scans/{scan_id}/checkpoint", headers=JSON).json()
+    assert data["deadline"] is None
+    enabled = [m["name"] for m in data["modules"] if m["enabled"]]
+    assert enabled == ["authorization", "business_logic"]
+    beli = next(e for e in data["endpoints"] if e["path_template"] == "/api/beli")
+    assert beli["source"] == "burp_paste" and beli["modules"] == ["business_logic"]
+
+    # The BSD 10.4 JSON body works the same way.
+    edited = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint",
+        json={"endpoints": [{"id": logout_id, "excluded": True}], "modules": ["session"]},
+        headers=ui.api(),
+    )
+    assert edited.status_code == 200
+    assert next(e for e in edited.json()["endpoints"] if e["id"] == logout_id)["excluded"]
+    unknown = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint", json={"modules": ["sqlmap"]}, headers=ui.api()
+    )
+    assert unknown.status_code == 422
+    assert ui.client.patch(f"/scans/{scan_id}/checkpoint", json={}).status_code == 403
 
     held = ui.client.post(f"/scans/{scan_id}/checkpoint/hold", headers=ui.htmx())
     assert held.status_code == 200
@@ -393,6 +474,12 @@ def test_checkpoint_page_and_actions(ui: Ui) -> None:
     assert continued.json()["status"] == "running"
     assert continued.json()["checkpoint_resolution"] == "user_continued"
     assert ui.client.post(f"/scans/{scan_id}/checkpoint/hold", headers=ui.api()).status_code == 409
+    late = ui.client.patch(
+        f"/scans/{scan_id}/checkpoint", json={"modules": ["session"]}, headers=ui.api()
+    )
+    assert late.status_code == 409
+    assert "Disimpan" not in ui.client.get(f"/scans/{scan_id}/checkpoint").text
+    assert "Simpan modul" not in ui.client.get(f"/scans/{scan_id}/checkpoint").text
 
 
 def _sse_events(body: str) -> list[dict[str, str]]:

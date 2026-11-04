@@ -73,3 +73,22 @@ ul.warnings li { color: var(--pico-del-color); }
 .h6 { font-size: 0.95rem; }
 tr.excluded td { color: var(--pico-muted-color); }
 tr.excluded code { text-decoration: line-through; }
+.inline-form { display: inline-block; margin: 0 0 0 0.35rem; }
+.inline-form button { margin: 0; }
+details.inline { display: inline-block; margin: 0; }
+details.inline summary { font-size: 0.85rem; }
+details.inline form { display: flex; gap: 0.35rem; margin-top: 0.35rem; }
+details.inline input { margin: 0; min-width: 12rem; }
+.badge.tag { border-color: var(--pico-primary); }
+ul.hosts li { margin-bottom: 0.35rem; }
+.inline-fields { display: flex; gap: 0.5rem; }
+.inline-fields select { width: auto; }
+.add-endpoints { margin-top: 1.5rem; }
+.filters a[aria-current="page"] { font-weight: 600; text-decoration: underline; }
+.module-grid label { display: block; margin-bottom: 0.5rem; }
+.module-grid label small { display: block; margin: 0 0 0 1.9rem; }
+table.endpoints td { vertical-align: top; }
+table.endpoints td.actions { white-space: normal; min-width: 8rem; }
+table.endpoints .badge { margin-bottom: 0.2rem; }
+table.endpoints code { white-space: normal; word-break: break-all; }
+table.endpoints td:first-child { min-width: 14rem; }

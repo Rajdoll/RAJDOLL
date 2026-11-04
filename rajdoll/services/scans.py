@@ -208,7 +208,9 @@ def cancel(session: Session, scan: Scan) -> None:
 def checkpoint_hold(session: Session, scan: Scan) -> None:
     """Stop the auto-continue countdown while the assessor edits the plan (AFD A5)."""
     _require(scan, (ScanStatus.AWAITING_CHECKPOINT,), "ditahan di checkpoint")
-    scan.checkpoint_deadline = None
+    if scan.checkpoint_deadline is not None:
+        scan.checkpoint_deadline = None
+        emit(session, scan.id, EventType.NOTICE, "Hitung mundur checkpoint ditahan oleh asesor.")
 
 
 def checkpoint_continue(session: Session, scan: Scan) -> None:

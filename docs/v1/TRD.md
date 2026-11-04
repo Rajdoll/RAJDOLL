@@ -117,6 +117,7 @@ Agar tugas aman diulang, setiap temuan punya **sidik jari** (gabungan modul, jen
 - Setelah tahap perencanaan selesai, scan masuk status `menunggu_checkpoint` dengan waktu `lanjut_otomatis_pada` = sekarang + 15 menit (bisa diatur per penugasan, atau checkpoint dimatikan).
 - Worker memeriksa status ini setiap kali polling. Jika waktunya lewat dan asesor tidak merespons, scan lanjut ke tahap pengujian dengan rencana apa adanya.
 - Sunting rencana di checkpoint (tambah atau kecualikan endpoint, ubah tanda, aktif/nonaktifkan modul) langsung mengubah tugas tahap pengujian sebelum dibuat.
+- Rencana berbasis aturan (F5b): tanda endpoint dihitung dari metode, path, nama parameter, tipe konten, dan sumbernya; modul untuk setiap endpoint dipilih dari tandanya mengikuti pemetaan di 6.2 (misalnya `idor_candidate` → Authorization, `price` → Business Logic, `upload` → File Upload, endpoint berparameter → Input Validation dan Error Handling). Configuration & Deployment dan Weak Cryptography juga dijalankan sekali per host. Klasifikasi LLM (F7) hanya menambah atau memperbaiki tanda; aturan tetap menjadi jalan cadangan (P2).
 - Aturan bawaan menandai endpoint berisiko sebagai "dikecualikan" berdasarkan pola path dan nama parameter: `logout`, `signout`, `delete`, `remove`, `destroy`, `reset`, `change-password`, `deactivate`, dan sejenisnya. Daftar pola disimpan di berkas konfigurasi.
 
 ### 3.5 Sesi login ke target (PRD F-04 sampai F-07)
