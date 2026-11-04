@@ -61,7 +61,7 @@ def _finding(vuln_type: str, method: str, path: str, parameter: str, location: s
     [
         ("sqli", "GET", "/katalog", "nama", "query"),
         ("ssti", "GET", "/pratinjau", "templat", "query"),
-        ("cmdi", "POST", "/alat/ping", "host", "form"),
+        ("cmdi", "POST", "/alat/ping", "alamat", "form"),
     ],
 )
 def test_validators_confirm_testapp_weaknesses_twice(
@@ -159,12 +159,23 @@ def test_xss_validator_reports_a_failed_browser() -> None:
     assert not verdict.confirmed and "failed" in verdict.note
 
 
-def test_validation_module_plans_known_types_in_the_validation_stage() -> None:
+def test_validation_module_plans_every_finding_in_the_validation_stage() -> None:
     module = ValidationModule()
     findings = [{"id": 1, "vuln_type": "sqli"}, {"id": 2, "vuln_type": "belum_ada"}]
     plan = module.plan(PlanContext(1, 1, "", [], {}, ScanStage.VALIDATION, findings=findings))
-    assert [(t.engine, t.target) for t in plan] == [("validator:sqli", {"finding_id": 1})]
+    assert [(t.engine, t.target) for t in plan] == [
+        ("validator:sqli", {"finding_id": 1}),
+        ("validator:belum_ada", {"finding_id": 2}),
+    ]
     assert module.plan(PlanContext(1, 1, "", [], {}, ScanStage.TESTING, findings=findings)) == []
+
+
+def test_validation_module_skips_a_finding_nothing_can_validate() -> None:
+    logs: list[str] = []
+    finding = {"id": 3, "vuln_type": "belum_ada", "poc": {"validator_params": {}}}
+    ctx = _ctx({"finding_id": 3}, finding=lambda _id: finding, log=logs.append)
+    assert ValidationModule().run(ctx) == {"finding_id": 3, "skipped": "no validator"}
+    assert "cek manual" in logs[0]
 
 
 def test_validation_module_records_the_verdict() -> None:
@@ -198,7 +209,7 @@ def _endpoint(method: str, path: str, query: list[str], body: list[dict]) -> dic
     }
 
 
-def test_input_validation_plans_one_task_per_endpoint() -> None:
+def test_input_validation_plans_tasks_per_endpoint() -> None:
     endpoints = [
         _endpoint("GET", "/katalog", ["nama"], []),
         _endpoint("GET", "/", [], []),  # nothing to inject
@@ -206,8 +217,10 @@ def test_input_validation_plans_one_task_per_endpoint() -> None:
     ]
     module = InputValidation()
     ctx = PlanContext(1, 1, "", [], {}, ScanStage.TESTING, endpoints=endpoints)
-    (spec,) = module.plan(ctx)
-    assert spec.engine == "custom:inpv" and spec.target["url"] == "http://testserver/katalog"
+    plan = module.plan(ctx)
+    assert [s.engine for s in plan] == ["custom:inpv", "sqlmap", "commix", "dalfox", "nuclei:dast"]
+    assert plan[0].target["url"] == "http://testserver/katalog"
+    assert plan[-1].target == {"endpoints": [plan[0].target]}
     ctx.stage = ScanStage.RECON
     assert module.plan(ctx) == []
 
@@ -218,8 +231,8 @@ def test_input_validation_plans_one_task_per_endpoint() -> None:
         (_endpoint("GET", "/katalog", ["nama"], []), ["sqli:nama"]),
         (_endpoint("GET", "/sapa", ["nama"], []), ["xss_reflected:nama"]),
         (_endpoint("GET", "/pratinjau", ["templat"], []), ["ssti:templat"]),
-        (_endpoint("POST", "/alat/ping", [], [{"name": "host", "location": "form"}]),
-         ["cmdi:host"]),
+        (_endpoint("POST", "/alat/ping", [], [{"name": "alamat", "location": "form"}]),
+         ["cmdi:alamat"]),
         (_endpoint("GET", "/cari", ["q"], []), []),
         (_endpoint("POST", "/kontak", [], [{"name": "nama", "location": "form"},
                                            {"name": "pesan", "location": "form"}]), []),

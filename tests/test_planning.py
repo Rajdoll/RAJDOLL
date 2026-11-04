@@ -80,9 +80,9 @@ def test_estimate_counts_parameters_and_hosts() -> None:
         _ep("GET", "/logout", tags=[], excluded=True),
     ]
     only_input = planning.estimate(endpoints, ["input_validation"])
-    assert only_input == 120 * 2
+    assert only_input == 900 * 2
     with_host = planning.estimate(endpoints, ["input_validation", "configuration"])
-    assert with_host == 240 + 400  # configuration runs once per host
+    assert with_host == 900 * 2 + 400  # configuration runs once per host
     assert planning.estimate([], ["configuration"]) == 0
 
 

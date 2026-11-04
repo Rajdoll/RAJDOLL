@@ -110,5 +110,9 @@ class Adapter(ABC):
     def parse(self, ctx: RunContext, stdout: str) -> dict[str, Any]:
         """Turn the tool's output into the normalized shape of BSD 11."""
 
+    def environment(self, params: Any, ctx: RunContext) -> dict[str, str]:
+        """Extra environment variables for the tool (added to the runner's minimal set)."""
+        return {}
+
     def version_command(self, bin_dir: Path) -> list[str]:
         return [str(bin_dir / self.binary), "-version"]

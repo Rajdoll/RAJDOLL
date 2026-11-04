@@ -169,9 +169,9 @@ Detail teknis:
 | ffuf 2.2.1 | Fuzzing direktori dan penemuan parameter, dengan wordlist bawaan RAJDOLL (`tools/wordlists/`) | Dipertahankan |
 | httpx (ProjectDiscovery) 1.12.0 | Probe HTTP dan deteksi teknologi | Dipertahankan, menggantikan whatweb |
 | nmap (paket Debian, versi dikunci) | Port scan TCP connect dan deteksi layanan ringan | Dipertahankan |
-| sqlmap | SQL injection | Dipertahankan |
-| dalfox | XSS | Dipertahankan |
-| commix | Command injection | Dipertahankan |
+| sqlmap 1.10.10 (PyPI) | SQL injection | Dipertahankan |
+| dalfox 2.13.0 | XSS | Dipertahankan |
+| commix 4.1 (tag git, dicek terhadap commit) | Command injection | Dipertahankan |
 | testssl.sh | Konfigurasi TLS (modul Weak Cryptography) | Dipertahankan |
 | retire.js | Library JavaScript yang rentan | Dipertahankan |
 | smuggler | HTTP request smuggling | Dipertahankan, opsional |
@@ -185,6 +185,8 @@ Detail teknis:
 Semua tool dipasang dengan versi pasti di `tools/Dockerfile` (sistem lama memakai `@latest` untuk beberapa tool). Tool berbasis Go (nuclei, httpx, katana, ffuf, dan nanti dalfox) dibangun dari source di tahap build terpisah dengan `go install modul@versi`, sehingga setiap modul diverifikasi terhadap checksum database Go. Template kustom RAJDOLL disimpan di repo (`templates/nuclei/`) dan disalin ke image; template nuclei resmi, dikunci pada satu rilis, ditambahkan bersama modul yang memakainya (F5/F6).
 
 **Render SPA memakai Playwright, bukan katana headless (keputusan F5).** Mode headless katana meneruskan alamat proxy ke Chrome lewat `--proxy-server`, yang mengabaikan kredensial di URL, sehingga semua request ditolak egress proxy (407). Adaptor `browser` menjalankan Chromium lewat Playwright, yang mengirim kredensial proxy, lalu merekam request yang dibuat halaman (termasuk fetch/XHR), link, dan form. katana tetap dipakai dalam mode standar.
+
+**Tool Input Validation (keputusan F6b).** Template DAST resmi nuclei dikunci pada rilis v10.5.0 dan disalin sebagian ke `templates/nuclei/dast/<jenis kerentanan>/` (hanya yang tidak butuh server out-of-band; lisensi MIT ikut disalin). Mode DAST memakai `-fuzz-param-frequency` yang sangat besar, karena bawaan nuclei melewati parameter setelah 10 template tidak menemukan apa-apa, sehingga hasilnya bergantung pada urutan penjadwalan. Request endpoint (termasuk body form/JSON) dikirim ke nuclei dalam format `jsonl` (`-im jsonl`). sqlmap dan commix menandai parameter yang diuji dengan penanda `*`, bukan `-p`, karena `-p` membaca parameter bernama seperti header (`host`) sebagai header HTTP. sqlmap tidak pernah diberi risk 3 (payload OR bisa mengubah data) maupun opsi enumerasi; commix hanya teknik classic dan eval-based (time-based opsional, file-based tidak pernah karena menulis berkas di target) dan tawaran pseudo-terminal selalu ditolak. commix menerima proxy lewat `http_proxy`/`https_proxy` (opsi `--proxy` miliknya mengirim request pertama langsung tanpa kredensial), dan menolak target loopback karena commix melewati proxy untuk host tersebut. dalfox berjalan tanpa mining parameter, BAV, payload/wordlist jarak jauh, headless, dan `--found-action`.
 
 **Out-of-band (interactsh) dimatikan secara bawaan.** Server interactsh publik berada di internet, sehingga data pengujian keluar dari laptop (melanggar NF-06), dan clone target belum tentu bisa menjangkau internet. Bisa diaktifkan per penugasan dengan peringatan, atau memakai server interactsh lokal di versi berikutnya.
 
@@ -281,6 +283,7 @@ Cek kustom diambil dari modul sistem lama jika logikanya sudah teruji, lalu ditu
 
 - Kandidat yang tidak memenuhi kriteria menjadi "perlu cek manual" dan masuk mini-loop.
 - Di kode: validator didaftarkan dengan `@validator("<jenis>")` (`rajdoll/validators/`). Modul bawaan `validation` dijalankan engine di tahap validasi untuk setiap temuan scan yang belum terkonfirmasi; satu tugas `validator:<jenis>` per temuan. Validator membangun ulang request dari spesifikasi PoC (BSD 6.2) dan mulai dari nilai normal yang sama dengan deteksi (`validator_params.base`). Validator XSS memakai adaptor `xss_check`: Chromium membuka setiap payload (GET, atau POST form) lewat egress proxy dan mencatat dialog `alert` yang memuat penanda acak; pesan galat navigasi tidak dihitung sebagai eksekusi.
+- Jika validator jenisnya tidak mengonfirmasi, tool yang menemukan temuan dijalankan ulang sebagai pendapat kedua (`rajdoll/validators/tools.py`): sqlmap dengan teknik yang ia laporkan, commix dengan pemeriksaan yang sama, atau template nuclei yang sama yang harus cocok lagi pada parameter yang sama. Template XSS nuclei hanya memeriksa pantulan, jadi tidak pernah mengonfirmasi XSS; konfirmasi XSS tetap lewat Chromium. Payload yang dilaporkan tool dikirim ulang oleh RAJDOLL lewat egress proxy agar temuan punya pasangan request/response mentah sebagai evidence.
 - Probe deteksi menghindari bukti yang bisa dipalsukan oleh pantulan: perbandingan boolean dilakukan setelah nilai yang dipantulkan dihapus dari halaman, dan pola error SQL dibuat spesifik agar pesan shell ("Unterminated quoted string") tidak terbaca sebagai error SQL.
 
 ### 6.4 Mini-loop verifikasi (PRD F-20)

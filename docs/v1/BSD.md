@@ -640,6 +640,8 @@ Catatan implementasi (F3b):
 - Respons juga memuat `parse_error` (galat pengurai, keluaran mentah tetap dikembalikan) dan `stderr_tail`.
 - Parameter tool yang tidak valid dibalas 422 tanpa memantulkan nilai yang ditolak, karena nilai header bisa berisi sesi.
 - Tool yang tersedia: `httpx` (`urls`, `follow_redirects`, `threads`, `timeout_s`, `headers`) dan `nuclei` (`targets`, `templates`, `tags`, `severities`, `rate_limit`, `concurrency`, `timeout_s`, `follow_redirects`, `dast`, `oob`, `headers`). Model parameternya ada di `tools/runner/adapters/`.
+- F5 menambah `katana`, `ffuf`, `nmap`, `browser`, dan `xss_check` (F6a). F6b menambah `sqlmap`, `commix`, dan `dalfox`. Ketiganya menerima request terstruktur, bukan baris perintah: `request` (`method`, `url` tanpa query string, `query`, `body`, `body_encoding` `form`/`json`) ditambah `parameter` dan `location` (`query`/`body`); dalfox menerima `parameters` (daftar). `nuclei` bisa menerima `requests` (daftar request dengan bentuk yang sama) sebagai ganti `targets`, untuk mode DAST. Contoh `params` sqlmap di atas ditulis dalam bentuk ini: `{"request": {"url": "https://simpeg.instansi.test/api/search", "query": {"q": "test"}}, "parameter": "q", "level": 2, "risk": 2, "headers": {...}}`.
+- Hasil `normalized.candidates` sqlmap, commix, dan dalfox memuat `value`: nilai parameter berisi payload, yang dikirim ulang oleh worker sebagai evidence.
 
 ## 12. Perubahan terhadap dokumen lain
 

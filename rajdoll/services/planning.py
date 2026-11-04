@@ -48,7 +48,9 @@ MODULE_RULES: dict[str, Rule] = {
 HOST_MODULES = ("configuration", "cryptography")
 
 # Rough request counts for the checkpoint estimate (PRD F-14), per endpoint unless noted.
-_PER_PARAM = {"input_validation": 120, "error_handling": 6}
+# Input Validation per parameter: own probes ~30, sqlmap ~40, commix ~15, nuclei DAST ~100,
+# dalfox up to ~700 (its full payload set on a reflecting parameter).
+_PER_PARAM = {"input_validation": 900, "error_handling": 6}
 _PER_ENDPOINT = {
     "authorization": 6,
     "authentication": 40,

@@ -11,6 +11,7 @@ import http.client
 import secrets
 import sqlite3
 import subprocess
+import threading
 import urllib.request
 from html import escape
 
@@ -28,7 +29,7 @@ WEAKNESSES = {
     "exposed-env": "GET /.env serves configuration with credentials (WSTG-CONF-04, CWE-538)",
     "sqli": "GET /katalog?nama= builds an SQLite query by string concatenation (CWE-89)",
     "xss-reflected": "GET /sapa?nama= reflects the name without HTML encoding (CWE-79)",
-    "cmdi": "POST /alat/ping passes `host` to a shell (CWE-78)",
+    "cmdi": "POST /alat/ping passes `alamat` to a shell (CWE-78)",
     "ssti": "GET /pratinjau?templat= renders the value as a Jinja2 template (CWE-1336)",
     "ssrf": "GET /ambil?url= fetches any http URL from the server (CWE-918)",
 }
@@ -36,7 +37,7 @@ WEAKNESSES = {
 EXPECTED_FINDINGS: list[tuple[str, str, str]] = [
     ("sqli", "/katalog", "nama"),
     ("xss_reflected", "/sapa", "nama"),
-    ("cmdi", "/alat/ping", "host"),
+    ("cmdi", "/alat/ping", "alamat"),
     ("ssti", "/pratinjau", "templat"),
     ("ssrf", "/ambil", "url"),
 ]
@@ -119,7 +120,7 @@ def index() -> HTMLResponse:
         "</textarea><button>Kirim</button></form>"
         '<form method="get" action="/katalog"><input name="nama"><button>Cari produk</button>'
         "</form>"
-        '<form method="post" action="/alat/ping"><input name="host" value="localhost">'
+        '<form method="post" action="/alat/ping"><input name="alamat" value="localhost">'
         "<button>Ping</button></form>"
         '<a href="/sapa?nama=Tamu">Sapa</a> <a href="/pratinjau?templat=Halo">Pratinjau</a> '
         '<a href="/ambil?url=/health">Status layanan</a>'
@@ -335,6 +336,7 @@ def internal_report() -> HTMLResponse:
 # --- Deliberate Input Validation weaknesses (WEAKNESSES) ---------------------------------------
 
 _DB = sqlite3.connect(":memory:", check_same_thread=False)
+_DB_LOCK = threading.Lock()  # one connection shared by the worker threads
 _DB.executescript(
     "CREATE TABLE produk (id INTEGER PRIMARY KEY, nama TEXT, harga INTEGER);"
     "INSERT INTO produk (nama, harga) VALUES ('Kopi Gayo', 85000), ('Teh Melati', 40000);"
@@ -347,9 +349,12 @@ def product_search(nama: str = "") -> Response:
     # Weakness "sqli": the value is concatenated into the query.
     query = "SELECT nama, harga FROM produk WHERE nama LIKE '%" + nama + "%'"  # noqa: S608
     try:
-        rows = _DB.execute(query).fetchall()
+        with _DB_LOCK:
+            rows = _DB.execute(query).fetchall()
     except sqlite3.Error as exc:
-        return HTMLResponse(f"<p>Kesalahan basis data: sqlite3.OperationalError: {exc}</p>", 500)
+        # The message is escaped: the planted weakness here is SQL injection, not XSS.
+        message = escape(f"sqlite3.OperationalError: {exc}")
+        return HTMLResponse(f"<p>Kesalahan basis data: {message}</p>", 500)
     items = "".join(f"<li>{escape(str(n))} — Rp{h}</li>" for n, h in rows)
     return _page("Cari produk", f"<ul>{items}</ul><p>{len(rows)} produk</p>")
 
@@ -361,10 +366,11 @@ def greet(nama: str = "") -> HTMLResponse:
 
 
 @app.post("/alat/ping")
-def ping(host: str = Form("")) -> PlainTextResponse:
+def ping(alamat: str = Form("")) -> PlainTextResponse:
     # Weakness "cmdi": the value reaches a shell. Testapp only, never in RAJDOLL code.
+    # (Not named `host`: sqlmap and commix read such a parameter as the Host header.)
     result = subprocess.run(  # noqa: S602
-        "echo PING " + host, shell=True, capture_output=True, text=True, timeout=10
+        "echo PING " + alamat, shell=True, capture_output=True, text=True, timeout=10
     )
     return PlainTextResponse(result.stdout + result.stderr)
 

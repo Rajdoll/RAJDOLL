@@ -52,7 +52,7 @@ def _sender(client: TestClient, point: httpkit.Injection, sent: list[str] | None
 POINTS = {
     "katalog": ("GET", "/katalog", "nama", "query"),
     "sapa": ("GET", "/sapa", "nama", "query"),
-    "ping": ("POST", "/alat/ping", "host", "form"),
+    "ping": ("POST", "/alat/ping", "alamat", "form"),
     "pratinjau": ("GET", "/pratinjau", "templat", "query"),
     "kontak": ("POST", "/kontak", "pesan", "form"),
 }

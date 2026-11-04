@@ -10,10 +10,21 @@ ARG NUCLEI_VERSION=v3.11.1
 ARG HTTPX_VERSION=v1.12.0
 ARG KATANA_VERSION=v1.8.0
 ARG FFUF_VERSION=v2.2.1
+ARG DALFOX_VERSION=v2.13.0
 RUN go install -ldflags="-s -w" github.com/projectdiscovery/nuclei/v3/cmd/nuclei@${NUCLEI_VERSION} \
     && go install -ldflags="-s -w" github.com/projectdiscovery/httpx/cmd/httpx@${HTTPX_VERSION} \
     && go install -ldflags="-s -w" github.com/projectdiscovery/katana/cmd/katana@${KATANA_VERSION} \
-    && go install -ldflags="-s -w" github.com/ffuf/ffuf/v2@${FFUF_VERSION}
+    && go install -ldflags="-s -w" github.com/ffuf/ffuf/v2@${FFUF_VERSION} \
+    && go install -ldflags="-s -w" github.com/hahwul/dalfox/v2@${DALFOX_VERSION}
+
+# --- commix (no PyPI release): the v4.1 tag, checked against its commit ----------------------
+FROM golang:1.26.10 AS commix
+ARG COMMIX_VERSION=v4.1
+ARG COMMIX_COMMIT=06beb622db6f9b8ffe4e51f7dea4414303c750ce
+RUN git clone --quiet --depth 1 --branch ${COMMIX_VERSION} \
+        https://github.com/commixproject/commix.git /opt/commix \
+    && test "$(git -C /opt/commix rev-parse HEAD)" = "${COMMIX_COMMIT}" \
+    && rm -rf /opt/commix/.git
 
 # --- Runtime ----------------------------------------------------------------------------------
 # The Debian release is named so the pinned nmap package below stays resolvable.
@@ -49,11 +60,16 @@ RUN pip install --no-cache-dir -r /app/tools/requirements.txt
 RUN python -m playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=gotools /go/bin/nuclei /go/bin/httpx /go/bin/katana /go/bin/ffuf /opt/tools/bin/
-RUN ln -s /usr/bin/nmap /opt/tools/bin/nmap
+COPY --from=gotools /go/bin/nuclei /go/bin/httpx /go/bin/katana /go/bin/ffuf /go/bin/dalfox \
+    /opt/tools/bin/
+COPY --from=commix /opt/commix /opt/commix
+# Launchers so every tool lives in RAJDOLL_TOOL_BIN_DIR (sqlmap comes from tools/requirements.txt).
+RUN ln -s /usr/bin/nmap /opt/tools/bin/nmap \
+    && ln -s /usr/local/bin/sqlmap /opt/tools/bin/sqlmap \
+    && printf '#!/bin/sh\nexec python /opt/commix/commix.py "$@"\n' > /opt/tools/bin/commix \
+    && chmod 755 /opt/tools/bin/commix
 COPY tools/wordlists /opt/rajdoll-wordlists
-# Only RAJDOLL's own templates for now; pinned official nuclei templates arrive with the
-# modules that use them (F5/F6).
+# RAJDOLL's own templates and the pinned subset of official DAST templates (templates/nuclei/dast).
 COPY templates/nuclei /opt/rajdoll-templates
 
 # The proxy enforces scope with the same dependency-free module the main package uses.
