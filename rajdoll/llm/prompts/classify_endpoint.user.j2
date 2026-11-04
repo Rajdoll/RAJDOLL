@@ -1,0 +1,10 @@
+Tandai endpoint berikut. Tanda dari aturan sudah ada; tambahkan yang terlewat saja.
+{% for item in endpoints %}
+[{{ loop.index0 }}] {{ item.method }} {{ item.path }}
+    parameter query: {{ item.query_params | join(", ") or "-" }}
+    parameter body: {{ item.body_params | join(", ") or "-" }}
+    tanda dari aturan: {{ item.tags | join(", ") or "-" }}
+{% if item.sample is defined and item.sample %}
+{{ item.sample }}
+{% endif %}
+{% endfor %}

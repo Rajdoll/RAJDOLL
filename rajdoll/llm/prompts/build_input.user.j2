@@ -1,0 +1,6 @@
+Endpoint: {{ method }} {{ path }}
+Parameter yang perlu nilai: {{ parameters | join(", ") }}
+{% if sample %}
+Contoh request yang valid:
+{{ sample }}
+{% endif %}

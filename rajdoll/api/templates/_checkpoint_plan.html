@@ -94,7 +94,7 @@
         <td>{% for name in ep.query_params %}<code>{{ name }}</code> {% endfor %}{% for param in ep.body_params %}<code>{{ param.name }}</code><small class="muted">({{ param.location }})</small> {% endfor %}</td>
         <td>
           {% for tag in ep.tags %}<span class="badge tag">{{ tag_labels.get(tag, tag) }}</span> {% endfor %}
-          {% if ep.tag_source == "user" %}<small class="muted">(asesor)</small>{% endif %}
+          {% if ep.tag_source == "user" %}<small class="muted">(asesor)</small>{% elif ep.tag_source == "llm" %}<small class="muted" title="Sebagian tanda ditambahkan LLM">(+AI)</small>{% endif %}
           {% if editable %}
           <details class="inline">
             <summary>ubah</summary>

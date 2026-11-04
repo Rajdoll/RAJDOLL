@@ -56,10 +56,22 @@ class ValidationModule:
         if verdict is None:
             ctx.log(f"{finding['vuln_type']} #{finding['id']}: belum ada validator; cek manual.")
             return {"finding_id": finding["id"], "skipped": "no validator"}
+        if not verdict.confirmed:
+            # The LLM proposes follow-up requests; only the validator may confirm (TRD 6.4).
+            from rajdoll.validators import miniloop
+
+            verdict = miniloop.run(ctx, finding, verdict, _round_validator)
         ctx.record_verdict(finding["id"], verdict)
         state = "terkonfirmasi" if verdict.confirmed else "perlu cek manual"
         ctx.log(f"{finding['vuln_type']} #{finding['id']}: {state}. {verdict.note or ''}".strip())
         return {"finding_id": finding["id"], "confirmed": verdict.confirmed, "note": verdict.note}
+
+
+def _round_validator(ctx: TaskContext, finding: dict[str, Any]) -> Verdict | None:
+    """In a mini-loop round only the type's own (fast) validator runs, else the full chain."""
+    _load()
+    own = VALIDATORS.get(finding["vuln_type"])
+    return own(ctx, finding) if own is not None else validate(ctx, finding)
 
 
 def validate(ctx: TaskContext, finding: dict[str, Any]) -> Verdict | None:

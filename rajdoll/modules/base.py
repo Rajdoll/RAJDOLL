@@ -92,8 +92,11 @@ class PlanContext:
     # The engagement's endpoint inventory, from PLANNING on (dicts of BSD 4.4 columns + "url").
     endpoints: list[dict[str, Any]] = field(default_factory=list)
     has_session: bool = False
-    # Findings of this scan that still need validation (VALIDATION stage): {"id", "vuln_type"}.
+    # Findings of this scan that still need validation (VALIDATION stage): {"id", "vuln_type"};
+    # all findings the scan saw (AI_TRIAGE stage): {"id", "vuln_type", "title"}.
     findings: list[dict[str, Any]] = field(default_factory=list)
+    # Whether the scan may use the LLM (its settings snapshot); off means rule-based fallbacks.
+    llm_enabled: bool = False
 
 
 @dataclass
@@ -130,6 +133,12 @@ class TaskContext:
     # finding_id=..., endpoint_id=...) -> LlmOutcome, or None without an LLM. Callers always
     # have a rule-based fallback for an outcome that is None or not ok (TRD P2).
     llm: Callable[..., Any] = lambda *_args, **_kwargs: None
+    # Add LLM tags to an inventory endpoint (never one the assessor tagged); True if changed.
+    tag_endpoint: Callable[[int, list[str]], bool] = lambda _id, _tags: False
+    # Store extra evidence of a finding (for example `verification_round`).
+    add_evidence: Callable[[int, list[Exchange], str], None] = lambda _id, _ex, _kind: None
+    # Merge AI notes into a finding (`verification_rounds` are appended, the rest replaced).
+    save_llm_notes: Callable[[int, dict[str, Any]], None] = lambda _id, _notes: None
 
     def check_cancelled(self) -> None:
         if self.cancel_event.is_set():

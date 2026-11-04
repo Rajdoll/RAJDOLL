@@ -42,6 +42,7 @@ from rajdoll.core.enums import (
     CheckpointResolution,
     EventLevel,
     EventType,
+    EvidenceKind,
     PausedReason,
     ScanKind,
     ScanStage,
@@ -50,9 +51,11 @@ from rajdoll.core.enums import (
 )
 from rajdoll.core.models import Endpoint, Engagement, Finding, Scan, TargetAccount, Task
 from rajdoll.llm.gateway import LlmGateway
+from rajdoll.modules.ai import AiModule
 from rajdoll.modules.base import (
     Candidate,
     EndpointSeen,
+    Exchange,
     Module,
     PlanContext,
     TaskBlocked,
@@ -168,6 +171,8 @@ class Engine:
         self.modules = dict(modules if modules is not None else available_modules())
         # Built-in: the validation stage runs for every scan, whatever modules it has (TRD 6.3).
         self.modules.setdefault(ValidationModule.name, ValidationModule())
+        # Built-in: LLM endpoint tags (planning) and AI triage notes (TRD 5.2).
+        self.modules.setdefault(AiModule.name, AiModule())
         self.worker_id = worker_id or default_worker_id()
         self.lease = timedelta(seconds=lease_seconds)
         self.max_parallel = max_parallel
@@ -539,12 +544,19 @@ class Engine:
             endpoints=known,
             has_session=bool(engagements.accounts(session, scan.engagement_id)),
             findings=(
-                findings.for_validation(session, scan.id) if stage == ScanStage.VALIDATION else []
+                findings.for_validation(session, scan.id)
+                if stage == ScanStage.VALIDATION
+                else findings.for_triage(session, scan.id)
+                if stage == ScanStage.AI_TRIAGE
+                else []
             ),
+            llm_enabled=bool((scan.llm_snapshot or {}).get("enabled", False)),
         )
         planned = list(scan.modules)
         if stage == ScanStage.VALIDATION:
             planned.append(ValidationModule.name)
+        if stage in (ScanStage.PLANNING, ScanStage.AI_TRIAGE):
+            planned.append(AiModule.name)
         for name in planned:
             module = self.modules.get(name)
             if module is None:
@@ -719,6 +731,11 @@ class Engine:
                 job, finding_id, verdict
             ),
             llm=lambda task, messages, **ids: self._llm_call(job, task, messages, **ids),
+            tag_endpoint=lambda endpoint_id, tags: self._tag_endpoint(job, endpoint_id, tags),
+            add_evidence=lambda finding_id, exchanges, kind: self._add_evidence(
+                job, finding_id, exchanges, kind
+            ),
+            save_llm_notes=lambda finding_id, notes: self._save_llm_notes(job, finding_id, notes),
         )
         try:
             ctx.check_cancelled()
@@ -827,6 +844,37 @@ class Engine:
             task, messages, engagement_id=job.engagement_id, scan_id=job.scan_id, **ids
         )
 
+    def _tag_endpoint(self, job: Job, endpoint_id: int, tags: list[str]) -> bool:
+        with self._transaction() as session:
+            return inventory.add_llm_tags(session, job.engagement_id, endpoint_id, tags)
+
+    def _own_finding(self, session: Session, job: Job, finding_id: int) -> Finding | None:
+        finding = session.get(Finding, finding_id, with_for_update=True)
+        if finding is None or finding.engagement_id != job.engagement_id:
+            return None
+        return finding
+
+    def _add_evidence(
+        self, job: Job, finding_id: int, exchanges: list[Exchange], kind: str
+    ) -> None:
+        with self._transaction() as session:
+            finding = self._own_finding(session, job, finding_id)
+            if finding is None:
+                return
+            engagement = session.get(Engagement, job.engagement_id)
+            cipher = engagements.cipher(self._keystore(), engagement)
+            for exchange in exchanges:
+                findings.add_evidence(
+                    session, cipher, finding, job.scan_id, EvidenceKind(kind), exchange,
+                    self._evidence_bytes(job),
+                )  # fmt: skip
+
+    def _save_llm_notes(self, job: Job, finding_id: int, notes: dict[str, Any]) -> None:
+        with self._transaction() as session:
+            finding = self._own_finding(session, job, finding_id)
+            if finding is not None:
+                findings.save_llm_notes(session, self._keystore(), finding, notes)
+
     def _keystore(self) -> KeyStore:
         if self.keystore is None:
             raise RuntimeError("findings need the key store (evidence is encrypted)")
@@ -863,11 +911,21 @@ class Engine:
             if finding is None or finding.engagement_id != job.engagement_id:
                 return {}
             endpoint = session.get(Endpoint, finding.endpoint_id) if finding.endpoint_id else None
+            keystore = self._keystore()
+            evidence = findings.evidence_rows(session, keystore, finding)
             return {
                 **findings.as_dict(finding),
-                "poc": findings.poc(session, self._keystore(), finding),
+                "poc": findings.poc(session, keystore, finding),
                 # The PoC path is relative (BSD 6.2): the endpoint's host, else the target's.
                 "base_url": f"{endpoint.scheme}://{endpoint.host}" if endpoint else None,
+                "endpoint_label": (
+                    f"{endpoint.method} {endpoint.path_template}" if endpoint else None
+                ),
+                # The last few exchanges, for LLM prompts (trimmed by the caller).
+                "evidence": [
+                    {k: row[k] for k in ("kind", "note", "request", "response", "status")}
+                    for row in evidence[-3:]
+                ],
             }
 
     def _record_verdict(self, job: Job, finding_id: int, verdict: Verdict) -> None:

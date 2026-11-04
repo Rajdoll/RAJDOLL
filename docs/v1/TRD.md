@@ -210,6 +210,18 @@ Semua tool dipasang dengan versi pasti di `tools/Dockerfile` (sistem lama memaka
 
 Setiap tugas punya: templat prompt (Jinja2), model Pydantic yang diubah menjadi JSON schema untuk `response_format`, batas token masukan dan keluaran, batas waktu, dan **jalan cadangan** tanpa LLM (misalnya klasifikasi endpoint dengan aturan pola nama).
 
+Di kode (F7b), dengan nama tugas berbahasa Inggris (BSD 6.6), definisi ada di `rajdoll/llm/tasks.py` dan prompt di `rajdoll/llm/prompts/`:
+
+| Tugas | Dipasang di | Pengaruh keluaran | Jalan cadangan |
+|---|---|---|---|
+| `classify_endpoint` | Modul bawaan `ai`, tahap perencanaan, 8 endpoint per panggilan | Menambah tanda dari daftar tetap (enum) ke endpoint; tanda aturan tetap; endpoint bertanda asesor tidak disentuh; `tag_source = llm` | Tanda dari aturan |
+| `build_input` | Probe modul Input Validation, satu panggilan per endpoint | Nilai normal (≤ 200 karakter, tanpa karakter kontrol) untuk parameter endpoint itu saja; hanya dipakai probe RAJDOLL, tidak masuk ke argumen tool | Nilai bawaan `default_value` |
+| `judge_response` | Helper `tasks.judge_response` (dipakai modul Authorization di F8) | Jawaban ya/tidak/ragu yang hanya mengarahkan kandidat; validator tetap memutuskan | "ragu" (cek manual) |
+| `verification_step` | Mini-loop di tahap validasi (6.4) | Request usulan dan nilai normal usulan untuk validator | Tetap "perlu cek manual" |
+| `triage_finding` | Modul bawaan `ai`, tahap triase AI, satu panggilan per temuan | Catatan AI: penjelasan, dampak, perbaikan, saran uji manual, kemungkinan duplikat (hanya nomor temuan scan itu) | Tanpa catatan |
+
+Modul `ai` tidak merencanakan tugas apa pun jika LLM scan dimatikan.
+
 ### 5.3 Batas konteks
 
 - Target anggaran per panggilan: masukan ≤ 3.000 token, keluaran ≤ 800 token, agar muat di konteks 4–8 ribu token model kelas 4B.
@@ -300,6 +312,8 @@ untuk setiap temuan "perlu cek manual" (sesuai anggaran):
 ```
 
 Hanya metode yang diizinkan di konfigurasi yang boleh diusulkan (bawaan: GET, POST, PUT, PATCH). Request usulan dan hasilnya disimpan sebagai evidence.
+
+Di kode (F7b, `rajdoll/validators/miniloop.py`): mini-loop berjalan setelah rantai validator tidak mengonfirmasi. Skema keluaran hanya menerima path relatif (diawali satu "/", tanpa spasi, tanpa skema atau host lain), sehingga request selalu ke host temuan itu dan melewati egress proxy; path yang cocok dengan pola endpoint berisiko penugasan (`excluded_patterns`, misalnya logout) tidak dikirim. Bila LLM mengusulkan nilai normal yang lebih tepat untuk parameter, validator tipe dijalankan ulang dengan nilai itu. Riwayat setiap putaran (request, status, nilai usulan, catatan validator) disimpan di `llm_notes_enc.verification_rounds` dan ditampilkan di detail temuan.
 
 ### 6.5 Retest (PRD F-39 sampai F-44)
 

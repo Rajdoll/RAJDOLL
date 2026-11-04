@@ -1,0 +1,13 @@
+Kandidat temuan: {{ title }}
+Jenis: {{ vuln_type }} · parameter: {{ parameter or "-" }} · putaran {{ round }} dari {{ max_rounds }}
+Catatan validator: {{ validator_note or "-" }}
+
+Evidence terakhir:
+{{ evidence }}
+{% if previous %}
+
+Putaran sebelumnya:
+{% for item in previous %}
+- putaran {{ item.round }}: {{ item.summary }}
+{% endfor %}
+{% endif %}

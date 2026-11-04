@@ -231,6 +231,38 @@ def for_validation(session: Session, scan_id: int) -> list[dict[str, Any]]:
     return [{"id": f.id, "vuln_type": f.vuln_type} for f in rows]
 
 
+def for_triage(session: Session, scan_id: int) -> list[dict[str, Any]]:
+    """Every finding this scan found or saw again (AI_TRIAGE stage)."""
+    rows = session.scalars(
+        select(Finding)
+        .where(Finding.last_scan_id == scan_id, Finding.merged_into_id.is_(None))
+        .order_by(Finding.id)
+    )
+    return [{"id": f.id, "vuln_type": f.vuln_type, "title": f.title} for f in rows]
+
+
+def llm_notes(session: Session, keystore: KeyStore, finding: Finding) -> dict[str, Any]:
+    """AI notes (BSD 6.1 `llm_notes_enc`): explanation, suggestions, verification rounds."""
+    if finding.llm_notes_enc is None:
+        return {}
+    cipher = _cipher(keystore, session, finding.engagement_id)
+    return cipher.decrypt_json("finding", "llm_notes_enc", finding.llm_notes_enc)
+
+
+def save_llm_notes(
+    session: Session, keystore: KeyStore, finding: Finding, notes: dict[str, Any]
+) -> None:
+    current = llm_notes(session, keystore, finding)
+    rounds = list(current.get("verification_rounds") or [])
+    rounds += list(notes.get("verification_rounds") or [])
+    merged = {**current, **{k: v for k, v in notes.items() if k != "verification_rounds"}}
+    if rounds:
+        merged["verification_rounds"] = rounds
+    cipher = _cipher(keystore, session, finding.engagement_id)
+    finding.llm_notes_enc = cipher.encrypt_json("finding", "llm_notes_enc", merged)
+    session.flush()
+
+
 def as_dict(finding: Finding) -> dict[str, Any]:
     return {
         "id": finding.id,

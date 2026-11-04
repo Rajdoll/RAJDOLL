@@ -230,8 +230,10 @@ def record(
         row.query_params = params
         row.body_params = body
         row.content_type = row.content_type or entry["content_type"]
-        if row.tag_source == TagSource.RULE:
+        if row.tag_source in (TagSource.RULE, TagSource.LLM):
             tags = tagging.rule_tags(as_dict(row))
+            if row.tag_source == TagSource.LLM:  # keep what the LLM added
+                tags = sorted(set(tags) | set(row.tags))
             if tags != list(row.tags):
                 row.tags = tags
                 changed = True
@@ -309,3 +311,19 @@ def merge_recon(current: dict[str, Any] | None, data: dict[str, Any]) -> dict[st
         else:
             merged[key] = value
     return merged
+
+
+def add_llm_tags(session: Session, engagement_id: int, endpoint_id: int, tags: list[str]) -> bool:
+    """Tags from the LLM (F-17) are added to the rule tags; an assessor's tags are never touched."""
+    endpoint = session.get(Endpoint, endpoint_id)
+    if endpoint is None or endpoint.engagement_id != engagement_id:
+        return False
+    if endpoint.tag_source == TagSource.USER:
+        return False
+    merged = sorted(set(endpoint.tags) | (set(tags) & set(tagging.TAG_LABELS)))
+    if merged == list(endpoint.tags):
+        return False
+    endpoint.tags = merged
+    endpoint.tag_source = TagSource.LLM
+    session.flush()
+    return True

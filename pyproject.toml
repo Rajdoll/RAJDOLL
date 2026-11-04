@@ -38,6 +38,7 @@ include = ["rajdoll*"]
 [tool.setuptools.package-data]
 "rajdoll.api" = ["templates/*.html", "static/*.css", "static/*.js", "static/vendor/*"]
 "rajdoll.reporting" = ["templates/*.j2"]
+"rajdoll.llm" = ["prompts/*.j2"]
 
 [tool.ruff]
 line-length = 100

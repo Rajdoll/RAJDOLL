@@ -287,3 +287,31 @@ def test_markdown_helpers() -> None:
     assert va.fenced("plain") == "```\nplain\n```"
     assert "<script>" not in va.to_html("<script>x</script>")
     assert va.clip("abcdef", 3) == ("abc", True) and va.clip(None) == (None, False)
+
+
+def test_ai_notes_and_mini_loop_rounds_are_shown_as_ai_output(ui: Ui, seeded: dict) -> None:
+    with ui.factory() as session, session.begin():
+        finding = findings.get(session, seeded["cmdi"])
+        findings.save_llm_notes(session, ui.keystore, finding, {
+            "explanation": "Input <b>masuk</b> ke shell.",
+            "manual_test_suggestions": ["Coba `id` dengan pemisah |"],
+            "possible_duplicates": [seeded["sqli"]],
+            "verification_rounds": [{"round": 1, "requests": [
+                {"method": "GET", "path": "/ping", "status": 200},
+                {"method": "GET", "path": "/logout",
+                 "skipped": "cocok dengan pola endpoint berisiko"},
+            ], "base_value": "127.0.0.1", "reasoning": "nilai host valid",
+                "validator_note": "belum", "confirmed": False}],
+        })  # fmt: skip
+        findings.save_llm_notes(session, ui.keystore, finding, {"verification_rounds": [
+            {"round": 2, "requests": [], "confirmed": False}]})  # fmt: skip
+        assert len(findings.llm_notes(session, ui.keystore, finding)["verification_rounds"]) == 2
+        assert b"shell" not in finding.llm_notes_enc  # encrypted at rest
+    detail = ui.client.get(f"/findings/{seeded['cmdi']}", headers=ui.htmx()).text
+    assert "Catatan AI" in detail and "keluaran AI, periksa sebelum dipakai" in detail
+    assert "Input &lt;b&gt;masuk&lt;/b&gt; ke shell." in detail  # escaped
+    assert f'hx-get="/findings/{seeded["sqli"]}"' in detail
+    assert "Riwayat mini-loop verifikasi (2 putaran)" in detail
+    assert "dilewati: cocok dengan pola endpoint berisiko" in detail
+    plain = ui.client.get(f"/findings/{seeded['sqli']}", headers=ui.htmx()).text
+    assert "Catatan AI" not in plain
