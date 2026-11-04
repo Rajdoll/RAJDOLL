@@ -441,6 +441,7 @@ def test_stream_follows_a_running_scan_until_it_finishes(ui: Ui) -> None:
     stages = [e["data"] for e in events if e["event"] == "stage"]
     assert "berjalan" in stages[0] and "selesai" in stages[-1]
     assert ": ping" in response.text  # heartbeats while nothing changed
+    assert len(stages) == 2  # the status fragment is only resent when it changes
 
 
 def test_stream_of_an_idle_scan_ends_after_the_maximum_duration(ui: Ui) -> None:

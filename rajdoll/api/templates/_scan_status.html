@@ -1,8 +1,10 @@
-{# Live fragment (SSE event `stage`; also the answer to pause/resume/cancel/checkpoint actions). #}
+{# Live fragment (SSE event `stage`; also the answer to pause/resume/cancel/checkpoint actions).
+   Keep it free of values that change on their own (a ticking duration): the stream only sends
+   fragments that changed, and a swap would clear what the user is typing in the rate field. #}
 <div class="page-head">
   <hgroup>
     <h2>Scan #{{ scan.number }} <span class="badge scan-{{ scan.status }}">{{ scan_status_labels[scan.status] }}</span></h2>
-    <p>Profil {{ profile_labels.get(scan.profile, "Retest") }}{% if scan.started_at %} · mulai {{ wib(scan.started_at) }} WIB · {{ duration(scan.started_at, scan.finished_at) }}{% else %} · menunggu worker{% endif %}</p>
+    <p>Profil {{ profile_labels.get(scan.profile, "Retest") }}{% if scan.started_at %} · mulai {{ wib(scan.started_at) }} WIB{% if scan.finished_at %} · {{ duration(scan.started_at, scan.finished_at) }}{% endif %}{% else %} · menunggu worker{% endif %}</p>
   </hgroup>
   <div class="controls">
     {% if scan.status in ["queued", "running", "awaiting_checkpoint"] %}
