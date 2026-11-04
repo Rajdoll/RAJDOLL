@@ -294,7 +294,7 @@ Hanya metode yang diizinkan di konfigurasi yang boleh diusulkan (bawaan: GET, PO
 
 - Setiap temuan menyimpan dua vektor: CVSS 3.1 dan CVSS 4.0. Skor dihitung dari vektor oleh library `cvss`, tidak pernah diisi manual.
 - Vektor awal berasal dari template temuan per jenis kerentanan. Asesor bisa menyunting keduanya.
-- Pengaturan "versi utama" menentukan severity dan tampilan laporan (atau menampilkan keduanya).
+- Pengaturan "versi utama" menentukan severity dan tampilan laporan (atau menampilkan keduanya). Bawaan: **CVSS 3.1**.
 
 ## 7. WAF dan pemblokiran (PRD F-47 sampai F-50)
 
@@ -412,5 +412,5 @@ Pengaturan per penugasan menimpa pengaturan aplikasi.
 
 | No | Pertanyaan | Usulan bawaan |
 |---|---|---|
-| T1 | Versi CVSS utama bawaan: 3.1 atau 4.0? | 3.1, karena masih paling umum di laporan VA; bisa diubah di pengaturan. |
+| T1 | Versi CVSS utama bawaan: 3.1 atau 4.0? | Selesai: 3.1, bisa diubah di pengaturan. |
 | T2 | Kunci utama: berkas di volume Docker, atau diturunkan dari password login (data tidak bisa dibuka tanpa login)? | Berkas di volume untuk v1. Opsi password lebih aman tetapi membuat worker tidak bisa melanjutkan scan setelah restart sebelum Anda login. |
