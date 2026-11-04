@@ -41,6 +41,7 @@
     </div>
     <pre class="raw"><code id="poc-curl-{{ finding.id }}">{{ poc.curl }}</code></pre>
     <pre class="raw" hidden><code id="poc-raw-{{ finding.id }}">{{ poc.raw }}</code></pre>
+    {% if poc.accounts %}<p><strong>{{ poc.accounts }}</strong></p>{% endif %}
     <p class="muted"><small>Sesi akun tidak disertakan; tambahkan header Cookie atau Authorization akun uji.</small></p>
   </section>
   {% endif %}

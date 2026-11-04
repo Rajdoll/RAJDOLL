@@ -427,6 +427,20 @@ def poc_text(session: Session, keystore: KeyStore, finding: Finding, fmt: str) -
     raise ValidationFailed.one("format", "Format PoC harus curl atau raw.")
 
 
+def poc_accounts(spec: dict[str, Any] | None) -> str | None:
+    """Which account's session the PoC needs (authorization findings), as a sentence."""
+    account = (spec or {}).get("account")
+    if not account:
+        return None
+    params = (spec or {}).get("validator_params") or {}
+    text = f"Kirim dengan sesi {account}"
+    if params.get("owner_account"):
+        text += f"; objeknya milik {params['owner_account']}"
+    if params.get("privileged_account"):
+        text += f"; fungsi ini untuk akun dengan hak seperti {params['privileged_account']}"
+    return text + "."
+
+
 def detail(session: Session, keystore: KeyStore, finding: Finding) -> dict[str, Any]:
     """BSD 10.5 `GET /findings/{id}` (without evidence)."""
     endpoint = session.get(Endpoint, finding.endpoint_id) if finding.endpoint_id else None

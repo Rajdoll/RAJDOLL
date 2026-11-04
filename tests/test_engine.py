@@ -792,3 +792,50 @@ def test_findings_without_the_key_store_fail_the_task(
     testing = tasks_of(factory, scan_id, ScanStage.TESTING)
     assert {t.status for t in testing} == {TaskStatus.FAILED}
     assert "key store" in (testing[0].error or "")
+
+
+class AccountsModule:
+    """Records the account labels the engine gives to planning (Authorization, IPD F8a)."""
+
+    name = "authorization"
+    label = "Authorization"
+
+    def __init__(self) -> None:
+        self.accounts: list[list[str]] = []
+
+    def plan(self, ctx: PlanContext) -> list[TaskSpec]:
+        if ctx.stage == ScanStage.TESTING:
+            self.accounts.append(list(ctx.accounts))
+        return []
+
+    def run(self, ctx: TaskContext) -> dict[str, Any]:
+        return {}
+
+
+def test_authorization_without_two_accounts_is_skipped_with_a_notice(
+    factory: sessionmaker[Session], engagement_id: int, engines: list[Engine], keystore: KeyStore
+) -> None:
+    def add(label: str) -> None:
+        with factory() as session, session.begin():
+            engagement = session.get(Engagement, engagement_id)
+            engagements.add_account(
+                session, keystore, engagement, {"label": label, "session_text": f"sid={label}"}
+            )
+
+    def skipped(scan_id: int) -> list[ScanEvent]:
+        return [e for e in events_of(factory, scan_id) if (e.data or {}).get("skipped_reason")]
+
+    module = AccountsModule()
+    engine = make_engine(engines, factory, module, keystore=keystore)
+    add("Akun A")
+    first = start_scan(factory, engagement_id, checkpoint_enabled=False)
+    drive(factory, first, engine, until=ScanStatus.COMPLETED)
+    (notice,) = skipped(first)
+    assert notice.data == {"module": "authorization", "skipped_reason": "needs_two_accounts"}
+    assert notice.message.startswith("Modul Authorization dilewati: butuh dua akun")
+
+    add("Akun B")
+    second = start_scan(factory, engagement_id, checkpoint_enabled=False)
+    drive(factory, second, engine, until=ScanStatus.COMPLETED)
+    assert skipped(second) == []
+    assert module.accounts == [["Akun A"], ["Akun A", "Akun B"]]

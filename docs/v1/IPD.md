@@ -306,6 +306,8 @@ Dikerjakan dalam tiga PR berurutan. Setiap modul: pindahkan cek kustom yang rele
 | F8b | Configuration & Deployment, Error Handling, Weak Cryptography (testssl.sh), Identity Management | `info_leak`, `misconfig`, `tls` |
 | F8c | Client-Side (retire.js, DOM XSS, CORS, clickjacking), File Upload, Business Logic | `dom_xss`, `cors`, `upload`, `business_logic` (sebagian besar menghasilkan "perlu cek manual") |
 
+Catatan pelaksanaan: F8a dikirim dalam dua PR. F8a-1 berisi modul Authorization (IDOR dan eskalasi hak dengan dua akun, hanya GET), validator `idor` dan `privilege_escalation`, daftar akun di `PlanContext`, pemberitahuan di scan bila akun kurang dari dua, akun di PoC dan evidence, serta kelemahan `idor` (`/akun/{id}`) dan `privilege-escalation` (`/admin/pengguna` hanya memeriksa login, sedangkan `/admin` memeriksa peran) di `testapp` dengan Akun A = budi (admin) dan Akun B = sari. F8a-2 berisi Session Management dan Authentication (validator `jwt`, `session`).
+
 Kriteria selesai (**M2**):
 - Profil Lengkap menjalankan ke-12 modul terhadap `testapp`.
 - Setiap contoh kerentanan di `testapp` terdeteksi, dengan status validasi yang sesuai dengan kemampuan validatornya.

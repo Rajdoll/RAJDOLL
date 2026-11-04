@@ -89,6 +89,7 @@ def _finding_context(
         curl = findings.poc_text(session, keystore, finding, "curl")
     except NotFound:
         curl = None
+    accounts = findings.poc_accounts(findings.poc(session, keystore, finding)) if curl else None
     return {
         **detail,
         "number": number,
@@ -98,6 +99,7 @@ def _finding_context(
         "cvss31_score": float(finding.cvss31_score) if finding.cvss31_score is not None else None,
         "endpoint": f"{endpoint['method']} {endpoint['url']}" if endpoint else None,
         "curl": curl,
+        "poc_accounts": accounts,
         "evidence": _evidence(session, keystore, finding),
     }
 

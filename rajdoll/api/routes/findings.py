@@ -53,6 +53,7 @@ def detail_context(db: Session, keystore: KeyStore, finding: Finding) -> dict[st
     poc = {}
     if detail["has_poc"]:
         poc = {fmt: findings.poc_text(db, keystore, finding, fmt) for fmt in ("curl", "raw")}
+        poc["accounts"] = findings.poc_accounts(findings.poc(db, keystore, finding))
     return {
         "finding": detail,
         "evidence": evidence,

@@ -3,13 +3,14 @@
 - recon against testapp finds every endpoint testapp registers (testapp.RECON_ENDPOINTS),
   including the ones that exist only in JavaScript, and its hidden parameter;
 - testapp's logout endpoint is excluded automatically and never requested;
-- after the checkpoint, Input Validation and the validators turn every Input Validation weakness
+- after the checkpoint, Input Validation, Authorization, and the validators turn every weakness
   of testapp (testapp.EXPECTED_FINDINGS) into a `confirmed` finding, with encrypted evidence.
 
 Runs the real engine with the real modules, the runner (uvicorn), the egress proxy (mitmdump),
-and testapp, as a logged-in account. Needs PostgreSQL, mitmproxy, the tool
-binaries in RAJDOLL_TOOL_BIN_DIR (katana, ffuf, httpx, nmap), and Playwright's Chromium. In CI the
-same check runs inside the containers (tests/integration/smoke_scan.py).
+and testapp, with two logged-in accounts (Akun A = budi, admin; Akun B = sari). Needs
+PostgreSQL, mitmproxy, the tool binaries in RAJDOLL_TOOL_BIN_DIR (katana, ffuf, httpx, nmap), and
+Playwright's Chromium. In CI the same check runs inside the containers
+(tests/integration/smoke_scan.py).
 """
 
 import importlib.util
@@ -134,20 +135,21 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
     """One scan of testapp: recon up to the checkpoint (the rest runs in the findings test)."""
     factory = sessionmaker(bind=db_engine, expire_on_commit=False)
     keystore = KeyStore(stack["secrets"])
-    login = httpx.post(
-        stack["app"] + "/login", data={"username": "budi", "password": "budi123"}, trust_env=False
-    )
-    sid = login.cookies["sid"]
+
+    def login(user: str, password: str) -> str:
+        form = {"username": user, "password": password}
+        return httpx.post(stack["app"] + "/login", data=form, trust_env=False).cookies["sid"]
 
     with factory() as session, session.begin():
         engagement = engagements.create(
             session, keystore, {"name": "Scan e2e", "target_url": stack["app"] + "/"}
         )
         engagements.update_overrides(session, engagement, {"rate_limit_rps": 100})
-        engagements.add_account(session, keystore, engagement, {"session_text": f"sid={sid}"})
-        scan = scans.start(
-            session, engagement, "custom", ["information_gathering", "input_validation"]
-        )
+        for label, user, password in [("Akun A", "budi", "budi123"), ("Akun B", "sari", "sari123")]:
+            account = {"label": label, "session_text": f"sid={login(user, password)}"}
+            engagements.add_account(session, keystore, engagement, account)
+        modules = ["information_gathering", "authorization", "input_validation"]
+        scan = scans.start(session, engagement, "custom", modules)
         scan_id, engagement_id = scan.id, engagement.id
 
     engine = WorkflowEngine(
@@ -216,7 +218,7 @@ def test_recon_finds_every_testapp_endpoint_and_excludes_logout(scan_run: dict) 
     assert isinstance(summary["open_ports"], list)
 
 
-def test_input_validation_weaknesses_become_confirmed_findings(scan_run: dict) -> None:
+def test_testapp_weaknesses_become_confirmed_findings(scan_run: dict) -> None:
     testapp = _testapp_module()
     factory, scan_id, engagement_id = (
         scan_run["factory"],
@@ -268,6 +270,23 @@ def test_input_validation_weaknesses_become_confirmed_findings(scan_run: dict) -
         assert "payload sqlmap" in notes(("sqli", "/katalog", "nama"))
         assert "nuclei sqli-error-based" in notes(("sqli", "/katalog", "nama"))
         assert "payload dalfox" in notes(("xss_reflected", "/sapa", "nama"))
+
+        # Authorization: Akun B reads Akun A's account page and opens an admin function that
+        # /admin refuses it; the evidence names the account of every request.
+        idor = found[("idor", "/akun/{id}", "id")]
+        poc = findings.poc(session, scan_run["keystore"], idor)
+        assert (poc["path"], poc["account"]) == ("/akun/1", "Akun B")
+        assert poc["validator_params"]["owner_account"] == "Akun A"
+        rows = findings.evidence_rows(session, scan_run["keystore"], idor)
+        requests = " ".join(r["request"] for r in rows)
+        assert "[sesi Akun B]" in requests and "[sesi Akun A]" in requests
+        assert "sid=" not in requests
+        escalation = found[("privilege_escalation", "/admin/pengguna", None)]
+        poc = findings.poc(session, scan_run["keystore"], escalation)
+        assert poc["validator_params"] == {
+            "privileged_account": "Akun A",
+            "reference_path": "/admin",
+        }
         assert "nuclei reflection-ssti" in notes(("ssti", "/pratinjau", "templat"))
         tasks = dict(
             session.execute(

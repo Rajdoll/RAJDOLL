@@ -292,6 +292,8 @@ Indeks: `(engagement_id, decision, severity)`, `(engagement_id, validation)`.
 
 Path disimpan relatif; host diambil dari endpoint temuan (atau `target_url` jika temuan tidak terkait endpoint), atau dari `scan.base_url` saat retest. Sesi akun diambil dari `target_account` saat dijalankan, tidak disimpan di PoC.
 
+Untuk temuan Authorization, `account` adalah akun yang sesinya dipakai untuk mengirim PoC. `idor`: `validator_params` berisi `parameter`, `location` (`path` atau `query`), `owner_account` (pemilik objek), `control_path` dan `control_query` (objek pembanding milik akun pengirim, atau objek yang tidak ada). `privilege_escalation`: `privileged_account` dan `reference_path` (fungsi admin yang menolak akun pengirim; `null` jika kandidat hanya berdasarkan penilaian LLM). Detail temuan dan laporan menampilkan akun yang harus dipakai.
+
 Untuk temuan Input Validation, `query` dan `body` berisi request dengan payload deteksi, dan `validator_params` berisi `parameter`, `location` (`query`, `form`, `json`, `multipart`), `base` (nilai normal yang dipakai saat deteksi), serta rincian teknik (misalnya `technique`, `syntax`, `separator`).
 
 ### 6.3 `evidence`

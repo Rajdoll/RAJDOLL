@@ -32,14 +32,21 @@ WEAKNESSES = {
     "cmdi": "POST /alat/ping passes `alamat` to a shell (CWE-78)",
     "ssti": "GET /pratinjau?templat= renders the value as a Jinja2 template (CWE-1336)",
     "ssrf": "GET /ambil?url= fetches any http URL from the server (CWE-918)",
+    "idor": "GET /akun/{id} shows any user's private data to any logged-in user (CWE-639)",
+    "privilege-escalation": (
+        "GET /admin/pengguna checks only the login, not the admin role (CWE-269); /admin checks it"
+    ),
 }
-# Input Validation findings the scan must confirm (IPD F6 exit criterion): (type, path, param).
-EXPECTED_FINDINGS: list[tuple[str, str, str]] = [
+# Findings the scan must confirm (IPD F6 and F8 exit criteria): (type, path, parameter).
+# Authorization needs two accounts: Akun A = budi (admin), Akun B = sari (user).
+EXPECTED_FINDINGS: list[tuple[str, str, str | None]] = [
     ("sqli", "/katalog", "nama"),
     ("xss_reflected", "/sapa", "nama"),
     ("cmdi", "/alat/ping", "alamat"),
     ("ssti", "/pratinjau", "templat"),
     ("ssrf", "/ambil", "url"),
+    ("idor", "/akun/{id}", "id"),
+    ("privilege_escalation", "/admin/pengguna", None),
 ]
 
 # (method, path template, how recon can find it). Paths use {id} for numeric segments.
@@ -73,6 +80,7 @@ RECON_ENDPOINTS: list[tuple[str, str, str]] = [
     ("POST", "/alat/ping", "form"),
     ("GET", "/pratinjau", "link"),
     ("GET", "/ambil", "link"),
+    ("GET", "/admin/pengguna", "link from /admin (admin account)"),
 ]
 # Query parameter only found by parameter discovery: /cari?debug=1 adds diagnostics.
 HIDDEN_PARAMS = {"/cari": ["debug"]}
@@ -80,6 +88,11 @@ OUT_OF_SCOPE_HOSTS = ["cdn.luar.test"]
 
 USERS = {"budi": "budi123", "sari": "sari123"}
 USER_IDS = {"budi": 1, "sari": 2}
+ROLES = {"budi": "admin", "sari": "pengguna"}
+PROFILES = {
+    1: {"nama": "Budi Santoso", "email": "budi@instansi.test", "nip": "198801012010011001"},
+    2: {"nama": "Sari Wulandari", "email": "sari@instansi.test", "nip": "199002022015022002"},
+}
 SESSIONS: dict[str, str] = {}
 PRODUCTS = {1: "Kopi Gayo", 2: "Teh Melati"}
 
@@ -264,11 +277,12 @@ def profile(request: Request) -> Response:
     user = _user(request)
     if user is None:
         return RedirectResponse("/login", status_code=302)
+    admin = ' <a href="/admin">Panel admin</a>' if ROLES[user] == "admin" else ""
     return _page(
         "Profil",
         f"<p>Halo, {user.title()}</p>"
         f'<a href="/akun/{USER_IDS[user]}">Akun saya</a> <a href="/upload">Unggah berkas</a> '
-        '<a href="/logout">Keluar</a>',
+        f'<a href="/logout">Keluar</a>{admin}',
     )
 
 
@@ -276,8 +290,15 @@ def profile(request: Request) -> Response:
 def account(user_id: int, request: Request) -> Response:
     if _user(request) is None:
         return RedirectResponse("/login", status_code=302)
-    name = next((n for n, i in USER_IDS.items() if i == user_id), "?")
-    return _page("Akun", f"<p>Akun #{user_id}: {name}</p>")
+    # Weakness "idor": the account is shown without checking that it is the caller's.
+    data = PROFILES.get(user_id)
+    if data is None:
+        return _page("Akun", "<p>Akun tidak ditemukan</p>")
+    return _page(
+        "Akun",
+        f"<h1>Akun #{user_id}</h1><p>{data['nama']}</p><p>Email: {data['email']}</p>"
+        f"<p>NIP: {data['nip']}</p>",
+    )
 
 
 @app.get("/upload")
@@ -324,8 +345,22 @@ def contact(nama: str = Form(""), pesan: str = Form("")) -> HTMLResponse:
 
 
 @app.get("/admin")
-def admin() -> Response:
-    return JSONResponse({"detail": "Butuh hak admin"}, status_code=403)
+def admin(request: Request) -> Response:
+    user = _user(request)
+    if user is None or ROLES[user] != "admin":
+        return JSONResponse({"detail": "Butuh hak admin"}, status_code=403)
+    return _page("Panel admin", '<h1>Panel admin</h1><a href="/admin/pengguna">Daftar pengguna</a>')
+
+
+@app.get("/admin/pengguna")
+def admin_users(request: Request) -> Response:
+    # Weakness "privilege-escalation": only the login is checked, not the admin role.
+    if _user(request) is None:
+        return RedirectResponse("/login", status_code=302)
+    rows = "".join(
+        f"<li>{p['nama']} ({p['email']}, NIP {p['nip']})</li>" for p in PROFILES.values()
+    )
+    return _page("Daftar pengguna", f"<h1>Daftar pengguna</h1><ul>{rows}</ul>")
 
 
 @app.get("/internal/laporan")

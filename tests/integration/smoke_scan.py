@@ -3,13 +3,14 @@ container):
 
     docker compose exec -T api python - < tests/integration/smoke_scan.py
 
-Starts a real scan of testapp as a logged-in account. The worker runs recon (httpx, katana, the
-Playwright browser, ffuf, nmap, and the custom checks through the runner and the egress proxy),
-then the planning wave (JavaScript analysis, parameter discovery), and stops at the checkpoint.
+Starts a real scan of testapp with two logged-in accounts (Akun A = budi, admin; Akun B =
+sari). The worker runs recon (httpx, katana, the Playwright browser, ffuf, nmap, and the custom
+checks through the runner and the egress proxy), then the planning wave (JavaScript analysis,
+parameter discovery), and stops at the checkpoint.
 IPD F5 exit criteria: every endpoint testapp registers is in the inventory, including those only
 in JavaScript, and logout is excluded and never requested. After the checkpoint, Input Validation
-and the validators run; IPD F6: every Input Validation weakness of testapp becomes a `confirmed`
-finding. Not collected by pytest.
+and Authorization and the validators run; IPD F6 and F8: every weakness of testapp becomes a
+`confirmed` finding. Not collected by pytest.
 """
 
 import re
@@ -59,6 +60,7 @@ EXPECTED = [
     ("POST", "/alat/ping"),
     ("GET", "/pratinjau"),
     ("GET", "/ambil"),
+    ("GET", "/admin/pengguna"),
 ]
 # Copy of testapp.EXPECTED_FINDINGS, kept equal by tests/test_testapp.py.
 EXPECTED_FINDINGS = [
@@ -67,6 +69,8 @@ EXPECTED_FINDINGS = [
     ("cmdi", "/alat/ping", "alamat"),
     ("ssti", "/pratinjau", "templat"),
     ("ssrf", "/ambil", "url"),
+    ("idor", "/akun/{id}", "id"),
+    ("privilege_escalation", "/admin/pengguna", None),
 ]
 TARGET = "http://testapp:8080"
 
@@ -95,10 +99,11 @@ def wait_for(condition: Callable[[Scan], bool], scan_id: int, timeout: float) ->
     return scan
 
 
-# Test setup only: log in to testapp directly to get a session for the account.
-sid = httpx.post(
-    TARGET + "/login", data={"username": "budi", "password": "budi123"}, trust_env=False
-).cookies["sid"]
+# Test setup only: log in to testapp directly to get a session for each account.
+def login(user: str, password: str) -> str:
+    form = {"username": user, "password": password}
+    return httpx.post(TARGET + "/login", data=form, trust_env=False).cookies["sid"]
+
 
 with Session() as db:
     keystore = KeyStore(settings.secrets_dir)
@@ -106,8 +111,11 @@ with Session() as db:
         db, keystore, {"name": f"smoke-scan-{uuid.uuid4().hex[:6]}", "target_url": TARGET + "/"}
     )
     engagements.update_overrides(db, engagement, {"rate_limit_rps": 100})
-    engagements.add_account(db, keystore, engagement, {"session_text": f"sid={sid}"})
-    scan = scans.start(db, engagement, "custom", ["information_gathering", "input_validation"])
+    for label, user, password in [("Akun A", "budi", "budi123"), ("Akun B", "sari", "sari123")]:
+        account = {"label": label, "session_text": f"sid={login(user, password)}"}
+        engagements.add_account(db, keystore, engagement, account)
+    modules = ["information_gathering", "authorization", "input_validation"]
+    scan = scans.start(db, engagement, "custom", modules)
     db.commit()
     scan_id, engagement_id = scan.id, engagement.id
 
@@ -194,6 +202,13 @@ with Session() as db:
         (("ssti", "templat"), "nuclei reflection-ssti"),
     ]:
         check(tool_note in notes.get(key, ""), f"{tool_note} evidence on {key}")
+    # Authorization evidence shows which account sent each request, never its cookie.
+    idor = db.scalar(select(Finding).where(Finding.engagement_id == engagement_id,
+                                           Finding.vuln_type == "idor"))  # fmt: skip
+    idor_requests = " ".join(r["request"] for r in findings.evidence_rows(db, keystore, idor))
+    check("[sesi Akun B]" in idor_requests and "sid=" not in idor_requests,
+          "IDOR evidence names Akun B and masks its session")  # fmt: skip
+    check(findings.poc(db, keystore, idor)["account"] == "Akun B", "IDOR PoC uses Akun B")
     commix_rows = db.scalar(
         select(RequestLog.id).where(
             RequestLog.engagement_id == engagement_id, RequestLog.tool == "commix"
@@ -243,6 +258,8 @@ else:
     check("SSRF" not in markdown and "Server-Side Request Forgery" not in markdown,
           "rejected finding left out of the report")  # fmt: skip
     check("curl -i -X GET" in markdown, "report has reproduction steps")
+    check("Kirim dengan sesi Akun B; objeknya milik Akun A." in markdown,
+          "report says which account sends the IDOR PoC")  # fmt: skip
     preview = api.get(f"/reports/{report_id}")
     check(preview.status_code == 200 and "<h1>Laporan Vulnerability Assessment" in preview.text,
           "report preview renders")  # fmt: skip

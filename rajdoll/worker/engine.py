@@ -534,6 +534,9 @@ class Engine:
         assert engagement is not None  # noqa: S101 (scan rows cascade with their engagement)
         # From planning on, modules see the inventory with the modules the rules assign (TRD 6.2).
         known = [] if stage == ScanStage.RECON else planning.plan_endpoints(session, scan)
+        accounts = [a.label for a in engagements.accounts(session, scan.engagement_id)]
+        if stage == ScanStage.TESTING:
+            self._notice_skipped(session, scan, len(accounts))
         ctx = PlanContext(
             scan_id=scan.id,
             engagement_id=scan.engagement_id,
@@ -542,7 +545,8 @@ class Engine:
             settings=dict(scan.settings_snapshot),
             stage=stage,
             endpoints=known,
-            has_session=bool(engagements.accounts(session, scan.engagement_id)),
+            has_session=bool(accounts),
+            accounts=accounts,
             findings=(
                 findings.for_validation(session, scan.id)
                 if stage == ScanStage.VALIDATION
@@ -600,6 +604,21 @@ class Engine:
                 level=EventLevel.WARNING,
                 data={"modules": missing},
             )
+
+    def _notice_skipped(self, session: Session, scan: Scan, account_count: int) -> None:
+        """Modules the scan runs but that cannot test (Authorization without two accounts)."""
+        for name in scan.modules:
+            reason = planning.skip_reason(name, set(self.modules), account_count)
+            if reason == "needs_two_accounts":
+                emit(
+                    session,
+                    scan.id,
+                    EventType.NOTICE,
+                    f"Modul {label(name)} dilewati: {planning.SKIP_LABELS[reason]} "
+                    "(misalnya Akun A dan Akun B, masing-masing dengan sesi).",
+                    level=EventLevel.WARNING,
+                    data={"module": name, "skipped_reason": reason},
+                )
 
     def _complete(self, session: Session, scan: Scan) -> None:
         counts = dict(

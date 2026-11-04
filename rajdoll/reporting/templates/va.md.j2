@@ -64,6 +64,10 @@ Tidak ada temuan yang diterima.
 **Langkah reproduksi**
 
 {{ f.curl | fenced("bash") }}
+{% if f.poc_accounts %}
+
+{{ f.poc_accounts | cell }}
+{% endif %}
 
 Sesi akun tidak disertakan; tambahkan header `Cookie` atau `Authorization` milik akun uji bila endpoint membutuhkan login.
 {% endif %}

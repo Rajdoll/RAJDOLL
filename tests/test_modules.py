@@ -40,7 +40,11 @@ def test_resolve_modules() -> None:
 
 
 def test_registry_and_extra_modules(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert set(available_modules()) == {"information_gathering", "input_validation"}
+    assert set(available_modules()) == {
+        "information_gathering",
+        "authorization",
+        "input_validation",
+    }
     monkeypatch.setenv("RAJDOLL_EXTRA_MODULES", "tests.dummy_module")
     assert available_modules()["information_gathering"].label == "Dummy"
     assert label("input_validation") == "Input Validation"
