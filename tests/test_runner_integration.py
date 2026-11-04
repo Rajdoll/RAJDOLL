@@ -28,6 +28,7 @@ from rajdoll.core.bootstrap import enable_tools_login
 from tests.helpers import MITMDUMP, REPO, clean_env, free_port, start_mitmdump, wait_for_port
 
 BIN_DIR = Path(os.environ.get("RAJDOLL_TOOL_BIN_DIR", "/opt/tools/bin"))
+FIXTURES = Path(__file__).parent / "fixtures"
 TOKEN = "runner-integration-token"
 TOOLS_PASSWORD = "runner-integration-password"
 
@@ -64,6 +65,7 @@ class Env:
     engine: Engine
     client: TestClient
     testapp: str
+    tls_port: int
     task_id: int
     scan_id: int
     engagement_id: int
@@ -128,18 +130,17 @@ def env(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
             {"s": scan_id},
         ).scalar_one()
 
-    app_port = free_port()
+    app_port, tls_port = free_port(), free_port()
     testapp = subprocess.Popen(  # noqa: S603
         [
             sys.executable,
-            "-m",
-            "uvicorn",
-            "app:app",
+            "serve.py",
             "--host",
             "127.0.0.1",
             "--port",
             str(app_port),
-            "--no-server-header",
+            "--tls-port",
+            str(tls_port),
         ],
         cwd=REPO / "testapp",
         env=clean_env(),
@@ -152,6 +153,7 @@ def env(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
     )
     try:
         wait_for_port(app_port)
+        wait_for_port(tls_port)
         config = RunnerConfig(
             token=TOKEN,
             proxy_port=proxy_port,
@@ -167,6 +169,7 @@ def env(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
                 engine=db_engine,
                 client=client,
                 testapp=f"http://127.0.0.1:{app_port}",
+                tls_port=tls_port,
                 task_id=task_id,
                 scan_id=scan_id,
                 engagement_id=engagement_id,
@@ -332,3 +335,43 @@ def test_nuclei_dast_fuzzes_get_and_post_requests(env: Env) -> None:
     assert ("dast/ssti/reflection-ssti.yaml", env.testapp + "/pratinjau?templat=rajdoll") in found
     rows = env.audit("nuclei", 20)
     assert any(r["method"] == "POST" and r["url"].endswith("/alat/ping") for r in rows)
+
+
+@_needs("sslyze")
+def test_sslyze_sees_the_target_tls_through_a_passthrough_tunnel(
+    env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from tools.runner.adapters.sslyze import SslyzeAdapter
+
+    original = SslyzeAdapter.parse
+    kept = tmp_path / "sslyze.json"
+
+    def keep_report(self: SslyzeAdapter, ctx: Any, stdout: str) -> dict:
+        report = json.loads((Path(ctx.workdir) / "out.json").read_text())
+        for server in report.get("server_scan_results", []):
+            proxy = (server.get("server_location") or {}).get("http_proxy_settings") or {}
+            if proxy.get("basic_auth_password"):
+                proxy["basic_auth_password"] = "[token]"  # noqa: S105
+        kept.write_text(json.dumps(report, indent=1))
+        if os.environ.get("RAJDOLL_UPDATE_FIXTURES") == "1":
+            (FIXTURES / "sslyze_testapp.json").write_text(json.dumps(report, indent=1))
+        return original(self, ctx, stdout)
+
+    monkeypatch.setattr(SslyzeAdapter, "parse", keep_report)
+    body = env.run("sslyze", {"host": "127.0.0.1", "port": env.tls_port})
+    assert body["status"] == "completed", body.get("stderr_tail")
+    result = body["normalized"]
+    assert result["connected"], result
+    assert result["legacy_protocols"] == ["TLS 1.0", "TLS 1.1"]
+    # The target's own certificate, not the proxy's interception certificate.
+    certificate = result["certificate"]
+    assert (certificate["subject"], certificate["issuer"]) == ("CN=testapp", "CN=testapp")
+    assert certificate["trusted"] is False and certificate["self_signed"] is True
+    assert certificate["hostname_matches"] is True
+    report = json.loads(kept.read_text())
+    tunnel = report["server_scan_results"][0]["server_location"]["http_proxy_settings"]
+    assert tunnel["basic_auth_user"].endswith(".sslyze")
+    rows = env.audit("sslyze", 10)
+    assert {(r["method"], r["url"], r["outcome"]) for r in rows} == {
+        ("CONNECT", f"127.0.0.1:{env.tls_port}", "forwarded")
+    }

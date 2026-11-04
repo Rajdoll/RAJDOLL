@@ -28,7 +28,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from mitmproxy import http
+from mitmproxy import http, tls
 
 from rajdoll.core.scope import in_scope
 
@@ -38,6 +38,10 @@ CACHE_SECONDS = 5.0
 DIRECT_DEFAULT_RPS = 5.0
 MAX_URL_LENGTH = 2048
 _USERNAME = re.compile(r"^(task|eng)\.(\d{1,18})\.([a-z0-9_-]{1,40})$")
+# TLS scanners must see the target's own TLS, not the proxy's interception certificate: their
+# tunnels are relayed unmodified after the scope check at CONNECT, and each tunnel is audited and
+# rate-limited as one request. No other tool's traffic is ever passed through undecrypted.
+PASSTHROUGH_TOOLS = frozenset({"sslyze"})
 _CONTEXT_KEY = "rajdoll_context"
 _LOGGED_KEY = "rajdoll_logged"
 _STARTED_KEY = "rajdoll_started"
@@ -278,6 +282,14 @@ class EgressProxy:
             return
         self._tunnels[flow.client_conn.id] = context
         del flow.request.headers["Proxy-Authorization"]
+        if context.tool in PASSTHROUGH_TOOLS:
+            await self._bucket(context).acquire()
+            self._log(flow, context, "forwarded", status=200)
+
+    def tls_clienthello(self, data: tls.ClientHelloData) -> None:
+        context = self._tunnels.get(data.context.client.id)
+        if context is not None and context.tool in PASSTHROUGH_TOOLS:
+            data.ignore_connection = True
 
     async def request(self, flow: http.HTTPFlow) -> None:
         flow.metadata[_STARTED_KEY] = time.monotonic()

@@ -1,0 +1,13 @@
+# SSLyze in its own virtual environment (/opt/sslyze in the tools image): its cryptography pin
+# (<47) conflicts with the main package's. Every package is pinned (the full resolved set).
+sslyze==6.3.1
+nassl==5.4.0
+cryptography==46.0.7
+cffi==2.1.1
+pycparser==3.12
+pydantic==2.14.2
+pydantic_core==2.50.2
+annotated-types==0.8.0
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+tls_parser==2.0.2

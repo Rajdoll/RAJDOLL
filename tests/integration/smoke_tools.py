@@ -90,6 +90,15 @@ check(health["tools"].get("browser") == "1.63.0", "Playwright 1.63.0 installed")
 check(health["tools"].get("sqlmap") == "1.10.10", "sqlmap 1.10.10 installed")
 check(health["tools"].get("commix") == "4.1", "commix v4.1 installed")
 check(health["tools"].get("dalfox") == "2.13.0", "dalfox 2.13.0 installed")
+check(health["tools"].get("sslyze") == "6.3.1", "sslyze 6.3.1 installed")
+
+# sslyze through a passthrough tunnel: it must see testapp's own certificate, not the proxy's.
+tls = run("sslyze", {"host": "testapp", "port": 8443}, ["testapp"])
+tls_result = tls.get("normalized") or {}
+check(tls["status"] == "completed" and tls_result.get("connected"), f"sslyze ran ({tls['status']})")
+check(tls_result.get("legacy_protocols") == ["TLS 1.0", "TLS 1.1"], "sslyze saw TLS 1.0 and 1.1")
+subject = (tls_result.get("certificate") or {}).get("subject")
+check(subject == "CN=testapp", f"sslyze saw testapp's own certificate ({subject})")
 
 nuclei = run("nuclei", {"targets": ["http://testapp:8080"]}, ["testapp"])
 ids = [c["template_id"] for c in nuclei.get("normalized", {}).get("candidates", [])]

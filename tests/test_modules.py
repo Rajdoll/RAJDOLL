@@ -48,6 +48,7 @@ def test_registry_and_extra_modules(monkeypatch: pytest.MonkeyPatch) -> None:
         "session",
         "input_validation",
         "error_handling",
+        "cryptography",
     }
     monkeypatch.setenv("RAJDOLL_EXTRA_MODULES", "tests.dummy_module")
     assert available_modules()["information_gathering"].label == "Dummy"

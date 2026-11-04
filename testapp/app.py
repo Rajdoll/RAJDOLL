@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import os
 import secrets
 import sqlite3
 import subprocess
@@ -53,6 +54,9 @@ WEAKNESSES = {
     "version-header": "every response names its version: Server: rajdoll-testapp/1.0 (CWE-200)",
     "http-trace": "TRACE echoes the request back on any path (WSTG-CONF-06)",
     "debug-traceback": "GET /laporan?limit= shows a Python traceback for a non-number (CWE-209)",
+    "tls-legacy-protocols": "the HTTPS site (serve.py --tls-port) accepts TLS 1.0 and 1.1",
+    "tls-self-signed": "the HTTPS site presents a self-signed certificate (CWE-295)",
+    "cleartext-login": "POST /login and POST /api/v1/token take credentials over plain HTTP",
 }
 # Findings the scan must confirm (IPD F6 and F8 exit criteria): (type, path, parameter).
 # Authorization needs two accounts: Akun A = budi (admin), Akun B = sari (user). Each pasted
@@ -78,6 +82,10 @@ EXPECTED_FINDINGS: list[tuple[str, str, str | None]] = [
     ("version_disclosure", "/", "Server"),
     ("http_trace", "/", None),
     ("error_disclosure", "/laporan", "limit"),
+    ("weak_tls_protocol", "/", None),  # the HTTPS site of serve.py
+    ("certificate_problem", "/", None),
+    ("cleartext_credentials", "/login", None),
+    ("cleartext_credentials", "/api/v1/token", None),
 ]
 
 # (method, path template, how recon can find it). Paths use {id} for numeric segments.
@@ -172,7 +180,11 @@ def _user(request: Request) -> str | None:
 
 
 @app.get("/")
-def index() -> HTMLResponse:
+def index(request: Request) -> HTMLResponse:
+    tls_port = os.environ.get("TESTAPP_TLS_PORT")
+    secure = (
+        f' <a href="https://{request.url.hostname}:{tls_port}/">Versi HTTPS</a>' if tls_port else ""
+    )
     return _page(
         "RAJDOLL testapp",
         '<h1>RAJDOLL testapp</h1><nav><a href="/login">Masuk</a> <a href="/profil">Profil</a> '
@@ -186,7 +198,7 @@ def index() -> HTMLResponse:
         "<button>Ping</button></form>"
         '<a href="/sapa?nama=Tamu">Sapa</a> <a href="/pratinjau?templat=Halo">Pratinjau</a> '
         '<a href="/ambil?url=/health">Status layanan</a> <a href="/index.php">Beranda lama</a> '
-        '<a href="/laporan?limit=10">Laporan</a>'
+        f'<a href="/laporan?limit=10">Laporan</a>{secure}'
         '<div id="ringkasan"></div>',
         script=True,
     )
@@ -620,4 +632,32 @@ def exposed_env() -> PlainTextResponse:
     # Weakness "exposed-env": configuration file served to anyone.
     return PlainTextResponse(
         "APP_ENV=production\nDB_HOST=db\nDB_PASSWORD=testapp-not-a-real-secret\n"
+    )
+
+
+# --- HTTPS site for the Weak Cryptography weaknesses (served by serve.py) ------------------------
+
+tls_app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@tls_app.middleware("http")
+async def tls_security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    # Every security header is set, so only the TLS configuration itself is weak here.
+    response: Response = await call_next(request)
+    response.headers.update(
+        {
+            "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Strict-Transport-Security": "max-age=31536000",
+        }
+    )
+    return response
+
+
+@tls_app.get("/")
+def tls_index() -> HTMLResponse:
+    return HTMLResponse(
+        "<!doctype html><html><head><title>Versi HTTPS</title></head>"
+        "<body><h1>Versi HTTPS</h1><p>Halaman ini hanya untuk uji kriptografi.</p></body></html>"
     )

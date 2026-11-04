@@ -34,6 +34,7 @@ def available_modules() -> dict[str, Module]:
     from rajdoll.modules.information_gathering import InformationGathering
     from rajdoll.modules.input_validation import InputValidation
     from rajdoll.modules.session_management import SessionManagement
+    from rajdoll.modules.weak_cryptography import WeakCryptography
 
     modules: list[Module] = [
         InformationGathering(),
@@ -43,6 +44,7 @@ def available_modules() -> dict[str, Module]:
         SessionManagement(),
         InputValidation(),
         ErrorHandling(),
+        WeakCryptography(),
     ]
     found = {module.name: module for module in modules}
     # Tests (and later, plugins) can add modules: RAJDOLL_EXTRA_MODULES=package.module,...

@@ -434,6 +434,7 @@ def login_burst(
         form.method, form.url, form.password_field, form.location, {}, body, form.location
     )
     client.cookies.clear()
+    client.follow_redirects = False  # a redirect back to the login page is the answer
     evidence: list[Exchange] = []
     statuses: list[int] = []
     first: tuple[httpx.Response, float] | None = None

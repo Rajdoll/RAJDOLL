@@ -56,6 +56,10 @@ RUN apt-get update \
 
 COPY tools/requirements.txt /app/tools/requirements.txt
 RUN pip install --no-cache-dir -r /app/tools/requirements.txt
+# SSLyze in its own virtual environment: its cryptography pin conflicts with the main package's.
+COPY tools/sslyze-requirements.txt /app/tools/sslyze-requirements.txt
+RUN python -m venv /opt/sslyze \
+    && /opt/sslyze/bin/pip install --no-cache-dir -r /app/tools/sslyze-requirements.txt
 # Chromium headless shell matching the pinned Playwright release (browser adapter).
 RUN python -m playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
@@ -67,7 +71,8 @@ COPY --from=commix /opt/commix /opt/commix
 RUN ln -s /usr/bin/nmap /opt/tools/bin/nmap \
     && ln -s /usr/local/bin/sqlmap /opt/tools/bin/sqlmap \
     && printf '#!/bin/sh\nexec python /opt/commix/commix.py "$@"\n' > /opt/tools/bin/commix \
-    && chmod 755 /opt/tools/bin/commix
+    && printf '#!/bin/sh\nexec /opt/sslyze/bin/python -m sslyze "$@"\n' > /opt/tools/bin/sslyze \
+    && chmod 755 /opt/tools/bin/commix /opt/tools/bin/sslyze
 COPY tools/wordlists /opt/rajdoll-wordlists
 # RAJDOLL's own templates and the pinned subset of official DAST templates (templates/nuclei/dast).
 COPY templates/nuclei /opt/rajdoll-templates

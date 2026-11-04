@@ -71,14 +71,14 @@ def stack(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterat
         drivername="postgresql", username="rajdoll_tools", password=TOOLS_PASSWORD
     )
     tools_dsn = tools_url.render_as_string(hide_password=False)
-    app_port, runner_port = free_port(), free_port()
+    app_port, tls_port, runner_port = free_port(), free_port(), free_port()
     processes = []
     proxy, proxy_port = start_mitmdump(tools_dsn, TOKEN, tmp / "mitm")
     processes.append(proxy)
     processes.append(
         subprocess.Popen(  # noqa: S603
-            [sys.executable, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
-             "--port", str(app_port), "--no-server-header"],
+            [sys.executable, "serve.py", "--host", "127.0.0.1", "--port", str(app_port),
+             "--tls-port", str(tls_port)],
             cwd=REPO / "testapp",
             env=clean_env(),
         )
@@ -103,6 +103,7 @@ def stack(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterat
     )  # fmt: skip
     try:
         wait_for_port(app_port)
+        wait_for_port(tls_port)
         wait_for_port(runner_port)
         yield {
             "app": f"http://127.0.0.1:{app_port}",
@@ -159,6 +160,7 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
             "session",
             "input_validation",
             "error_handling",
+            "cryptography",
         ]
         scan = scans.start(session, engagement, "custom", modules)
         scan_id, engagement_id = scan.id, engagement.id
