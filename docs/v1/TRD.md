@@ -42,7 +42,7 @@ Dokumen ini menjelaskan **bagaimana** kebutuhan di PRD dipenuhi secara teknis. S
                                                      ▼ HTTP internal
                                                   [tools]  runner tool + egress proxy + MCP
                                                      │      nuclei, katana, ffuf, httpx, sqlmap,
-                                                     │      dalfox, nmap, testssl.sh, retire.js, ...
+                                                     │      dalfox, nmap, sslyze, retire.js, ...
                                                      ▼
                                                   Target (clone aplikasi instansi)
 
@@ -156,8 +156,9 @@ Detail teknis:
 - Scope dicek **sebelum** koneksi ke target dibuka (`connection_strategy=lazy`): untuk HTTPS di tahap `CONNECT`, lalu sekali lagi untuk setiap request di dalam terowongan, termasuk header `Host`.
 - Rate limit diambil dari `scan.settings_snapshot` untuk tugas, dan dari `engagement.settings` untuk request langsung (bawaan 5 request per detik). Satu token bucket per penugasan.
 - Proxy mendekripsi HTTPS dengan CA yang dibuat mitmproxy di volume `tools-data`. CA ini tidak perlu dipasang di tool karena tool pengujian dan klien Python RAJDOLL memang tidak memverifikasi sertifikat target (clone umumnya memakai sertifikat self-signed).
+- Pengecualian (F8b-3): tunnel CONNECT milik pemindai TLS (kredensial `task.<id>.sslyze`) diteruskan tanpa didekripsi, agar pemindai melihat sertifikat dan protokol target sendiri, bukan milik proxy. Scope tetap dicek saat CONNECT, setiap tunnel dicatat sebagai satu baris audit (`CONNECT host:port`), dan rate limit tetap berlaku per tunnel. Tool lain tidak pernah mendapat passthrough.
 - Proxy dan runner berjalan dalam satu container lewat `tools/entrypoint.py`; jika salah satu berhenti, keduanya dihentikan agar Docker menyalakan ulang bersama.
-- Tool non-HTTP (nmap, testssl.sh) tidak lewat proxy. Targetnya dicek oleh adaptor sebelum dijalankan dan eksekusinya dicatat di audit log sebagai satu entri per pemanggilan.
+- Tool non-HTTP (nmap) tidak lewat proxy. Targetnya dicek oleh adaptor sebelum dijalankan dan eksekusinya dicatat di audit log sebagai satu entri per pemanggilan.
 - Header identitas (PRD F-50) disisipkan oleh proxy jika diaktifkan di pengaturan penugasan.
 
 ### 4.3 Daftar tool
@@ -172,7 +173,7 @@ Detail teknis:
 | sqlmap 1.10.10 (PyPI) | SQL injection | Dipertahankan |
 | dalfox 2.13.0 | XSS | Dipertahankan |
 | commix 4.1 (tag git, dicek terhadap commit) | Command injection | Dipertahankan |
-| testssl.sh | Konfigurasi TLS (modul Weak Cryptography) | Dipertahankan |
+| SSLyze (menggantikan testssl.sh, keputusan F8b-3) | Konfigurasi TLS (modul Weak Cryptography) | Baru |
 | retire.js | Library JavaScript yang rentan | Dipertahankan |
 | smuggler | HTTP request smuggling | Dipertahankan, opsional |
 | Playwright 1.63.0 + Chromium (headless shell) | Render SPA saat recon (adaptor `browser`), verifikasi XSS di browser (adaptor `xss_check`), auto-login | Dipertahankan |
@@ -272,7 +273,7 @@ Bentuk di kode (F4–F6): `berlaku_untuk` adalah aturan pemilihan modul di peren
 | Session Management | nuclei | Atribut cookie, fiksasi sesi, logout |
 | Input Validation | nuclei DAST, sqlmap, dalfox, commix | SSTI, SSRF, injeksi berbasis konteks |
 | Error Handling | nuclei | Pemicu dan analisis pesan error |
-| Weak Cryptography | testssl.sh, nuclei | Algoritma token dan hash |
+| Weak Cryptography | SSLyze | Kredensial lewat HTTP biasa |
 | Business Logic | — | Manipulasi harga dan jumlah, kupon, alur langkah |
 | File Upload | nuclei | Bypass ekstensi dan tipe, eksekusi file |
 | Client-Side | retire.js, dalfox, Playwright | DOM XSS, CORS, clickjacking, postMessage |
@@ -299,6 +300,8 @@ Cek kustom diambil dari modul sistem lama jika logikanya sudah teruji, lalu ditu
 | Header keamanan, versi di header | Halaman root yang diambil dua kali tetap tanpa header keamanan, atau tetap menyebut versi |
 | TRACE | Nilai header acak baru dipantulkan pada dua request TRACE |
 | Pesan error | Nilai uji yang sama memunculkan pola stack trace, halaman debug, atau path file server yang tidak ada pada nilai normal, di dua ulangan |
+| TLS (protokol, cipher, sertifikat, kerentanan) | Pemindaian SSLyze kedua pada host dan port yang sama melaporkan detail yang sama |
+| Kredensial lewat HTTP | Login gagal lewat HTTP dijawab tanpa dialihkan ke HTTPS di dua ulangan |
 | Kebocoran informasi | Pola spesifik (stack trace, path internal, versi) muncul di respons |
 | Template nuclei | Matcher template cocok, dan ulangan kedua memberi hasil yang sama |
 
@@ -308,6 +311,8 @@ Cek kustom diambil dari modul sistem lama jika logikanya sudah teruji, lalu ditu
 - Keputusan F8a-2: fiksasi sesi, invalidasi logout, dan timeout sesi membutuhkan login baru dengan kredensial atau akan mengakhiri sesi tempel, sehingga tetap menjadi cek manual sampai auto-login (F9). Alur reset password cocok dengan pola pengecualian bawaan (`reset`) dan dapat mengirim email, sehingga tidak diuji otomatis. Template nuclei untuk Authentication dan Session Management (misalnya default login) masuk bersama template konfigurasi di F8b.
 - Configuration & Deployment (F8b-1, `rajdoll/modules/configuration.py`, cek di `config_checks.py`) berjalan sekali per host tanpa sesi: template nuclei untuk file terbuka, cadangan basis data, dan halaman debug yang disalin tanpa perubahan dari rilis v10.5.0 ke `templates/nuclei/config/<jenis>/` (hanya template generik dengan GET dan daftar path pendek, tanpa server out-of-band; lihat README di sana) ditambah template RAJDOLL `rajdoll/exposure/`; header keamanan (`Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options` atau CSP `frame-ancestors`, HSTS di HTTPS) dan versi di header (`Server`, `X-Powered-By`, ...) halaman root; TRACE dengan nilai header acak. Salinan cadangan file sisi server dari inventaris (`.bak`, `.old`, `.orig`, `.save`, `~`, `.txt`, `.backup`, `.copy`) dicari dengan pembanding soft-404 dan halaman aslinya. File yang ditemukan didaftarkan sebagai endpoint (sumber `fuzz`) sebelum dilaporkan. Catatan evidence dan verdict tidak pernah memuat nilai dari target (kredensial yang diambil template, secret JWT): kolom catatan tidak dienkripsi, sedangkan nilai itu tetap ada di request/response terenkripsi atau di PoC.
 - Error Handling (F8b-2, `rajdoll/modules/error_handling.py`, pola di `error_checks.py`) mengirim nilai pemicu error ke setiap parameter endpoint berparameter (kutip, bukan angka, angka sangat besar, kurung, byte NUL, nilai panjang) dengan sesi akun, dan membandingkannya dengan nilai normal. Hanya pola spesifik runtime yang dihitung (stack trace Python, Java, PHP, .NET, Node.js, Ruby, Go; halaman debug Django, Laravel, Werkzeug, Spring, ASP.NET; path file di server di luar atribut HTML), dan hanya bila tidak muncul pada respons normal. Pesan error SQL tidak dihitung di sini karena merupakan bukti SQL injection (Input Validation). Sekali per host, halaman untuk path acak yang tidak ada diperiksa tanpa sesi. Respons 5xx tanpa pola yang berbeda dari respons normal boleh ditanyakan ke LLM (`judge_response`, paling banyak tiga per endpoint); jawaban "ya" hanya melaporkan kandidat yang tidak dapat dikonfirmasi validator.
+- Weak Cryptography (F8b-3, `rajdoll/modules/weak_cryptography.py`) memindai setiap origin HTTPS target dan inventaris dengan SSLyze (`tools/runner/adapters/sslyze.py`): protokol usang (SSL 2.0/3.0, TLS 1.0/1.1), cipher lemah (NULL, EXPORT, anonim, RC4, DES, 3DES, MD5), sertifikat (tidak tepercaya atau self-signed, kedaluwarsa, nama host tidak cocok, SHA-1, RSA di bawah 2048 bit), dan kerentanan TLS (Heartbleed, ROBOT, injeksi CCS, renegosiasi tidak aman, kompresi). Endpoint login yang dilayani lewat HTTP biasa mendapat satu login gagal dengan username acak; bila dijawab tanpa dialihkan ke HTTPS, kredensial berjalan tanpa enkripsi (WSTG-CRYP-03).
+- Keputusan F8b-3: testssl.sh diganti SSLyze 6.3.1. Opsi `--proxy` testssl.sh tidak mendukung autentikasi proxy, sehingga tidak bisa lewat egress proxy yang mewajibkan kredensial per tugas; SSLyze membuka setiap koneksi lewat `--https_tunnel` dengan kredensial tersebut. Pemeriksaan TLS lewat proxy yang mendekripsi tidak bermakna, karena itu tunnel SSLyze diteruskan tanpa didekripsi (lihat egress proxy). SSLyze dipasang di virtualenv terpisah (`tools/sslyze-requirements.txt`, semua versi dikunci) karena versi `cryptography` yang dibutuhkannya bentrok dengan paket utama. Algoritma token (JWT) sudah diuji modul Authentication di F8a-2.
 - Di kode: validator didaftarkan dengan `@validator("<jenis>")` (`rajdoll/validators/`). Modul bawaan `validation` dijalankan engine di tahap validasi untuk setiap temuan scan yang belum terkonfirmasi; satu tugas `validator:<jenis>` per temuan. Validator membangun ulang request dari spesifikasi PoC (BSD 6.2) dan mulai dari nilai normal yang sama dengan deteksi (`validator_params.base`). Validator XSS memakai adaptor `xss_check`: Chromium membuka setiap payload (GET, atau POST form) lewat egress proxy dan mencatat dialog `alert` yang memuat penanda acak; pesan galat navigasi tidak dihitung sebagai eksekusi.
 - Jika validator jenisnya tidak mengonfirmasi, tool yang menemukan temuan dijalankan ulang sebagai pendapat kedua (`rajdoll/validators/tools.py`): sqlmap dengan teknik yang ia laporkan, commix dengan pemeriksaan yang sama, atau template nuclei yang sama yang harus cocok lagi pada parameter yang sama. Template XSS nuclei hanya memeriksa pantulan, jadi tidak pernah mengonfirmasi XSS; konfirmasi XSS tetap lewat Chromium. Payload yang dilaporkan tool dikirim ulang oleh RAJDOLL lewat egress proxy agar temuan punya pasangan request/response mentah sebagai evidence.
 - Probe deteksi menghindari bukti yang bisa dipalsukan oleh pantulan: perbandingan boolean dilakukan setelah nilai yang dipantulkan dihapus dari halaman, dan pola error SQL dibuat spesifik agar pesan shell ("Unterminated quoted string") tidak terbaca sebagai error SQL.
