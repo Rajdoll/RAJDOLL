@@ -222,13 +222,14 @@ Setiap tugas punya: templat prompt (Jinja2), model Pydantic yang diubah menjadi 
 - Keluaran yang tidak lolos validasi skema diulang sekali dengan prompt perbaikan. Jika gagal lagi, dipakai jalan cadangan.
 - Ada anggaran jumlah panggilan LLM per scan (bisa diatur). Jika habis, sisa tugas memakai jalan cadangan.
 - Setiap panggilan disimpan: tugas, prompt, keluaran, durasi, dan status (PRD F-37).
+- Di kode (F7a): semua panggilan lewat `rajdoll/llm/gateway.py`. Antrean satu-per-satu memakai kunci proses dan advisory lock PostgreSQL, sehingga beberapa worker pun tidak memanggil LLM bersamaan. Klien (`rajdoll/llm/client.py`) mengirim `response_format` berisi JSON schema dari model Pydantic tugas, membuang blok `<think>`, dan mematikan mode berpikir dengan penanda `/no_think` (Qwen) kecuali diaktifkan. Server yang tidak terjangkau dilewati selama 5 menit tanpa mencatat baris per lewatan, sehingga LM Studio yang mati tidak memperlambat scan; LLM juga bisa dimatikan di pengaturan. Klien LLM tidak melewati egress proxy karena LLM bukan target. Prompt dan keluaran disimpan terenkripsi per penugasan. Modul memanggil LLM lewat `ctx.llm(task, messages, finding_id=..., endpoint_id=...)` dan wajib punya jalan cadangan untuk hasil yang bukan `ok`.
 
 ### 5.5 Prompt injection dari target
 
 Konten dari target (HTML, JSON, pesan error) bisa berisi teks yang menyerupai instruksi. Mitigasinya:
 - Keluaran LLM selalu dibatasi skema; LLM tidak bisa memicu tindakan di luar yang didefinisikan.
 - Request usulan mini-loop tetap melewati egress proxy (scope dan rate limit) dan dibatasi jumlahnya.
-- Konten target dibungkus dalam blok data yang ditandai jelas di prompt.
+- Konten target dibungkus dalam blok data yang ditandai jelas di prompt (`<<<DATA … DATA>>>`, `rajdoll/llm/context.py`); penanda di dalam konten dinetralkan agar blok tidak bisa ditutup dari dalam, dan nilai cookie tidak pernah ikut dikirim.
 
 ## 6. Modul uji dan validasi
 

@@ -289,6 +289,8 @@ Pekerjaan:
 - Pengaturan LLM dan uji koneksi di UI, indikator di navigasi, peringatan jika memakai API.
 - Catatan AI dan riwayat mini-loop di detail temuan.
 
+Catatan pelaksanaan: F7 dikirim dalam dua PR. F7a berisi klien dan gateway LLM (antrean satu-per-satu, batas waktu, satu kali ulang dengan prompt perbaikan, anggaran per scan, pencatatan `llm_call` terenkripsi, lewati server yang tidak terjangkau), pemangkas konteks dan pembungkus konten target, `ctx.llm` di engine, serta pengaturan LLM (aktif/mati, kunci API terenkripsi, batas waktu, anggaran, uji koneksi) dan indikator lokal/API/mati di navigasi. F7b berisi kelima tugas LLM beserta jalan cadangannya, mini-loop, dan catatan AI di detail temuan.
+
 Kriteria selesai:
 - Dengan LLM mati, hasil scan terhadap `testapp` sama dengan M1.
 - Dengan LM Studio aktif, endpoint mendapat tanda dari LLM dan temuan "perlu cek manual" melewati mini-loop (maksimal 3 putaran).

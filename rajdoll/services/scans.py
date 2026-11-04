@@ -114,9 +114,13 @@ def start(
         status=ScanStatus.QUEUED,
         settings_snapshot=engagements.effective_settings(session, engagement),
         llm_snapshot={
+            "enabled": config.llm.enabled,
             "base_url": str(config.llm.base_url),
             "model": config.llm.model,
             "is_local": is_local_llm(str(config.llm.base_url)),
+            "thinking": config.llm.thinking,
+            "timeout_s": config.llm.timeout_s,
+            "budget": config.llm_budget_per_scan,
         },
         stats={},
     )

@@ -23,6 +23,9 @@
       <ul>
         <li><a href="/"{% if active_nav == "engagements" %} aria-current="page"{% endif %}>Penugasan</a></li>
         <li><a href="/settings"{% if active_nav == "settings" %} aria-current="page"{% endif %}>Pengaturan</a></li>
+        {% if llm_indicator %}
+        <li><a href="/settings#llm" class="badge llm-{{ llm_indicator.state }}" title="Model: {{ llm_indicator.model }}">LLM: {{ llm_indicator.label }}</a></li>
+        {% endif %}
         <li>
           <form method="post" action="/logout" class="nav-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

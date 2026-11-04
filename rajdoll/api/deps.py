@@ -6,7 +6,9 @@ from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from rajdoll.core.crypto import KeyStore
+from rajdoll.llm import status as llm_status
 from rajdoll.services import auth
+from rajdoll.services import settings as settings_service
 from rajdoll.services.auth import ActiveSession
 from rajdoll.services.session_check import Prober
 
@@ -46,6 +48,7 @@ def current_session(request: Request, db: Session = Depends(get_db)) -> ActiveSe
     db.commit()  # persist last_seen_at
     request.state.csrf_token = active.csrf_token
     request.state.authenticated = True
+    request.state.llm_indicator = llm_status.indicator(settings_service.load(db))
     return active
 
 

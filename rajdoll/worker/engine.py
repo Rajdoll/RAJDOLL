@@ -49,6 +49,7 @@ from rajdoll.core.enums import (
     TaskStatus,
 )
 from rajdoll.core.models import Endpoint, Engagement, Finding, Scan, TargetAccount, Task
+from rajdoll.llm.gateway import LlmGateway
 from rajdoll.modules.base import (
     Candidate,
     EndpointSeen,
@@ -160,6 +161,7 @@ class Engine:
         proxy_base: str | None = None,
         proxy_token: str = "",
         clock: Callable[[], datetime] = scans.utcnow,
+        llm: LlmGateway | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.tools = tools
@@ -173,6 +175,8 @@ class Engine:
         self.check_account = check_account
         self.listen_dsn = listen_dsn
         self.keystore = keystore
+        # LLM calls are recorded encrypted per engagement, so they need the key store.
+        self.llm = llm or (LlmGateway(session_factory, keystore) if keystore else None)
         self.proxy_base = proxy_base
         self.proxy_token = proxy_token
         self.clock = clock
@@ -714,6 +718,7 @@ class Engine:
             record_verdict=lambda finding_id, verdict: self._record_verdict(
                 job, finding_id, verdict
             ),
+            llm=lambda task, messages, **ids: self._llm_call(job, task, messages, **ids),
         )
         try:
             ctx.check_cancelled()
@@ -814,6 +819,13 @@ class Engine:
                 return {}
             stored = engagements.account_session(self.keystore, engagement, chosen)
         return session_check.request_headers(stored)
+
+    def _llm_call(self, job: Job, task: Any, messages: list[dict[str, str]], **ids: Any) -> Any:
+        if self.llm is None:
+            return None
+        return self.llm.call(
+            task, messages, engagement_id=job.engagement_id, scan_id=job.scan_id, **ids
+        )
 
     def _keystore(self) -> KeyStore:
         if self.keystore is None:

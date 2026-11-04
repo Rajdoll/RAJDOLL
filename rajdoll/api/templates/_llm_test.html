@@ -1,0 +1,6 @@
+{# Result of the LLM connection test (settings). #}
+{% if ok %}
+<span class="success">Terhubung: {{ model }} menjawab dalam {{ num(latency_ms) }} ms.</span>
+{% else %}
+<span class="error">{{ error }}</span>
+{% endif %}
