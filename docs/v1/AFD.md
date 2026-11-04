@@ -4,7 +4,7 @@
 |---|---|
 | Dokumen | App Flow Document (AFD), termasuk wireframe layar (pengganti DBD) |
 | Acuan | PRD v1.1, TRD v1.0 |
-| Status | Draf untuk ditinjau |
+| Status | Disetujui (v1.0, 4 November 2026) |
 
 Dokumen ini menjelaskan apa yang dilihat dan dilakukan pengguna di setiap langkah, bagaimana status penugasan, scan, tugas, dan temuan berubah, serta tata letak layar utama.
 
@@ -228,7 +228,7 @@ pending ─▶ skipped (scan dibatalkan, modul dinonaktifkan, atau prasyarat tid
 
 ### 3.4 Temuan
 
-Status temuan disimpan dalam **tiga kolom terpisah**, karena ketiganya berubah oleh pihak dan waktu yang berbeda:
+Status temuan disimpan dalam **tiga kolom terpisah**, karena ketiganya berubah oleh pihak dan waktu yang berbeda. Nama kolom dan nilai di database memakai bahasa Inggris; pemetaannya ada di BSD bagian 9.
 
 | Kolom | Nilai | Diubah oleh |
 |---|---|---|

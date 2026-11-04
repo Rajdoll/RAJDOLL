@@ -4,7 +4,7 @@
 |---|---|
 | Dokumen | Technical Requirement Document (TRD) |
 | Acuan | PRD v1.1 (`docs/v1/PRD.md`) |
-| Status | Disetujui (v1.0, 4 November 2026) |
+| Status | Disetujui (v1.1, 4 November 2026) |
 | Dokumen terkait | AFD (alur dan layar), BSD (skema data dan API), IPD (tahapan) |
 
 Dokumen ini menjelaskan **bagaimana** kebutuhan di PRD dipenuhi secara teknis. Skema tabel dan kontrak API dirinci di BSD; di sini hanya disebut sejauh perlu untuk menjelaskan desain.
@@ -322,8 +322,8 @@ Tidak dienkripsi agar bisa dicari dan difilter: metadata temuan (judul, severity
 ### 8.2 Manajemen kunci
 
 - **Kunci utama** (master key) disimpan sebagai berkas di volume Docker terpisah, dibuat saat instalasi pertama.
-- **Setiap penugasan punya kunci data sendiri**, yang dienkripsi dengan kunci utama dan disimpan di database.
-- **Menghapus penugasan (F-03)** menghapus baris datanya sekaligus kunci data penugasan itu. Sisa data di cadangan atau berkas log Postgres tidak bisa dibaca lagi tanpa kunci tersebut.
+- **Setiap penugasan punya kunci data sendiri**, yang dienkripsi dengan kunci utama dan disimpan sebagai berkas di volume `secrets`, **bukan di database**. Dengan begitu salinan atau backup database tidak pernah berisi kuncinya.
+- **Menghapus penugasan (F-03)** menghapus berkas kunci data penugasan itu terlebih dahulu, lalu baris datanya. Sisa data di cadangan atau berkas log Postgres tidak bisa dibaca lagi tanpa kunci tersebut. Urutan lengkapnya di BSD bagian 7.
 - **BitLocker (atau Device encryption) wajib diaktifkan** di drive tempat data Docker Desktop berada (biasanya `C:`). Karena berkas kunci utama ada di disk yang sama dengan database, tanpa enkripsi disk, laptop yang hilang berarti database dan kuncinya ikut hilang bersama. Enkripsi di level aplikasi tetap melindungi dari salinan database atau backup yang bocor.
 
 ### 8.3 Batas ukuran
@@ -363,7 +363,7 @@ Body evidence dipotong pada ukuran maksimum (bawaan 1 MB per body, bisa diatur),
 | Prasyarat | Windows dengan Docker Desktop (backend WSL2), LM Studio dengan server lokal aktif di port 1234, BitLocker atau Device encryption aktif di drive data Docker (bagian 8.2). |
 | Lokasi repo | Di dalam filesystem WSL (misalnya `~/RAJDOLL`), bukan di `/mnt/c`, agar akses berkas dan build jauh lebih cepat. |
 | Memori WSL2 | Bawaan WSL2 memakai maksimal 50% RAM (16 GB dari 32 GB). Ini cukup; bisa diatur lewat `%UserProfile%\.wslconfig` jika perlu. |
-| Volume | `pgdata` (database), `secrets` (kunci utama dan CA proxy), `nuclei-templates`. |
+| Volume | `pgdata` (database), `secrets` (kunci utama, kunci data penugasan, CA proxy, token internal), `nuclei-templates`. |
 | Instalasi pertama | `docker compose up -d`, lalu buka `http://127.0.0.1:8000` untuk membuat password dan memeriksa koneksi LLM. |
 | Pembaruan template nuclei | Perintah manual yang butuh internet, dicatat versinya. Tidak otomatis. |
 
