@@ -6,22 +6,59 @@
 <div{% if not finished %} hx-ext="sse" sse-connect="/scans/{{ scan.id }}/events/stream?after_id={{ last_event_id }}" sse-close="done"{% endif %}>
   <section id="scan-status" sse-swap="stage">{% include "_scan_status.html" %}</section>
 </div>
+{% set recon = checkpoint.recon_summary %}
+{% if recon.waf and recon.waf.detected %}
+<article class="banner banner-danger" role="status">
+  WAF terdeteksi: <strong>{{ recon.waf.name or "tidak dikenal" }}</strong> ({{ recon.waf.evidence }}).
+  Pertimbangkan meminta whitelist IP ke instansi sebelum pengujian.
+</article>
+{% endif %}
 <section>
   <h2 class="h5">Hasil recon</h2>
-  {% set recon = checkpoint.recon_summary %}
-  <h3 class="h6">Teknologi</h3>
-  {% if recon.technologies %}
-  <ul>{% for tech in recon.technologies %}<li>{{ tech.name }}{% if tech.version %} {{ tech.version }}{% endif %}</li>{% endfor %}</ul>
-  {% else %}<p class="muted">Belum terdeteksi.</p>{% endif %}
-  <h3 class="h6">Endpoint yang menjawab</h3>
-  {% if recon.endpoints %}
+  <div class="grid">
+    <div>
+      <h3 class="h6">Teknologi</h3>
+      {% if recon.technologies %}
+      <ul>{% for tech in recon.technologies %}<li>{{ tech.name }}{% if tech.get("version") %} {{ tech.version }}{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">Belum terdeteksi.</p>{% endif %}
+      {% if recon.servers %}<p><small>Server: {{ recon.servers | join(", ") }}</small></p>{% endif %}
+    </div>
+    <div>
+      <h3 class="h6">Port terbuka</h3>
+      {% if recon.open_ports %}
+      <ul>{% for port in recon.open_ports %}<li>{{ port.port }}/{{ port.get("protocol") or "tcp" }}{% if port.get("service") %} · {{ port.service }}{% endif %}{% if port.get("product") %} ({{ port.product }}{% if port.get("version") %} {{ port.version }}{% endif %}){% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">Tidak ada data.</p>{% endif %}
+    </div>
+    <div>
+      <h3 class="h6">Host di luar scope</h3>
+      {% if recon.out_of_scope_hosts %}
+      <ul>{% for item in recon.out_of_scope_hosts %}<li><code>{{ item.host }}</code> <small class="muted">({{ item.count }}×)</small></li>{% endfor %}</ul>
+      <p><small class="muted">Tidak diuji. Menambahkannya ke scope tersedia mulai F5b.</small></p>
+      {% else %}<p class="muted">Tidak ada.</p>{% endif %}
+    </div>
+  </div>
+  {% if recon.api_specs %}<p><small>Spesifikasi API: {% for url in recon.api_specs %}<code>{{ url }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</small></p>{% endif %}
+</section>
+<section>
+  <h2 class="h5">Endpoint ({{ checkpoint.endpoints | length }})</h2>
+  {% if checkpoint.endpoints %}
   <div class="overflow-auto">
-  <table>
-    <thead><tr><th>URL</th><th>Status</th><th>Judul</th><th>Server</th></tr></thead>
-    <tbody>{% for ep in recon.endpoints %}<tr><td><code>{{ ep.url }}</code></td><td>{{ ep.status or "—" }}</td><td>{{ ep.title or "—" }}</td><td>{{ ep.server or "—" }}</td></tr>{% endfor %}</tbody>
+  <table class="striped endpoints">
+    <thead><tr><th>Metode</th><th>Endpoint</th><th>Parameter</th><th>Sumber</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for ep in checkpoint.endpoints %}
+      <tr{% if ep.excluded %} class="excluded"{% endif %}>
+        <td><code>{{ ep.method }}</code></td>
+        <td><code>{{ ep.host }}{{ ep.path_template }}</code></td>
+        <td>{% for name in ep.query_params %}<code>{{ name }}</code> {% endfor %}{% for param in ep.body_params %}<code>{{ param.name }}</code><small class="muted">({{ param.location }})</small> {% endfor %}</td>
+        <td>{{ endpoint_source_labels.get(ep.source, ep.source) }}</td>
+        <td>{% if ep.excluded %}<span class="badge task-failed" title="{{ ep.exclude_reason }}">dikecualikan</span>{% else %}diuji{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
   </table>
   </div>
-  {% else %}<p class="muted">Belum ada.</p>{% endif %}
+  {% else %}<p class="muted">Belum ada endpoint.</p>{% endif %}
 </section>
 <section>
   <h2 class="h5">Modul yang akan menguji</h2>
@@ -30,6 +67,6 @@
     <li>{{ module_labels.get(module.name, module.name) }}{% if not module.enabled %} <small class="muted">(belum tersedia, dilewati)</small>{% endif %}</li>
     {% endfor %}
   </ul>
-  <p><small class="muted">Menyunting rencana (endpoint, tanda, modul, tempel request dari Burp) tersedia mulai fase F5.</small></p>
+  <p><small class="muted">Menyunting rencana (endpoint, tanda, modul, tempel request dari Burp) tersedia mulai fase F5b.</small></p>
 </section>
 {% endblock %}

@@ -31,11 +31,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
+import httpx
 import psycopg
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from rajdoll.core.crypto import KeyStore
 from rajdoll.core.enums import (
     CheckpointResolution,
     EventLevel,
@@ -48,6 +50,7 @@ from rajdoll.core.enums import (
 )
 from rajdoll.core.models import Engagement, Scan, TargetAccount, Task
 from rajdoll.modules.base import (
+    EndpointSeen,
     Module,
     PlanContext,
     TaskBlocked,
@@ -56,7 +59,7 @@ from rajdoll.modules.base import (
     TransientTaskError,
 )
 from rajdoll.modules.registry import available_modules, label
-from rajdoll.services import engagements, scans
+from rajdoll.services import engagements, inventory, scans, session_check
 from rajdoll.services.events import emit
 from rajdoll.services.session_check import CheckResult
 
@@ -150,6 +153,9 @@ class Engine:
         session_check_seconds: float = 300.0,
         check_account: AccountChecker | None = None,
         listen_dsn: str | None = None,
+        keystore: KeyStore | None = None,
+        proxy_base: str | None = None,
+        proxy_token: str = "",
         clock: Callable[[], datetime] = scans.utcnow,
     ) -> None:
         self.session_factory = session_factory
@@ -161,6 +167,9 @@ class Engine:
         self.session_check_seconds = session_check_seconds
         self.check_account = check_account
         self.listen_dsn = listen_dsn
+        self.keystore = keystore
+        self.proxy_base = proxy_base
+        self.proxy_token = proxy_token
         self.clock = clock
         self.running: dict[int, Job] = {}
         self._pool = ThreadPoolExecutor(max_workers=max_parallel, thread_name_prefix="task")
@@ -509,6 +518,11 @@ class Engine:
         )
         engagement = session.get(Engagement, scan.engagement_id)
         assert engagement is not None  # noqa: S101 (scan rows cascade with their engagement)
+        known = (
+            []
+            if stage == ScanStage.RECON
+            else [inventory.as_dict(e) for e in inventory.list_for(session, scan.engagement_id)]
+        )
         ctx = PlanContext(
             scan_id=scan.id,
             engagement_id=scan.engagement_id,
@@ -516,6 +530,8 @@ class Engine:
             scope=engagements.scope_patterns(session, scan.engagement_id),
             settings=dict(scan.settings_snapshot),
             stage=stage,
+            endpoints=known,
+            has_session=bool(engagements.accounts(session, scan.engagement_id)),
         )
         for name in scan.modules:
             module = self.modules.get(name)
@@ -681,6 +697,10 @@ class Engine:
                 job, tool, params, timeout_s
             ),
             log=lambda message: self._task_log(job, message),
+            add_endpoints=lambda seen: self._add_endpoints(job, seen),
+            add_recon=lambda data: self._add_recon(job, data),
+            http=lambda purpose: self._http_client(job, purpose),
+            session_headers=lambda label=None: self._session_headers(job, label),
         )
         try:
             ctx.check_cancelled()
@@ -727,6 +747,60 @@ class Engine:
         if job.cancel_event.is_set():
             raise TaskCancelled
         return result
+
+    def _add_endpoints(self, job: Job, seen: list[EndpointSeen]) -> int:
+        with self._transaction() as session:
+            result = inventory.record(
+                session,
+                job.engagement_id,
+                job.scan_id,
+                seen,
+                job.scope,
+                exclude_patterns=list(job.settings.get("excluded_patterns", [])),
+            )
+            if result.out_of_scope:
+                self._merge_recon(
+                    session, job.scan_id, {"out_of_scope_hosts": dict(result.out_of_scope)}
+                )
+            return result.added
+
+    def _add_recon(self, job: Job, data: dict[str, Any]) -> None:
+        json.dumps(data, allow_nan=False)
+        with self._transaction() as session:
+            self._merge_recon(session, job.scan_id, data)
+
+    def _merge_recon(self, session: Session, scan_id: int, data: dict[str, Any]) -> None:
+        scan = session.get(Scan, scan_id, with_for_update=True)
+        if scan is not None:
+            scan.recon_summary = inventory.merge_recon(scan.recon_summary, data)
+
+    def _http_client(self, job: Job, purpose: str) -> httpx.Client:
+        """A client whose traffic goes through the egress proxy as this task (TRD P5)."""
+        if not self.proxy_base:
+            raise RuntimeError("egress proxy not configured for custom checks")
+        return httpx.Client(
+            proxy=session_check.task_proxy_url(
+                self.proxy_base, self.proxy_token, job.task_id, purpose
+            ),
+            verify=False,  # noqa: S501 (targets are clones; the proxy intercepts TLS)
+            trust_env=False,
+            timeout=httpx.Timeout(15.0),
+            follow_redirects=False,
+            headers={"User-Agent": "RAJDOLL"},
+        )
+
+    def _session_headers(self, job: Job, label: str | None) -> dict[str, str]:
+        """Headers of a target account's pasted session; empty when there is none."""
+        if self.keystore is None:
+            return {}
+        with self.session_factory() as session:
+            engagement = session.get(Engagement, job.engagement_id)
+            accounts = engagements.accounts(session, job.engagement_id)
+            chosen = next((a for a in accounts if label is None or a.label == label), None)
+            if engagement is None or chosen is None:
+                return {}
+            stored = engagements.account_session(self.keystore, engagement, chosen)
+        return session_check.request_headers(stored)
 
     def _task_log(self, job: Job, message: str) -> None:
         with self._transaction() as session:

@@ -28,6 +28,9 @@ def build_engine(settings: Settings) -> Engine:
             session, keystore, engagement, account, prober
         ),
         listen_dsn=listen_dsn(settings.database_url),
+        keystore=keystore,
+        proxy_base=settings.proxy_url,
+        proxy_token=settings.tools_token,
     )
 
 

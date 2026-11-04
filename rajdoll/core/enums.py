@@ -31,6 +31,12 @@ class EndpointSource(StrEnum):
     JS = "js"
     MANUAL = "manual"
     BURP_PASTE = "burp_paste"
+    OPENAPI = "openapi"
+
+
+class Scheme(StrEnum):
+    HTTP = "http"
+    HTTPS = "https"
 
 
 class TagSource(StrEnum):

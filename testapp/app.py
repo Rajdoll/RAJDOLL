@@ -3,20 +3,60 @@
 Never expose this app. It runs only under the compose `test` profile, on the internal Docker
 network, so modules and validators can be proven against known weaknesses (IPD F3 onward).
 Each deliberate weakness is listed in WEAKNESSES and gains a matching test as phases add
-modules.
+modules. RECON_ENDPOINTS lists every endpoint recon must find (IPD F5 exit criterion), with the
+way it can be discovered.
 """
 
 import secrets
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 
 WEAKNESSES = {
     "exposed-env": "GET /.env serves configuration with credentials (WSTG-CONF-04, CWE-538)",
 }
 
+# (method, path template, how recon can find it). Paths use {id} for numeric segments.
+RECON_ENDPOINTS: list[tuple[str, str, str]] = [
+    ("GET", "/", "link"),
+    ("GET", "/login", "link"),
+    ("POST", "/login", "form"),
+    ("GET", "/profil", "link"),
+    ("GET", "/produk", "link"),
+    ("GET", "/produk/{id}", "link"),
+    ("GET", "/cari", "form"),
+    ("POST", "/kontak", "form"),
+    ("GET", "/logout", "link (logged in)"),
+    ("GET", "/upload", "link (logged in)"),
+    ("POST", "/upload", "form (logged in)"),
+    ("GET", "/akun/{id}", "link (logged in)"),
+    ("GET", "/static/app.js", "script"),
+    ("GET", "/api/v1/ringkasan", "javascript (runtime fetch)"),
+    ("GET", "/api/v1/pesanan", "javascript (source only)"),
+    ("GET", "/api/v1/pesanan/{id}", "javascript (source only)"),
+    ("POST", "/api/v1/keranjang", "javascript (source only)"),
+    ("GET", "/api/v1/pengguna/{id}", "openapi"),
+    ("POST", "/api/v1/transfer", "openapi"),
+    ("GET", "/openapi.json", "openapi probe"),
+    ("GET", "/admin", "directory fuzzing"),
+    ("GET", "/robots.txt", "known file"),
+    ("GET", "/internal/laporan", "robots.txt"),
+    ("GET", "/.env", "directory fuzzing"),
+]
+# Query parameter only found by parameter discovery: /cari?debug=1 adds diagnostics.
+HIDDEN_PARAMS = {"/cari": ["debug"]}
+OUT_OF_SCOPE_HOSTS = ["cdn.luar.test"]
+
 USERS = {"budi": "budi123", "sari": "sari123"}
+USER_IDS = {"budi": 1, "sari": 2}
 SESSIONS: dict[str, str] = {}
+PRODUCTS = {1: "Kopi Gayo", 2: "Teh Melati"}
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -28,23 +68,136 @@ async def server_header(request: Request, call_next):  # type: ignore[no-untyped
     return response
 
 
-def _page(title: str, body: str) -> HTMLResponse:
-    return HTMLResponse(
-        f"<!doctype html><html><head><title>{title}</title></head><body>{body}</body></html>"
+def _page(title: str, body: str, *, script: bool = False) -> HTMLResponse:
+    scripts = (
+        '<script src="/static/app.js"></script><script src="http://cdn.luar.test/lib.js"></script>'
+        if script
+        else ""
     )
+    return HTMLResponse(
+        f"<!doctype html><html><head><title>{title}</title>{scripts}</head>"
+        f"<body>{body}</body></html>"
+    )
+
+
+def _user(request: Request) -> str | None:
+    return SESSIONS.get(request.cookies.get("sid", ""))
 
 
 @app.get("/")
 def index() -> HTMLResponse:
     return _page(
         "RAJDOLL testapp",
-        '<h1>RAJDOLL testapp</h1><a href="/login">Masuk</a> <a href="/profil">Profil</a>',
+        '<h1>RAJDOLL testapp</h1><nav><a href="/login">Masuk</a> <a href="/profil">Profil</a> '
+        '<a href="/produk">Produk</a></nav>'
+        '<form method="get" action="/cari"><input name="q"><button>Cari</button></form>'
+        '<form method="post" action="/kontak"><input name="nama"><textarea name="pesan">'
+        "</textarea><button>Kirim</button></form>"
+        '<div id="ringkasan"></div>',
+        script=True,
     )
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/robots.txt")
+def robots() -> PlainTextResponse:
+    return PlainTextResponse("User-agent: *\nDisallow: /internal/laporan\n")
+
+
+@app.get("/static/app.js")
+def app_js() -> Response:
+    # The /api/v1 endpoints below appear nowhere in HTML: only in this script. `ringkasan` is
+    # requested when the page loads; the others only exist in the source.
+    source = """
+(function () {
+  var api = "/api/v1";
+  fetch(api + "/ringkasan").then(function (r) { return r.json(); }).then(function (data) {
+    var el = document.getElementById("ringkasan");
+    if (el) { el.textContent = data.pesan; }
+  });
+  window.muatPesanan = function () { return fetch("/api/v1/pesanan"); };
+  window.detailPesanan = function (id) { return fetch("/api/v1/pesanan/" + id); };
+  window.tambahKeKeranjang = function (produk, jumlah) {
+    return fetch("/api/v1/keranjang", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({produk_id: produk, jumlah: jumlah})
+    });
+  };
+})();
+"""
+    return Response(source, media_type="application/javascript")
+
+
+@app.get("/api/v1/ringkasan")
+def summary() -> dict[str, str]:
+    return {"pesan": "Selamat datang di testapp"}
+
+
+@app.get("/api/v1/pesanan")
+def orders() -> list[dict[str, int]]:
+    return [{"id": 10, "produk_id": 1}]
+
+
+@app.get("/api/v1/pesanan/{order_id}")
+def order(order_id: int) -> dict[str, int]:
+    return {"id": order_id, "produk_id": 1}
+
+
+@app.post("/api/v1/keranjang")
+async def add_to_cart(request: Request) -> dict[str, object]:
+    body = await request.json()
+    return {"ok": True, "keranjang": [body]}
+
+
+@app.get("/openapi.json")
+def openapi_spec() -> dict[str, object]:
+    return {
+        "openapi": "3.0.3",
+        "info": {"title": "testapp API", "version": "1.0"},
+        "paths": {
+            "/api/v1/pengguna/{id}": {
+                "get": {
+                    "parameters": [{"name": "id", "in": "path", "required": True}],
+                    "responses": {"200": {"description": "Pengguna"}},
+                }
+            },
+            "/api/v1/transfer": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ke_rekening": {"type": "string"},
+                                        "jumlah": {"type": "number"},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "Transfer"}},
+                }
+            },
+        },
+    }
+
+
+@app.get("/api/v1/pengguna/{user_id}")
+def api_user(user_id: int) -> dict[str, object]:
+    name = next((n for n, i in USER_IDS.items() if i == user_id), None)
+    return {"id": user_id, "nama": name}
+
+
+@app.post("/api/v1/transfer")
+async def transfer(request: Request) -> dict[str, object]:
+    body = await request.json()
+    return {"ok": True, "transfer": body}
 
 
 @app.get("/login")
@@ -67,12 +220,86 @@ def login(username: str = Form(...), password: str = Form(...)) -> Response:
     return response
 
 
+@app.get("/logout")
+def logout(request: Request) -> Response:
+    SESSIONS.pop(request.cookies.get("sid", ""), None)
+    response = RedirectResponse("/", status_code=302)
+    response.delete_cookie("sid")
+    return response
+
+
 @app.get("/profil")
 def profile(request: Request) -> Response:
-    user = SESSIONS.get(request.cookies.get("sid", ""))
+    user = _user(request)
     if user is None:
         return RedirectResponse("/login", status_code=302)
-    return _page("Profil", f"<p>Halo, {user.title()}</p>")
+    return _page(
+        "Profil",
+        f"<p>Halo, {user.title()}</p>"
+        f'<a href="/akun/{USER_IDS[user]}">Akun saya</a> <a href="/upload">Unggah berkas</a> '
+        '<a href="/logout">Keluar</a>',
+    )
+
+
+@app.get("/akun/{user_id}")
+def account(user_id: int, request: Request) -> Response:
+    if _user(request) is None:
+        return RedirectResponse("/login", status_code=302)
+    name = next((n for n, i in USER_IDS.items() if i == user_id), "?")
+    return _page("Akun", f"<p>Akun #{user_id}: {name}</p>")
+
+
+@app.get("/upload")
+def upload_form(request: Request) -> Response:
+    if _user(request) is None:
+        return RedirectResponse("/login", status_code=302)
+    return _page(
+        "Unggah",
+        '<form method="post" action="/upload" enctype="multipart/form-data">'
+        '<input type="file" name="berkas"><button>Unggah</button></form>',
+    )
+
+
+@app.post("/upload")
+async def upload(request: Request, berkas: UploadFile) -> Response:
+    if _user(request) is None:
+        return RedirectResponse("/login", status_code=302)
+    return _page("Unggah", f"<p>Diterima: {berkas.filename}</p>")
+
+
+@app.get("/produk")
+def products() -> HTMLResponse:
+    links = " ".join(f'<a href="/produk/{pid}">{name}</a>' for pid, name in PRODUCTS.items())
+    return _page("Produk", f"<h1>Produk</h1>{links}")
+
+
+@app.get("/produk/{product_id}")
+def product(product_id: int) -> Response:
+    name = PRODUCTS.get(product_id)
+    if name is None:
+        return _page("Produk", "<p>Tidak ditemukan</p>")
+    return _page(name, f"<h1>{name}</h1>")
+
+
+@app.get("/cari")
+def search(q: str = "", debug: str | None = None) -> HTMLResponse:
+    extra = "<pre>mode diagnosa: query diproses oleh mesin pencari v2</pre>" if debug else ""
+    return _page("Cari", f"<p>Hasil untuk: {len(q)} karakter</p>{extra}")
+
+
+@app.post("/kontak")
+def contact(nama: str = Form(""), pesan: str = Form("")) -> HTMLResponse:
+    return _page("Kontak", "<p>Terima kasih</p>")
+
+
+@app.get("/admin")
+def admin() -> Response:
+    return JSONResponse({"detail": "Butuh hak admin"}, status_code=403)
+
+
+@app.get("/internal/laporan")
+def internal_report() -> HTMLResponse:
+    return _page("Laporan internal", "<p>Laporan bulanan</p>")
 
 
 @app.get("/.env")

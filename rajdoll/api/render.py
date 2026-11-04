@@ -90,6 +90,7 @@ def _scan_labels() -> dict[str, Any]:
         "paused_labels": monitor.PAUSED_LABELS,
         "task_status_labels": monitor.TASK_STATUS_LABELS,
         "profile_labels": monitor.PROFILE_LABELS,
+        "endpoint_source_labels": monitor.ENDPOINT_SOURCE_LABELS,
         "stage_labels": scans.STAGE_LABELS,
         "module_label": module_label,
     }

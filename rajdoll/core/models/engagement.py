@@ -11,6 +11,7 @@ from rajdoll.core.enums import (
     AuthMethod,
     EndpointSource,
     EngagementStatus,
+    Scheme,
     SessionStatus,
     TagSource,
 )
@@ -79,11 +80,14 @@ class Endpoint(Base):
         UniqueConstraint("engagement_id", "method", "host", "path_template"),
         check_in("source", EndpointSource),
         check_in("tag_source", TagSource),
+        check_in("scheme", Scheme),
     )
 
     id: Mapped[int] = id_pk()
     engagement_id: Mapped[int] = mapped_column(ForeignKey("engagement.id", ondelete="CASCADE"))
     method: Mapped[str]
+    scheme: Mapped[str] = mapped_column(server_default=Scheme.HTTPS.value)
+    # Host name, with the port when it is not the scheme's default (`testapp:8080`).
     host: Mapped[str]
     path_template: Mapped[str]
     query_params: Mapped[list[str]] = mapped_column(server_default=text("'{}'::text[]"))

@@ -17,7 +17,8 @@ from rajdoll.api.app import create_app
 from rajdoll.core.crypto import KeyStore
 from rajdoll.core.enums import EventLevel, EventType
 from rajdoll.core.models import RequestLog, Scan, Task
-from rajdoll.services import scans
+from rajdoll.modules.base import EndpointSeen
+from rajdoll.services import inventory, scans
 from rajdoll.services.events import emit
 
 PASSWORD = "correct horse battery"
@@ -338,22 +339,50 @@ def test_checkpoint_page_and_actions(ui: Ui) -> None:
         status="awaiting_checkpoint",
         stage="planning",
         checkpoint_deadline=scans.utcnow() + timedelta(minutes=15),
+        recon_summary={
+            "technologies": [{"name": "nginx", "version": "1.24"}],
+            "waf": {"detected": True, "name": "ModSecurity", "evidence": "header server"},
+            "open_ports": [{"port": 443, "protocol": "tcp", "service": "https"}],
+            "out_of_scope_hosts": {"cdn.luar.test": 2, "burpsuite": 1},
+        },
     )
+    with ui.factory() as session, session.begin():
+        inventory.record(
+            session,
+            engagement_id,
+            scan_id,
+            [
+                EndpointSeen("GET", "https://simpeg.instansi.test/cari?q=1", "crawl"),
+                EndpointSeen("GET", "https://simpeg.instansi.test/logout", "crawl"),
+            ],
+            ["simpeg.instansi.test"],
+            exclude_patterns=["logout"],
+        )
 
     page = ui.client.get(f"/scans/{scan_id}/checkpoint")
     assert page.status_code == 200
     assert "nginx 1.24" in page.text
-    assert "SIMPEG" in page.text
+    assert "WAF terdeteksi: <strong>ModSecurity</strong>" in page.text
+    assert "443/tcp · https" in page.text
+    assert "<code>cdn.luar.test</code>" in page.text
+    assert "Endpoint (2)" in page.text
+    assert '<tr class="excluded">' in page.text and "dikecualikan" in page.text
     assert 'Input Validation <small class="muted">(belum tersedia, dilewati)</small>' in page.text
     assert "Tahan hitung mundur" in page.text
     data = ui.client.get(f"/scans/{scan_id}/checkpoint", headers=JSON).json()
-    assert data["recon_summary"]["technologies"] == [{"name": "nginx", "version": "1.24"}]
+    summary = data["recon_summary"]
+    assert summary["technologies"] == [{"name": "nginx", "version": "1.24"}]
+    # Counted by recon, and by the proxy's refusals in request_log.
+    assert summary["out_of_scope_hosts"][0] == {"host": "cdn.luar.test", "count": 2}
+    assert "burpsuite" not in {h["host"] for h in summary["out_of_scope_hosts"]}
     assert data["modules"][0] == {
         "name": "information_gathering",
         "enabled": True,
         "skipped_reason": None,
     }
-    assert data["endpoints"] == []
+    endpoints = {e["path_template"]: e for e in data["endpoints"]}
+    assert endpoints["/cari"]["query_params"] == ["q"]
+    assert endpoints["/logout"]["exclude_reason"] == "pattern:logout"
 
     held = ui.client.post(f"/scans/{scan_id}/checkpoint/hold", headers=ui.htmx())
     assert held.status_code == 200

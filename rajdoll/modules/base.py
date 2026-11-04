@@ -27,6 +27,18 @@ class TaskBlocked(Exception):  # noqa: N818
 
 
 @dataclass(frozen=True)
+class EndpointSeen:
+    """An endpoint a module observed; the engine normalizes and stores it (BSD 4.4)."""
+
+    method: str
+    url: str
+    source: str  # EndpointSource value
+    query_params: tuple[str, ...] = ()
+    body_params: tuple[dict[str, str], ...] = ()  # {"name", "location": query|form|json|multipart}
+    content_type: str | None = None
+
+
+@dataclass(frozen=True)
 class TaskSpec:
     """A task a module wants created for a stage."""
 
@@ -45,6 +57,9 @@ class PlanContext:
     scope: list[str]
     settings: dict[str, Any]
     stage: ScanStage
+    # The engagement's endpoint inventory, from PLANNING on (dicts of BSD 4.4 columns + "url").
+    endpoints: list[dict[str, Any]] = field(default_factory=list)
+    has_session: bool = False
 
 
 @dataclass
@@ -63,6 +78,14 @@ class TaskContext:
     cancel_event: threading.Event
     run_tool: Callable[..., dict[str, Any]]
     log: Callable[[str], None]
+    # Store endpoints in the engagement inventory; returns how many were new.
+    add_endpoints: Callable[[list[EndpointSeen]], int] = lambda _seen: 0
+    # Merge facts into scan.recon_summary (lists are merged without duplicates).
+    add_recon: Callable[[dict[str, Any]], None] = lambda _data: None
+    # httpx.Client through the egress proxy as `task.<id>.<purpose>`, for custom checks.
+    http: Callable[[str], Any] = lambda _purpose: None
+    # Session headers (Cookie and others) of a target account; the first account by default.
+    session_headers: Callable[[str | None], dict[str, str]] = lambda _label=None: {}
 
     def check_cancelled(self) -> None:
         if self.cancel_event.is_set():

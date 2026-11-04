@@ -643,3 +643,71 @@ def test_wait_wakes_on_stop(factory: sessionmaker[Session], engines: list[Engine
     started = time.monotonic()
     engine.run_forever(poll_seconds=10)
     assert time.monotonic() - started < 3
+
+
+def test_task_hooks_store_endpoints_recon_and_sessions(
+    factory: sessionmaker[Session], engagement_id: int, engines: list[Engine], keystore: KeyStore
+) -> None:
+    from rajdoll.modules.base import EndpointSeen
+    from rajdoll.services import inventory
+    from rajdoll.worker.engine import Job
+
+    with factory() as session, session.begin():
+        engagements.add_account(
+            session,
+            keystore,
+            session.get(Engagement, engagement_id),
+            {"label": "A", "session_text": "sid=abc; theme=gelap"},
+        )
+    engine = make_engine(
+        engines,
+        factory,
+        DummyModule(),
+        keystore=keystore,
+        proxy_base="http://127.0.0.1:8081",
+        proxy_token="t/k",
+    )
+    scan_id = start_scan(factory, engagement_id)
+    job = Job(
+        task_id=77,
+        scan_id=scan_id,
+        engagement_id=engagement_id,
+        module="information_gathering",
+        engine="katana",
+        target={},
+        params={},
+        target_url="https://app.test/",
+        scope=["app.test"],
+        settings={"excluded_patterns": ["logout"]},
+    )
+
+    added = engine._add_endpoints(
+        job,
+        [
+            EndpointSeen("GET", "https://app.test/akun/1", "crawl"),
+            EndpointSeen("GET", "https://app.test/akun/2", "crawl"),
+            EndpointSeen("GET", "https://app.test/logout", "crawl"),
+            EndpointSeen("GET", "https://cdn.luar.test/lib.js", "js"),
+        ],
+    )
+    assert added == 2
+    engine._add_recon(job, {"technologies": [{"name": "nginx"}], "waf": {"detected": False}})
+    engine._add_recon(job, {"technologies": [{"name": "nginx"}, {"name": "PHP"}]})
+    engine._add_endpoints(job, [EndpointSeen("GET", "https://cdn.luar.test/x.js", "js")])
+
+    with factory() as session:
+        rows = {e.path_template: e for e in inventory.list_for(session, engagement_id)}
+        summary = session.get(Scan, scan_id).recon_summary
+    assert set(rows) == {"/akun/{id}", "/logout"}
+    assert rows["/logout"].excluded and rows["/logout"].exclude_reason == "pattern:logout"
+    assert rows["/akun/{id}"].first_seen_scan_id == scan_id
+    assert summary == {
+        "out_of_scope_hosts": {"cdn.luar.test": 2},
+        "technologies": [{"name": "nginx"}, {"name": "PHP"}],
+        "waf": {"detected": False},
+    }
+    assert engine._session_headers(job, None) == {"Cookie": "sid=abc; theme=gelap"}
+    assert engine._session_headers(job, "B") == {}
+    with engine._http_client(job, "js") as client:
+        assert client.trust_env is False
+    assert make_engine(engines, factory, DummyModule())._session_headers(job, None) == {}
