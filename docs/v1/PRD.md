@@ -4,7 +4,7 @@
 |---|---|
 | Dokumen | Product Requirement Document (PRD) |
 | Versi produk | v1 — Asisten Asesor |
-| Status | Disetujui (v1.0, 4 November 2026) |
+| Status | Disetujui (v1.1, 4 November 2026) |
 | Pengguna | Satu asesor VA (pemakaian pribadi) |
 | Dokumen terkait | TRD, AFD, BSD, IPD (menyusul) |
 
@@ -202,6 +202,15 @@ RAJDOLL tidak bergantung pada Burp. Burp tetap bisa dipakai untuk pengujian manu
 | F-43 | Ekspor laporan retest Markdown: daftar temuan awal, status setelah retest, dan evidence retest. | Must |
 | F-44 | Menyimpan riwayat beberapa putaran retest per penugasan (retest ke-1, ke-2, dan seterusnya). | Should |
 
+### 6.10 WAF dan pemblokiran
+
+| ID | Kebutuhan | Prioritas |
+|---|---|---|
+| F-47 | Mendeteksi keberadaan WAF di tahap recon dan menampilkannya di checkpoint. | Must |
+| F-48 | Mendeteksi pemblokiran selama scan (lonjakan respons 403/406/429/503, halaman blokir, koneksi diputus, tantangan CAPTCHA). Kecepatan diturunkan otomatis; jika pemblokiran berlanjut, scan di-pause dan asesor diberi tahu. | Must |
+| F-49 | Pengujian yang gagal karena diblokir ditandai **tidak teruji (terblokir)** per modul dan endpoint, lalu dicantumkan di laporan. Hasil kosong karena diblokir tidak boleh dianggap aman. | Must |
+| F-50 | Header identitas yang bisa diatur (User-Agent atau header khusus) agar trafik VA mudah dikenali dan di-whitelist oleh instansi. | Should |
+
 ## 7. Kebutuhan non-fungsional
 
 | ID | Kebutuhan |
@@ -221,6 +230,7 @@ RAJDOLL tidak bergantung pada Burp. Burp tetap bisa dipakai untuk pengujian manu
 
 - Target adalah clone aplikasi production, sehingga payload agresif dan pengujian yang mengubah data diperbolehkan.
 - Laptop asesor punya akses jaringan langsung ke target, tanpa VPN.
+- Jika clone berada di belakang WAF, IP laptop asesor di-whitelist oleh instansi agar yang diuji adalah aplikasinya, bukan WAF-nya. Menguji efektivitas WAF di luar scope v1.
 - Sistem berjalan di Windows dengan Docker Desktop (WSL2). LLM lokal berjalan di sisi Windows, di luar container.
 - RAJDOLL tidak bergantung pada Burp. Semua evidence disimpan di RAJDOLL sendiri; Burp hanya alat bantu manual di luar sistem.
 - Model kelas 4B tidak dipakai untuk mengendalikan alur pipeline.
@@ -256,3 +266,4 @@ Kandidat untuk v2 dan seterusnya, belum dijadwalkan:
 | Q4 | Apakah target diakses lewat VPN? | Selesai: tidak |
 | Q5 | Konsep dan default checkpoint setelah recon. | Selesai: aktif, lanjut otomatis setelah 15 menit (F-14, F-46) |
 | Q6 | Apakah Burp diintegrasikan sebagai proxy? | Selesai: tidak, cukup salin-tempel (bagian 6.6) |
+| Q7 | Bagaimana menangani WAF? | Selesai: whitelist IP oleh instansi, ditambah deteksi dan penandaan pemblokiran (bagian 6.10) |
