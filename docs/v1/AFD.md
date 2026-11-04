@@ -46,7 +46,7 @@ Navigasi atas selalu berisi: **Penugasan**, **Template temuan**, **Pengaturan**,
 
 1. Beranda → **Penugasan baru**.
 2. Isi form: nama aplikasi, instansi, URL target, catatan (misalnya nomor surat tugas), tanggal mulai dan selesai.
-3. Saat disimpan, host dari URL target otomatis masuk ke scope. Penugasan berstatus **draf**, lalu pengguna diarahkan ke tab **Scope & Akun**.
+3. Saat disimpan, host dari URL target otomatis masuk ke scope, lalu pengguna diarahkan ke tab **Scope & Akun**. Karena scope langsung valid, penugasan baru biasanya langsung berstatus **siap**; status kembali ke **draf** bila URL target diubah ke host di luar scope (lihat A2.4).
 
 ### A2. Menyiapkan scope dan akun
 

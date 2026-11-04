@@ -16,7 +16,7 @@ The approved documents in `docs/v1/` define what to build. Read the relevant one
 
 ## Current phase
 
-**F1 — foundation.** F1a: the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b: single-user login and UI sessions (`rajdoll/services/auth.py`), CSRF, settings (`rajdoll/services/settings.py`), HTML/HTMX/JSON rendering (`rajdoll/api/render.py`), and the base UI. Next is F2 (engagements, scope, accounts). See `docs/v1/IPD.md` section 4.
+**F1 — foundation (done).** F1a: the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b: single-user login and UI sessions (`rajdoll/services/auth.py`), CSRF, settings (`rajdoll/services/settings.py`), HTML/HTMX/JSON rendering (`rajdoll/api/render.py`), and the base UI. **F2 — engagements.** Engagement CRUD, scope rules (`rajdoll/core/scope.py`, deny by default, reused by the egress proxy in F3), target accounts with pasted sessions parsed by `rajdoll/services/target_sessions.py` and encrypted per engagement, session-check configuration, per-engagement scan settings, and deletion that removes the key file first (`rajdoll/services/engagements.py`). Next is F3 (tools container and egress proxy). See `docs/v1/IPD.md` section 4.
 
 ## Layout
 
@@ -73,6 +73,9 @@ New migration: change the models, then `alembic revision --autogenerate -m "<wha
 - No inline `<script>`, `style=` or `<style>`: the CSP is `script-src 'self'; style-src 'self'`. Add CSS to `rajdoll/api/static/app.css`. Front-end libraries are vendored with pinned versions in `rajdoll/api/static/vendor/` (see `LICENSES.txt` there).
 - htmx swaps 2xx and 422 responses; return 422 with the re-rendered fragment for validation errors.
 - UI text is Indonesian; validation messages go through the label maps in the services.
+- Services raise `ServiceError` subclasses (`ValidationFailed`, `NotFound`, `Conflict`) from `rajdoll/services/errors.py`; the app maps them to the BSD 10.1 error format. Section fragments catch them and re-render with the message (htmx swaps 409 as well as 422).
+- A section that can change the engagement status includes `_engagement_status.html` when `htmx` is true, so the header badge updates out of band.
+- Read input with `read_fields()` (`rajdoll/api/forms.py`): it merges query, JSON, and form fields the same way for every client.
 
 ## Conventions
 
