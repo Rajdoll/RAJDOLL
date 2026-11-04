@@ -59,7 +59,7 @@ from rajdoll.modules.base import (
     TransientTaskError,
 )
 from rajdoll.modules.registry import available_modules, label
-from rajdoll.services import engagements, inventory, scans, session_check
+from rajdoll.services import engagements, inventory, planning, scans, session_check
 from rajdoll.services.events import emit
 from rajdoll.services.session_check import CheckResult
 
@@ -518,11 +518,8 @@ class Engine:
         )
         engagement = session.get(Engagement, scan.engagement_id)
         assert engagement is not None  # noqa: S101 (scan rows cascade with their engagement)
-        known = (
-            []
-            if stage == ScanStage.RECON
-            else [inventory.as_dict(e) for e in inventory.list_for(session, scan.engagement_id)]
-        )
+        # From planning on, modules see the inventory with the modules the rules assign (TRD 6.2).
+        known = [] if stage == ScanStage.RECON else planning.plan_endpoints(session, scan)
         ctx = PlanContext(
             scan_id=scan.id,
             engagement_id=scan.engagement_id,

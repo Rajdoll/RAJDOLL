@@ -19,8 +19,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from rajdoll.core import scope as scope_rules
+from rajdoll.core.enums import TagSource
 from rajdoll.core.models import Endpoint
 from rajdoll.modules.base import EndpointSeen
+from rajdoll.services import tagging
 
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 # Static files are not test targets. JavaScript stays: the JS analysis and Client-Side use it.
@@ -178,6 +180,16 @@ def record(
             reason = exclusion_reason(
                 template, sorted(entry["query_params"]), exclude_patterns or []
             )
+            tags = tagging.rule_tags(
+                {
+                    "method": method,
+                    "path_template": template,
+                    "query_params": sorted(entry["query_params"]),
+                    "body_params": entry["body_params"],
+                    "content_type": entry["content_type"],
+                    "source": entry["source"],
+                }
+            )
             # ON CONFLICT: two workers may record the same endpoint at once.
             inserted = session.execute(
                 insert(Endpoint)
@@ -193,6 +205,8 @@ def record(
                     source=entry["source"],
                     excluded=reason is not None,
                     exclude_reason=reason,
+                    tags=tags,
+                    tag_source=TagSource.RULE,
                     first_seen_scan_id=scan_id,
                     last_seen_scan_id=scan_id,
                 )
@@ -216,6 +230,11 @@ def record(
         row.query_params = params
         row.body_params = body
         row.content_type = row.content_type or entry["content_type"]
+        if row.tag_source == TagSource.RULE:
+            tags = tagging.rule_tags(as_dict(row))
+            if tags != list(row.tags):
+                row.tags = tags
+                changed = True
         if scan_id is not None and row.last_seen_scan_id != scan_id:
             row.last_seen_scan_id = scan_id
             changed = True

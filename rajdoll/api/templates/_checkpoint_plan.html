@@ -1,0 +1,156 @@
+{# The checkpoint plan (AFD A5, 5.4). Re-rendered after every edit; edits stop the countdown. #}
+{% set recon = checkpoint.recon_summary %}
+{% set editable = checkpoint.editable %}
+{% set patch = "/scans/" ~ scan.id ~ "/checkpoint" %}
+{% if plan_errors %}
+<div class="error" role="alert"><ul>{% for message in plan_errors %}<li>{{ message }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if plan_changes %}
+<p class="success" role="status">Disimpan: {{ plan_changes | join("; ") }}. Hitung mundur ditahan sampai Anda menekan Lanjutkan.</p>
+{% endif %}
+{% if recon.waf and recon.waf.detected %}
+<article class="banner banner-danger" role="status">
+  WAF terdeteksi: <strong>{{ recon.waf.name or "tidak dikenal" }}</strong> ({{ recon.waf.evidence }}).
+  Saran: minta whitelist IP ke instansi sebelum pengujian.
+</article>
+{% endif %}
+<section>
+  <h2 class="h5">Hasil recon</h2>
+  <p>Perkiraan request tahap pengujian: <strong>±{{ num(recon.estimated_requests) }}</strong></p>
+  <div class="grid">
+    <div>
+      <h3 class="h6">Teknologi</h3>
+      {% if recon.technologies %}
+      <ul>{% for tech in recon.technologies %}<li>{{ tech.name }}{% if tech.get("version") %} {{ tech.version }}{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">Belum terdeteksi.</p>{% endif %}
+      {% if recon.servers %}<p><small>Server: {{ recon.servers | join(", ") }}</small></p>{% endif %}
+    </div>
+    <div>
+      <h3 class="h6">Port terbuka</h3>
+      {% if recon.open_ports %}
+      <ul>{% for port in recon.open_ports %}<li>{{ port.port }}/{{ port.get("protocol") or "tcp" }}{% if port.get("service") %} · {{ port.service }}{% endif %}{% if port.get("product") %} ({{ port.product }}{% if port.get("version") %} {{ port.version }}{% endif %}){% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">Tidak ada data.</p>{% endif %}
+    </div>
+    <div>
+      <h3 class="h6">Host di luar scope</h3>
+      {% if out_of_scope_hosts %}
+      <ul class="plain hosts">
+        {% for item in out_of_scope_hosts %}
+        <li>
+          <code>{{ item.host }}</code> <small class="muted">({{ item.count }}×)</small>
+          {% if item.in_scope %}<small class="success">sudah di scope</small>
+          {% elif editable %}
+          <form hx-patch="{{ patch }}" hx-target="#checkpoint-plan" class="inline-form">
+            <input type="hidden" name="action" value="add_scope">
+            <input type="hidden" name="filter" value="{{ filter }}">
+            <input type="hidden" name="pattern" value="{{ item.host }}">
+            <button type="submit" class="btn-small secondary outline">Tambah ke scope</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">Tidak ada.</p>{% endif %}
+    </div>
+  </div>
+  {% if recon.api_specs %}<p><small>Spesifikasi API: {% for url in recon.api_specs %}<code>{{ url }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</small></p>{% endif %}
+</section>
+
+<section>
+  <h2 class="h5">Modul</h2>
+  <form hx-patch="{{ patch }}" hx-target="#checkpoint-plan">
+    <input type="hidden" name="action" value="modules">
+    <input type="hidden" name="filter" value="{{ filter }}">
+    <fieldset class="module-grid">
+      {% for module in checkpoint.modules %}
+      <label>
+        <input type="checkbox" name="modules" value="{{ module.name }}"{% if module.enabled %} checked{% endif %}{% if not editable %} disabled{% endif %}>
+        {{ module.label }}
+        <small class="muted">{% if module.skipped_reason %}({{ skip_labels[module.skipped_reason] }}){% else %}{{ module.endpoints }} endpoint{% endif %}</small>
+      </label>
+      {% endfor %}
+    </fieldset>
+    {% if editable %}<button type="submit" class="secondary">Simpan modul</button>{% endif %}
+  </form>
+</section>
+
+<section>
+  <div class="page-head">
+    <h2 class="h5">Endpoint ({{ checkpoint.endpoints | length }})</h2>
+    <nav class="filters" aria-label="Saring endpoint">
+      {% for key, text in filters.items() %}
+      <a href="/scans/{{ scan.id }}/checkpoint?filter={{ key }}"{% if filter == key %} aria-current="page"{% endif %}>{{ text }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  {% if shown_endpoints %}
+  <div class="overflow-auto">
+  <table class="striped endpoints">
+    <thead><tr><th>Endpoint</th><th>Parameter</th><th>Tanda</th><th>Modul</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for ep in shown_endpoints %}
+      <tr id="endpoint-{{ ep.id }}"{% if ep.excluded %} class="excluded"{% endif %}>
+        <td><code>{{ ep.method }} {{ ep.host }}{{ ep.path_template }}</code><br><small class="muted">{{ endpoint_source_labels.get(ep.source, ep.source) }}</small></td>
+        <td>{% for name in ep.query_params %}<code>{{ name }}</code> {% endfor %}{% for param in ep.body_params %}<code>{{ param.name }}</code><small class="muted">({{ param.location }})</small> {% endfor %}</td>
+        <td>
+          {% for tag in ep.tags %}<span class="badge tag">{{ tag_labels.get(tag, tag) }}</span> {% endfor %}
+          {% if ep.tag_source == "user" %}<small class="muted">(asesor)</small>{% endif %}
+          {% if editable %}
+          <details class="inline">
+            <summary>ubah</summary>
+            <form hx-patch="{{ patch }}" hx-target="#checkpoint-plan">
+              <input type="hidden" name="action" value="tags">
+              <input type="hidden" name="filter" value="{{ filter }}">
+              <input type="hidden" name="endpoint_id" value="{{ ep.id }}">
+              <input type="text" name="tags" value="{{ ep.tags | join(', ') }}" aria-label="Tanda untuk {{ ep.path_template }}" list="tag-names">
+              <button type="submit" class="btn-small">Simpan</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+        <td>{% for name in ep.modules %}<span class="badge">{{ module_labels.get(name, name) }}</span> {% else %}—{% endfor %}</td>
+        <td class="actions">
+          {% if ep.excluded %}
+          <span class="badge task-failed" title="{{ ep.exclude_reason }}">dikecualikan{% if ep.exclude_reason and ep.exclude_reason.startswith("pattern:") %} (pola){% endif %}</span>
+          {% else %}diuji{% endif %}
+          {% if editable %}
+          <form hx-patch="{{ patch }}" hx-target="#checkpoint-plan" class="inline-form">
+            <input type="hidden" name="action" value="{{ 'include' if ep.excluded else 'exclude' }}">
+            <input type="hidden" name="filter" value="{{ filter }}">
+            <input type="hidden" name="endpoint_id" value="{{ ep.id }}">
+            <button type="submit" class="btn-small secondary outline">{{ "Uji" if ep.excluded else "Kecualikan" }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <datalist id="tag-names">{% for tag in tag_labels %}<option value="{{ tag }}">{{ tag_labels[tag] }}</option>{% endfor %}</datalist>
+  {% else %}<p class="muted">Tidak ada endpoint pada saringan ini.</p>{% endif %}
+
+  {% if editable %}
+  <div class="grid add-endpoints">
+    <form hx-patch="{{ patch }}" hx-target="#checkpoint-plan">
+      <h3 class="h6">Tambah endpoint</h3>
+      <input type="hidden" name="action" value="add_endpoint">
+      <input type="hidden" name="filter" value="{{ filter }}">
+      <div class="inline-fields">
+        <select name="method" aria-label="Metode">
+          {% for method in ["GET", "POST", "PUT", "PATCH", "DELETE"] %}<option>{{ method }}</option>{% endfor %}
+        </select>
+        <input type="url" name="url" placeholder="https://host/path?param=nilai" aria-label="URL endpoint" required>
+      </div>
+      <button type="submit" class="secondary">Tambah</button>
+    </form>
+    <form hx-patch="{{ patch }}" hx-target="#checkpoint-plan">
+      <h3 class="h6">Tempel request dari Burp</h3>
+      <input type="hidden" name="action" value="raw_request">
+      <input type="hidden" name="filter" value="{{ filter }}">
+      <textarea name="raw_request" rows="5" placeholder="POST /api/cart HTTP/1.1&#10;Host: ...&#10;&#10;{&quot;qty&quot;: 1}" aria-label="Request mentah" required></textarea>
+      <button type="submit" class="secondary">Tambah dari request</button>
+    </form>
+  </div>
+  {% endif %}
+</section>

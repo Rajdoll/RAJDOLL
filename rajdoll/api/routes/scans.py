@@ -19,11 +19,12 @@ from rajdoll.api.render import (
     wants_json,
 )
 from rajdoll.api.sse import Frame, scan_stream
+from rajdoll.core import scope as scope_rules
 from rajdoll.core.crypto import KeyStore
 from rajdoll.core.enums import SessionStatus
 from rajdoll.core.models import Engagement, Scan
 from rajdoll.modules.registry import MODULE_LABELS, available_modules
-from rajdoll.services import engagements, inventory, monitor, scans
+from rajdoll.services import engagements, monitor, planning, scans, tagging
 from rajdoll.services import settings as app_settings
 from rajdoll.services.auth import ActiveSession
 from rajdoll.services.errors import ServiceError, ValidationFailed
@@ -365,41 +366,111 @@ async def scan_event_stream(
 # --------------------------------------------------------------------------------------
 
 
+FILTERS = {"semua": "Semua", "ditandai": "Ditandai", "dikecualikan": "Dikecualikan"}
+
+
 def _checkpoint_json(db: Session, scan: Scan) -> dict[str, Any]:
-    available = available_modules()
+    return planning.checkpoint(db, scan, set(available_modules()), monitor.recon_summary(db, scan))
+
+
+def _checkpoint_context(db: Session, scan: Scan, view: str) -> dict[str, Any]:
+    data = _checkpoint_json(db, scan)
+    endpoints = data["endpoints"]
+    if view == "ditandai":
+        endpoints = [e for e in endpoints if e["tags"]]
+    elif view == "dikecualikan":
+        endpoints = [e for e in endpoints if e["excluded"]]
+    scope = engagements.scope_patterns(db, scan.engagement_id)
+    hosts = [
+        {**item, "in_scope": scope_rules.in_scope(scope, item["host"])}
+        for item in data["recon_summary"]["out_of_scope_hosts"]
+    ]
     return {
-        "scan_id": scan.id,
-        "status": scan.status,
-        "deadline": scan.checkpoint_deadline,
-        "resolution": scan.checkpoint_resolution,
-        "recon_summary": monitor.recon_summary(db, scan),
-        "modules": [
-            {
-                "name": name,
-                "enabled": name in available,
-                "skipped_reason": None if name in available else "not_available",
-            }
-            for name in scan.modules
-        ],
-        "endpoints": [inventory.as_dict(e) for e in inventory.list_for(db, scan.engagement_id)],
+        "scan": scan,
+        "checkpoint": data,
+        "shown_endpoints": endpoints,
+        "out_of_scope_hosts": hosts,
+        "filter": view,
+        "filters": FILTERS,
+        "module_labels": MODULE_LABELS,
+        "tag_labels": tagging.TAG_LABELS,
+        "skip_labels": planning.SKIP_LABELS,
+        "plan_errors": [],
+        "plan_changes": [],
     }
+
+
+def _view(value: Any) -> str:
+    return value if value in FILTERS else "semua"
 
 
 @router.get("/scans/{scan_id}/checkpoint")
 def checkpoint_page(
     scan_id: int,
     request: Request,
+    filter: str = "semua",  # noqa: A002 (query parameter name)
     db: Session = Depends(get_db),
     _: ActiveSession = Depends(current_session),
 ) -> Response:
     scan = scans.get(db, scan_id)
-    data = _checkpoint_json(db, scan)
-    context = {
-        **_monitor_context(db, scan),
-        "checkpoint": data,
-        "module_labels": MODULE_LABELS,
-    }
-    return respond(request, "scan_checkpoint.html", context, data=data)
+    context = {**_monitor_context(db, scan), **_checkpoint_context(db, scan, _view(filter))}
+    return respond(request, "scan_checkpoint.html", context, data=context["checkpoint"])
+
+
+def _edits_from_form(fields: dict[str, Any]) -> dict[str, Any]:
+    """BSD 10.4 PATCH body from the checkpoint page's small forms (`action` + fields)."""
+    action = fields.get("action")
+    if action is None:
+        return {
+            k: fields[k]
+            for k in ("modules", "endpoints", "add_endpoints", "add_scope")
+            if k in fields
+        }
+    endpoint_id = fields.get("endpoint_id")
+    if action in ("exclude", "include"):
+        return {"endpoints": [{"id": endpoint_id, "excluded": action == "exclude"}]}
+    if action == "tags":
+        return {"endpoints": [{"id": endpoint_id, "tags": fields.get("tags", "")}]}
+    if action == "modules":
+        return {"modules": as_list(fields.get("modules"))}
+    if action == "add_endpoint":
+        return {"add_endpoints": [{"method": fields.get("method"), "url": fields.get("url")}]}
+    if action == "raw_request":
+        return {"add_endpoints": [{"raw_request": fields.get("raw_request", "")}]}
+    if action == "add_scope":
+        return {"add_scope": [fields.get("pattern", "")]}
+    raise ValidationFailed.one("action", "Aksi checkpoint tidak dikenal.")
+
+
+@router.patch("/scans/{scan_id}/checkpoint")
+async def checkpoint_edit(
+    scan_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    keystore: KeyStore = Depends(get_keystore),
+    _: ActiveSession = Depends(require_csrf),
+) -> Response:
+    """Edit the plan at the checkpoint (AFD A5); editing stops the countdown."""
+    scan = scans.get(db, scan_id)
+    fields = await read_fields(request)
+    view = _view(fields.get("filter"))
+    try:
+        changes = planning.edit(db, keystore, scan, _edits_from_form(fields))
+        db.flush()
+    except ServiceError as exc:
+        db.rollback()
+        if wants_json(request) or not is_htmx(request):
+            return service_error_response(request, exc)
+        db.refresh(scan)
+        context = _checkpoint_context(db, scan, view)
+        context["plan_errors"] = _errors(exc)
+        return render_html(request, "_checkpoint_plan.html", context, status_code=exc.status_code)
+    db.commit()
+    if wants_json(request):
+        return respond(request, "", data=_checkpoint_json(db, scan))
+    context = _checkpoint_context(db, scan, view)
+    context["plan_changes"] = changes
+    return render_html(request, "_checkpoint_plan.html", context)
 
 
 @router.post("/scans/{scan_id}/checkpoint/hold")
