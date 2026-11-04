@@ -1,32 +1,41 @@
-"""Worker process skeleton.
-
-F0 only proves the process starts, logs a heartbeat, and stops cleanly on SIGTERM/SIGINT.
-The workflow engine (task queue, stages, checkpoint, recovery) arrives in F4.
-"""
+"""Worker process: runs the workflow engine until SIGTERM/SIGINT (TRD 3)."""
 
 import logging
 import signal
-import threading
+
+from sqlalchemy.engine import make_url
 
 from rajdoll import __version__
-from rajdoll.core.config import get_settings
+from rajdoll.core.config import Settings, get_settings
+from rajdoll.core.crypto import KeyStore
+from rajdoll.core.db import get_sessionmaker
+from rajdoll.services import engagements
+from rajdoll.services.session_check import make_prober
+from rajdoll.worker.engine import Engine
+from rajdoll.worker.tools_client import ToolsClient
 
 log = logging.getLogger("rajdoll.worker")
 
 
-def run(stop: threading.Event, heartbeat_seconds: float, max_iterations: int | None = None) -> int:
-    """Log a heartbeat until `stop` is set or `max_iterations` is reached.
+def listen_dsn(database_url: str) -> str:
+    """psycopg connection string for LISTEN, from the SQLAlchemy URL."""
+    return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
-    Returns the number of heartbeats logged.
-    """
-    beats = 0
-    while not stop.is_set():
-        beats += 1
-        log.info("worker heartbeat %d", beats)
-        if max_iterations is not None and beats >= max_iterations:
-            break
-        stop.wait(heartbeat_seconds)
-    return beats
+
+def build_engine(settings: Settings) -> Engine:
+    keystore = KeyStore(settings.secrets_dir)
+    prober = make_prober(settings.proxy_url, settings.tools_token)
+    return Engine(
+        get_sessionmaker(),
+        ToolsClient(settings.tools_url, settings.tools_token),
+        lease_seconds=settings.worker_lease_seconds,
+        max_parallel=settings.worker_max_parallel,
+        session_check_seconds=settings.session_check_seconds,
+        check_account=lambda session, engagement, account: engagements.check_account(
+            session, keystore, engagement, account, prober
+        ),
+        listen_dsn=listen_dsn(settings.database_url),
+    )
 
 
 def main() -> None:
@@ -35,15 +44,15 @@ def main() -> None:
         level=settings.log_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    stop = threading.Event()
+    engine = build_engine(settings)
 
     def _handle_signal(signum: int, _frame: object) -> None:
         log.info("received signal %d, stopping", signum)
-        stop.set()
+        engine.stop()
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    log.info("worker %s started", __version__)
-    run(stop, settings.worker_heartbeat_seconds)
+    log.info("worker %s started as %s", __version__, engine.worker_id)
+    engine.run_forever(settings.worker_poll_seconds)
     log.info("worker stopped")

@@ -63,6 +63,8 @@ services:
     environment:
       <<: *app-env
     command: ["python", "-m", "rajdoll.worker"]
+    # On stop the engine cancels running tools and returns their tasks to the queue.
+    stop_grace_period: 30s
     depends_on:
       # api runs migrations at startup, so waiting for it guarantees an up-to-date schema.
       api:

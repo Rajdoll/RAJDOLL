@@ -37,12 +37,14 @@ with Session() as db:
         KeyStore(settings.secrets_dir),
         {"name": f"smoke-{uuid.uuid4().hex[:6]}", "target_url": "http://testapp:8080/"},
     )
+    # Only the runner and proxy are exercised here, so the scan is created finished: the live
+    # worker must not pick it up (smoke_scan.py covers the worker).
     scan = Scan(
         engagement_id=engagement.id,
         kind="scan",
         number=1,
         profile="full",
-        status="running",
+        status="completed",
         settings_snapshot={"rate_limit_rps": 50},
     )
     db.add(scan)
