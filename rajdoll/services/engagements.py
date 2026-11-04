@@ -265,6 +265,7 @@ def effective_settings(session: Session, engagement: Engagement) -> dict[str, An
     effective.update(own)
     effective["identity_header"] = identity
     effective["block_detection"] = base.block_detection.model_dump(mode="json")
+    effective["excluded_patterns"] = list(base.excluded_patterns)
     return effective
 
 

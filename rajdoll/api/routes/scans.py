@@ -23,7 +23,7 @@ from rajdoll.core.crypto import KeyStore
 from rajdoll.core.enums import SessionStatus
 from rajdoll.core.models import Engagement, Scan
 from rajdoll.modules.registry import MODULE_LABELS, available_modules
-from rajdoll.services import engagements, monitor, scans
+from rajdoll.services import engagements, inventory, monitor, scans
 from rajdoll.services import settings as app_settings
 from rajdoll.services.auth import ActiveSession
 from rajdoll.services.errors import ServiceError, ValidationFailed
@@ -381,7 +381,7 @@ def _checkpoint_json(db: Session, scan: Scan) -> dict[str, Any]:
             }
             for name in scan.modules
         ],
-        "endpoints": [],
+        "endpoints": [inventory.as_dict(e) for e in inventory.list_for(db, scan.engagement_id)],
     }
 
 

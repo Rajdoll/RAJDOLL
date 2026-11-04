@@ -1,0 +1,79 @@
+{
+ "commandline": "ffuf (fixture from a run against testapp)",
+ "time": "2026-11-04T08:34:46Z",
+ "results": [
+  {
+   "input": {
+    "FFUFHASH": "7543c1",
+    "FUZZ": "QDQjydxT"
+   },
+   "position": 1,
+   "status": 403,
+   "length": 28,
+   "words": 3,
+   "lines": 1,
+   "content-type": "application/json",
+   "redirectlocation": "",
+   "scraper": {},
+   "duration": 1293575,
+   "resultfile": "",
+   "url": "http://testapp:8080/admin",
+   "host": "testapp:8080"
+  },
+  {
+   "input": {
+    "FFUFHASH": "7543c2",
+    "FUZZ": ".env"
+   },
+   "position": 2,
+   "status": 200,
+   "length": 68,
+   "words": 1,
+   "lines": 4,
+   "content-type": "text/plain; charset=utf-8",
+   "redirectlocation": "",
+   "scraper": {},
+   "duration": 945663,
+   "resultfile": "",
+   "url": "http://testapp:8080/.env",
+   "host": "testapp:8080"
+  },
+  {
+   "input": {
+    "FFUFHASH": "7543c4",
+    "FUZZ": "login"
+   },
+   "position": 4,
+   "status": 200,
+   "length": 201,
+   "words": 7,
+   "lines": 1,
+   "content-type": "text/html; charset=utf-8",
+   "redirectlocation": "",
+   "scraper": {},
+   "duration": 903757,
+   "resultfile": "",
+   "url": "http://testapp:8080/login",
+   "host": "testapp:8080"
+  },
+  {
+   "input": {
+    "FFUFHASH": "7543c5",
+    "FUZZ": "robots.txt"
+   },
+   "position": 5,
+   "status": 200,
+   "length": 42,
+   "words": 3,
+   "lines": 3,
+   "content-type": "text/plain; charset=utf-8",
+   "redirectlocation": "",
+   "scraper": {},
+   "duration": 823866,
+   "resultfile": "",
+   "url": "http://testapp:8080/robots.txt",
+   "host": "testapp:8080"
+  }
+ ],
+ "config": {}
+}

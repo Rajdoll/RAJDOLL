@@ -27,6 +27,7 @@ class RunContext:
     workdir: Path
     bin_dir: Path
     template_dir: Path
+    wordlist_dir: Path = Path("/opt/rajdoll-wordlists")
 
 
 def http_url(value: str) -> str:
@@ -88,6 +89,14 @@ class Adapter(ABC):
     name: ClassVar[str]
     binary: ClassVar[str]
     Params: ClassVar[type[BaseParams]]
+    # Non-HTTP tools bypass the egress proxy; the runner then writes one audit row per run.
+    audit_exec: ClassVar[bool] = False
+    # How to find the version in the version command's output (default: first x.y.z).
+    version_pattern: ClassVar["re.Pattern[str] | None"] = None
+
+    def audit_summary(self, params: Any) -> str:
+        """What the audit row records as `url` for a non-HTTP run."""
+        return self.name
 
     @abstractmethod
     def targets(self, params: Any) -> list[str]:

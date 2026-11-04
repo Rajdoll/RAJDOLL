@@ -71,3 +71,5 @@ ul.log .log-error { color: var(--pico-del-color); font-weight: 600; }
 .filters select, .filters button { width: auto; margin: 0; }
 ul.warnings li { color: var(--pico-del-color); }
 .h6 { font-size: 0.95rem; }
+tr.excluded td { color: var(--pico-muted-color); }
+tr.excluded code { text-decoration: line-through; }

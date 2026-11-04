@@ -1,0 +1,25 @@
+{
+ "commandline": "ffuf (fixture from a run against testapp)",
+ "time": "2026-11-04T08:44:49Z",
+ "results": [
+  {
+   "input": {
+    "FFUFHASH": "47a8a18",
+    "FUZZ": "debug"
+   },
+   "position": 24,
+   "status": 200,
+   "length": 165,
+   "words": 12,
+   "lines": 1,
+   "content-type": "text/html; charset=utf-8",
+   "redirectlocation": "",
+   "scraper": {},
+   "duration": 1873454,
+   "resultfile": "",
+   "url": "http://testapp:8080/cari?q=a&debug=rajdoll1",
+   "host": "testapp:8080"
+  }
+ ],
+ "config": {}
+}

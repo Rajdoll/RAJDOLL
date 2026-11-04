@@ -58,6 +58,8 @@ Thumbs.db
 *.json.bak
 testssl_output_*.json
 ffuf_*.json
+# Recorded tool output used by the adapter tests.
+!tests/fixtures/ffuf_*.json
 /tmp/
 *.tmp
 

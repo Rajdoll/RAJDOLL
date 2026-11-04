@@ -37,12 +37,24 @@ TASK_STATUS_LABELS: dict[str, str] = {
     TaskStatus.BLOCKED: "terblokir",
 }
 PROFILE_LABELS = {"full": "Lengkap", "custom": "Kustom"}
+ENDPOINT_SOURCE_LABELS = {
+    "crawl": "crawl",
+    "fuzz": "fuzzing",
+    "js": "JavaScript",
+    "openapi": "OpenAPI",
+    "manual": "manual",
+    "burp_paste": "tempel Burp",
+}
 RESOLUTION_LABELS = {
     "user_continued": "dilanjutkan asesor",
     "auto_continued": "dilewati otomatis",
     "disabled": "dimatikan",
 }
 FINISHED = (ScanStatus.COMPLETED, ScanStatus.CANCELLED, ScanStatus.FAILED)
+# Hosts tools contact on their own, not part of the target: ProjectDiscovery tools (katana)
+# request http://burpsuite/ to detect whether their proxy is Burp. The egress proxy refuses it;
+# it is not offered as an out-of-scope host at the checkpoint.
+TOOL_PROBE_HOSTS = {"burpsuite"}
 LOG_LIMIT = 50
 
 
@@ -263,15 +275,25 @@ def tasks(
 
 
 def recon_summary(session: Session, scan: Scan) -> dict[str, Any]:
-    """What recon found so far, from the recon task summaries (F5 adds endpoints and WAF)."""
-    technologies: dict[str, dict[str, Any]] = {}
-    endpoints: list[dict[str, Any]] = []
-    for task in tasks(session, scan.id):
-        if task.stage != ScanStage.RECON or not task.result_summary:
-            continue
-        for tech in task.result_summary.get("technologies", []):
-            if isinstance(tech, dict) and tech.get("name"):
-                key = f"{tech['name']}:{tech.get('version') or ''}"
-                technologies.setdefault(key, {"name": tech["name"], "version": tech.get("version")})
-        endpoints.extend(task.result_summary.get("endpoints", []))
-    return {"technologies": list(technologies.values()), "endpoints": endpoints}
+    """Checkpoint summary (BSD 10.4): what recon stored, plus hosts the proxy refused."""
+    stored = dict(scan.recon_summary or {})
+    hosts = dict(stored.get("out_of_scope_hosts") or {})
+    for host, count in session.execute(
+        select(RequestLog.host, func.count())
+        .where(RequestLog.scan_id == scan.id, RequestLog.outcome == "blocked_scope")
+        .group_by(RequestLog.host)
+    ):
+        hosts[host] = max(hosts.get(host, 0), count)
+    for host in TOOL_PROBE_HOSTS:
+        hosts.pop(host, None)
+    return {
+        "technologies": stored.get("technologies", []),
+        "servers": stored.get("servers", []),
+        "waf": stored.get("waf"),
+        "open_ports": stored.get("open_ports", []),
+        "api_specs": stored.get("api_specs", []),
+        "out_of_scope_hosts": [
+            {"host": host, "count": count}
+            for host, count in sorted(hosts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+    }

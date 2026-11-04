@@ -115,7 +115,9 @@ def test_completed_run(client: TestClient, tmp_path: Path) -> None:
     echo = body["normalized"]["echo"]
     # Proxy settings from the parent environment are not inherited by tools.
     assert not any("proxy" in name.lower() for name in echo["env"])
-    assert set(echo["env"]) <= {"PATH", "HOME", "LANG", "LC_CTYPE", "PWD"}
+    # PLAYWRIGHT_BROWSERS_PATH is passed on (when set) so the browser adapter finds Chromium.
+    allowed = {"PATH", "HOME", "LANG", "LC_CTYPE", "PWD", "PLAYWRIGHT_BROWSERS_PATH"}
+    assert set(echo["env"]) <= allowed
     ctx = FakeAdapter.contexts[-1]
     assert ctx.proxy_url == f"http://task.7.fake:{TOKEN}@127.0.0.1:8081"
     assert echo["cwd"] == str(ctx.workdir)
@@ -169,3 +171,68 @@ def test_health_lists_tools(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     body = client.get("/health").json()
     assert body["proxy"] == "listening"
     assert body["tools"] == {"fake": "missing"}  # no binary in the temporary bin dir
+
+
+class ExecAdapter(FakeAdapter):
+    """A non-HTTP tool: the runner must write an audit row before it runs."""
+
+    name = "exec"
+    audit_exec = True
+
+
+def test_non_http_tool_never_runs_without_its_audit_row(tmp_path: Path) -> None:
+    FakeAdapter.contexts.clear()
+    config = RunnerConfig(
+        token=TOKEN,
+        bin_dir=tmp_path / "bin",
+        template_dir=tmp_path / "templates",
+        tool_home=tmp_path / "home",
+        audit_dsn="postgresql://nobody@127.0.0.1:1/none",
+        work_root=tmp_path,
+    )
+    client = TestClient(create_app(config, {"exec": ExecAdapter()}))
+    response = client.post(
+        "/run",
+        json={
+            "run_id": "run-exec-1",
+            "task_id": 7,
+            "scan_id": 3,
+            "tool": "exec",
+            "scope": ["testapp"],
+            "params": {"urls": ["http://testapp:8080/"]},
+        },
+        headers=AUTH,
+    )
+    assert response.status_code == 503
+    assert "audit log unavailable" in response.json()["detail"]
+    assert FakeAdapter.contexts == []
+
+
+class VersionedAdapter(FakeAdapter):
+    name = "versioned"
+
+    def version_command(self, bin_dir: Path) -> list[str]:
+        return [sys.executable, "-c", "print('versioned 1.2.3')"]
+
+
+def test_health_does_not_need_a_writable_tool_home(tmp_path: Path) -> None:
+    # In CI the runner's default /data/home cannot be created; /health must still answer.
+    blocker = tmp_path / "file"
+    blocker.write_text("not a directory")
+    config = RunnerConfig(
+        token=TOKEN,
+        bin_dir=tmp_path / "bin",
+        template_dir=tmp_path / "templates",
+        tool_home=blocker / "home",
+        work_root=tmp_path,
+    )
+    import tools.runner.app as runner
+
+    original = runner.proxy_listening
+    runner.proxy_listening = lambda *_: True
+    try:
+        response = TestClient(create_app(config, {"versioned": VersionedAdapter()})).get("/health")
+    finally:
+        runner.proxy_listening = original
+    assert response.status_code == 200
+    assert response.json()["tools"] == {"versioned": "1.2.3"}

@@ -2,10 +2,11 @@ import httpx
 import pytest
 
 from rajdoll.services.session_check import (
-    _request_headers,
     evaluate,
     make_prober,
     proxy_url,
+    request_headers,
+    task_proxy_url,
 )
 
 
@@ -35,8 +36,13 @@ def test_proxy_url_carries_engagement_and_quotes_token() -> None:
     assert url == "http://eng.42.session_check:a%2Fb%3Ac%40d@tools:8081"
 
 
+def test_task_proxy_url_carries_the_task() -> None:
+    url = task_proxy_url("http://tools:8081", "a/b", 7, "js")
+    assert url == "http://task.7.js:a%2Fb@tools:8081"
+
+
 def test_request_headers_send_cookies_as_one_header() -> None:
-    headers = _request_headers(
+    headers = request_headers(
         {"cookies": {"sid": "1", "theme": "dark"}, "headers": {"Authorization": "Bearer x"}}
     )
     assert headers == {"Authorization": "Bearer x", "Cookie": "sid=1; theme=dark"}

@@ -141,12 +141,13 @@ Inventaris endpoint dikumpulkan per penugasan dan bertambah dari setiap scan.
 | `id` | PK | |
 | `engagement_id` | FK → `engagement` | |
 | `method` | `text` | |
-| `host` | `text` | |
+| `scheme` | `text` default `https` | `http` atau `https` (migrasi `0003`). |
+| `host` | `text` | Nama host, ditambah port jika bukan port bawaan scheme (`testapp:8080`). |
 | `path_template` | `text` | Path yang dinormalisasi, misalnya `/api/users/{id}`. |
 | `query_params` | `text[]` | Nama parameter query. |
 | `body_params` | `jsonb` | `[{"name": "qty", "type": "number", "location": "json"}]`. |
 | `content_type` | `text` null | |
-| `source` | `text` | `crawl`, `fuzz`, `js`, `manual`, `burp_paste`. |
+| `source` | `text` | `crawl`, `fuzz`, `js`, `openapi`, `manual`, `burp_paste`. `openapi` (dari spesifikasi API, belum tentu teramati langsung) ditambahkan di migrasi `0003`. |
 | `sample_request_enc` | `bytea` null | Contoh request mentah. |
 | `tags` | `text[]` | Misalnya `idor_candidate`, `upload`, `price`, `auth`. |
 | `tag_source` | `text` | `rule`, `llm`, `user`. |
@@ -156,6 +157,8 @@ Inventaris endpoint dikumpulkan per penugasan dan bertambah dari setiap scan.
 | `created_at`, `updated_at` | `timestamptz` | |
 
 Unik: `(engagement_id, method, host, path_template)`.
+
+Catatan implementasi (F5a): normalisasi path di `rajdoll/services/inventory.py`: segmen angka menjadi `{id}`, UUID menjadi `{uuid}`, hex panjang menjadi `{hash}`, gaya Express `:nama` menjadi `{nama}`; garis miring ganda dan di akhir dibuang. File statis (gambar, font, CSS, source map) tidak disimpan; JavaScript tetap disimpan. Endpoint baru yang path atau nama parameternya mengandung pola pengecualian (`excluded_patterns` di pengaturan, misalnya `logout`) langsung disimpan dengan `excluded = true` dan `exclude_reason = 'pattern:<pola>'`; keputusan asesor pada endpoint yang sudah ada tidak ditimpa. Host di luar scope tidak disimpan, tetapi dihitung di `scan.recon_summary.out_of_scope_hosts`.
 
 ## 5. Tabel pipeline
 
@@ -179,7 +182,7 @@ Dipakai untuk scan biasa dan putaran retest.
 | `base_url` | `text` null | Untuk retest jika alamat clone berubah. |
 | `settings_snapshot` | `jsonb` | Pengaturan efektif saat scan dimulai, termasuk rate limit yang sedang berlaku (bisa diturunkan saat blokir). |
 | `llm_snapshot` | `jsonb` | `{"base_url", "model", "is_local"}` saat scan dimulai. |
-| `recon_summary` | `jsonb` null | `{"technologies": [{"name", "version"}], "waf": {"detected", "name", "evidence"}, "out_of_scope_hosts": [{"host", "count"}], "estimated_requests"}`. |
+| `recon_summary` | `jsonb` null | Ditulis modul selama recon: `{"technologies": [{"name", "version"}], "servers": [..], "waf": {"detected", "name", "evidence", "blocks_attacks"}, "open_ports": [{"port", "protocol", "service", "product", "version"}], "api_specs": [url], "out_of_scope_hosts": {"host": jumlah}, "estimated_requests"}`. Di API checkpoint, `out_of_scope_hosts` ditampilkan sebagai `[{"host", "count"}]` dan digabung dengan host yang ditolak proxy di `request_log`. |
 | `stats` | `jsonb` | Cache angka untuk monitor: total request, ditolak scope, dicurigai blokir, laju saat ini, temuan per status. |
 | `error` | `text` null | |
 | `created_at`, `started_at`, `finished_at` | `timestamptz` | |
@@ -512,7 +515,7 @@ Catatan implementasi (F4b):
 - Stream SSE memakai satu koneksi `LISTEN scan_events` per klien. Setiap ada notifikasi untuk scan itu (dan paling lambat setiap 15 detik), potongan `stage`, `task`, `stats`, dan `finding` dirender ulang dan hanya yang berubah dikirim. `notice` berisi baris log baru dengan `id` = ID event terakhir, sehingga browser yang tersambung ulang (header `Last-Event-ID`) tidak menerima baris lama. `done` dikirim setelah scan selesai, dibatalkan, atau gagal; halaman memakainya sebagai `sse-close` agar browser tidak menyambung ulang. Stream ditutup server setelah 10 menit dan browser menyambung ulang sendiri.
 - `GET /scans/{scan_id}/events` mengembalikan event urut naik (untuk polling); versi HTML berisi 500 baris terbaru.
 - Aksi jeda, lanjut, batal, dan checkpoint menjawab potongan status scan untuk htmx, JSON ringkasan scan untuk klien JSON, atau redirect ke monitor untuk form biasa.
-- Di F4b, `GET /scans/{scan_id}/checkpoint` berisi tenggat, ringkasan recon dari hasil tugas recon (teknologi dan endpoint yang menjawab), dan daftar modul; `endpoints` masih kosong. `PATCH /scans/{scan_id}/checkpoint` hadir di F5 dan `POST /scans/{scan_id}/skip-blocked-modules` di F9.
+- Sejak F5a, `GET /scans/{scan_id}/checkpoint` berisi tenggat, `recon_summary` (lihat `scan.recon_summary`), daftar modul, dan inventaris endpoint penugasan (kolom BSD 4.4 ditambah `url`). Host yang dihubungi tool sendiri (`burpsuite`, probe proxy milik ProjectDiscovery) tidak ditampilkan sebagai host di luar scope. `PATCH /scans/{scan_id}/checkpoint` hadir di F5 dan `POST /scans/{scan_id}/skip-blocked-modules` di F9.
 
 Contoh `GET /scans/{scan_id}/checkpoint`:
 

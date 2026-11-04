@@ -1,9 +1,11 @@
-"""Runner with the real nuclei and httpx binaries, the real egress proxy, and testapp.
+"""Runner with the real tool binaries, the real egress proxy, and testapp.
 
 F3 exit criterion: running nuclei through /run against testapp produces an audit row for
-every request, and out-of-scope targets are refused. Needs mitmproxy (tools requirements) and
-the tool binaries; point RAJDOLL_TOOL_BIN_DIR at a directory containing `nuclei` and `httpx`.
-In CI the same flow runs inside the real containers (tests/integration/smoke_tools.py).
+every request, and out-of-scope targets are refused. F5 adds katana, ffuf, nmap, and the
+Playwright `browser` crawler. Needs mitmproxy (tools requirements) and the tool binaries; point
+RAJDOLL_TOOL_BIN_DIR at a directory containing `nuclei`, `httpx`, `katana`, `ffuf`, and `nmap`.
+The browser test also needs Playwright's Chromium (PLAYWRIGHT_BROWSERS_PATH). In CI the same
+flow runs inside the real containers (tests/integration/smoke_tools.py).
 """
 
 import json
@@ -36,6 +38,25 @@ if _missing:
     pytest.skip(f"tool binaries not available: {_missing}", allow_module_level=True)
 
 from tools.runner.app import RunnerConfig, create_app  # noqa: E402
+
+
+def _needs(*names: str) -> pytest.MarkDecorator:
+    missing = [n for n in names if not (BIN_DIR / n).exists()]
+    if missing and os.environ.get("RAJDOLL_REQUIRE_TOOL_TESTS") == "1":
+        pytest.fail(f"missing for tool tests: {missing}", pytrace=False)
+    return pytest.mark.skipif(bool(missing), reason=f"not available: {missing}")
+
+
+def _playwright_ready() -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+    try:
+        with sync_playwright() as playwright:
+            return Path(playwright.chromium.executable_path).exists()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 @dataclass
@@ -136,7 +157,9 @@ def env(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
             proxy_port=proxy_port,
             bin_dir=BIN_DIR,
             template_dir=REPO / "templates" / "nuclei",
+            wordlist_dir=REPO / "tools" / "wordlists",
             tool_home=tmp / "home",
+            audit_dsn=db_url.render_as_string(hide_password=False),
             work_root=tmp,
         )
         with TestClient(create_app(config)) as client:
@@ -187,3 +210,63 @@ def test_out_of_scope_target_never_starts_a_tool(env: Env) -> None:
     assert body["status"] == "scope_rejected"
     assert body["out_of_scope"] == ["localhost"]
     assert len(env.audit("nuclei", 0)) == before
+
+
+@_needs("katana")
+def test_katana_crawls_links_and_forms_through_the_proxy(env: Env) -> None:
+    body = env.run("katana", {"urls": [env.testapp + "/"], "depth": 3, "exclude": ["logout"]})
+    assert body["status"] == "completed", body["stderr_tail"]
+    found = {(e["method"], e["url"]) for e in body["normalized"]["endpoints"]}
+    for path in ("/", "/produk", "/produk/1", "/login", "/static/app.js"):
+        assert ("GET", env.testapp + path) in found, path
+    forms = {(f["method"], f["url"]): f["params"] for f in body["normalized"]["forms"]}
+    assert forms[("POST", env.testapp + "/kontak")] == ["nama", "pesan"]
+    assert forms[("GET", env.testapp + "/cari")] == ["q"]
+    assert len(env.audit("katana", 5)) >= 5
+
+
+@_needs("ffuf")
+def test_ffuf_finds_hidden_paths_and_parameters(env: Env) -> None:
+    body = env.run("ffuf", {"url": env.testapp + "/", "exclude": ["logout"]})
+    assert body["status"] == "completed", body["stderr_tail"]
+    found = {r["url"]: r["status"] for r in body["normalized"]["results"]}
+    assert found[env.testapp + "/admin"] == 403
+    assert found[env.testapp + "/.env"] == 200
+    assert found[env.testapp + "/robots.txt"] == 200
+
+    body = env.run(
+        "ffuf", {"url": env.testapp + "/cari?q=a", "mode": "parameter", "wordlist": "parameters"}
+    )
+    assert body["status"] == "completed", body["stderr_tail"]
+    assert [r["param"] for r in body["normalized"]["results"]] == ["debug"]
+    assert env.audit("ffuf", 100)
+
+
+@_needs("nmap")
+def test_nmap_scans_ports_and_writes_one_audit_row(env: Env) -> None:
+    port = int(env.testapp.rsplit(":", 1)[1])
+    body = env.run("nmap", {"host": "127.0.0.1", "ports": [port, 1]})
+    assert body["status"] == "completed", body["stderr_tail"]
+    assert [p["port"] for p in body["normalized"]["ports"]] == [port]
+    rows = env.audit("nmap", 1)
+    assert len(rows) == 1
+    assert (rows[0]["kind"], rows[0]["host"]) == ("tool_exec", "127.0.0.1")
+    assert rows[0]["url"] == f"nmap -sT 127.0.0.1 ports=1,{port}"
+
+    refused = env.run("nmap", {"host": "localhost"})
+    assert refused["status"] == "scope_rejected"
+    assert len(env.audit("nmap", 1)) == 1
+
+
+@pytest.mark.skipif(not _playwright_ready(), reason="Playwright Chromium not installed")
+def test_browser_records_runtime_requests_and_blocked_hosts(env: Env) -> None:
+    body = env.run("browser", {"urls": [env.testapp + "/"], "exclude": ["logout"]})
+    assert body["status"] == "completed", body["stderr_tail"]
+    normalized = body["normalized"]
+    requested = {(r["method"], r["url"]) for r in normalized["requests"]}
+    assert ("GET", env.testapp + "/api/v1/ringkasan") in requested  # only in JavaScript
+    assert ("GET", "http://cdn.luar.test/lib.js") in requested
+    assert {p["url"] for p in normalized["pages"]} >= {env.testapp + "/", env.testapp + "/produk"}
+    rows = env.audit("browser", 3)
+    blocked = [r for r in rows if r["outcome"] == "blocked_scope"]
+    assert {r["host"] for r in blocked} == {"cdn.luar.test"}

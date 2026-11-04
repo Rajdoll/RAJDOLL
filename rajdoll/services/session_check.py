@@ -33,7 +33,14 @@ def proxy_url(base: str, token: str, engagement_id: int, purpose: str) -> str:
     return f"{parts.scheme}://{user}:{quote(token, safe='')}@{parts.netloc}"
 
 
-def _request_headers(session: dict[str, dict[str, str]]) -> dict[str, str]:
+def task_proxy_url(base: str, token: str, task_id: int, tool: str) -> str:
+    """Egress-proxy URL whose credentials identify a pipeline task (`task.<id>.<tool>`)."""
+    parts = urlsplit(base)
+    return f"{parts.scheme}://task.{task_id}.{tool}:{quote(token, safe='')}@{parts.netloc}"
+
+
+def request_headers(session: dict[str, dict[str, str]]) -> dict[str, str]:
+    """A stored target session as request headers (cookies joined into one Cookie header)."""
     headers = dict(session.get("headers", {}))
     cookies = session.get("cookies", {})
     if cookies:
@@ -75,7 +82,7 @@ def make_prober(proxy_base: str, token: str) -> Prober:
                 follow_redirects=True,
                 max_redirects=MAX_REDIRECTS,
             ) as client:
-                response = client.get(url, headers=_request_headers(session))
+                response = client.get(url, headers=request_headers(session))
         except httpx.TooManyRedirects:
             return CheckResult(
                 True, False, "Terlalu banyak redirect; kemungkinan sesi tidak valid."
