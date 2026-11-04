@@ -61,6 +61,8 @@ EXPECTED = [
     ("GET", "/pratinjau"),
     ("GET", "/ambil"),
     ("GET", "/admin/pengguna"),
+    ("POST", "/api/v1/token"),
+    ("GET", "/api/v1/saya"),
 ]
 # Copy of testapp.EXPECTED_FINDINGS, kept equal by tests/test_testapp.py.
 EXPECTED_FINDINGS = [
@@ -71,6 +73,11 @@ EXPECTED_FINDINGS = [
     ("ssrf", "/ambil", "url"),
     ("idor", "/akun/{id}", "id"),
     ("privilege_escalation", "/admin/pengguna", None),
+    ("jwt_alg_none", "/api/v1/saya", "Authorization"),
+    ("jwt_weak_secret", "/api/v1/saya", "Authorization"),
+    ("weak_lockout", "/login", None),
+    ("weak_lockout", "/api/v1/token", None),
+    ("cookie_flags", "/login", "sid"),
 ]
 TARGET = "http://testapp:8080"
 
@@ -99,10 +106,13 @@ def wait_for(condition: Callable[[Scan], bool], scan_id: int, timeout: float) ->
     return scan
 
 
-# Test setup only: log in to testapp directly to get a session for each account.
+# Test setup only: log in to testapp directly to get each account's session: the `sid` cookie
+# and a JWT for the API, pasted together as from Burp.
 def login(user: str, password: str) -> str:
     form = {"username": user, "password": password}
-    return httpx.post(TARGET + "/login", data=form, trust_env=False).cookies["sid"]
+    sid = httpx.post(TARGET + "/login", data=form, trust_env=False).cookies["sid"]
+    token = httpx.post(TARGET + "/api/v1/token", json=form, trust_env=False).json()["token"]
+    return f"Cookie: sid={sid}\nAuthorization: Bearer {token}"
 
 
 with Session() as db:
@@ -112,9 +122,10 @@ with Session() as db:
     )
     engagements.update_overrides(db, engagement, {"rate_limit_rps": 100})
     for label, user, password in [("Akun A", "budi", "budi123"), ("Akun B", "sari", "sari123")]:
-        account = {"label": label, "session_text": f"sid={login(user, password)}"}
+        account = {"label": label, "session_text": login(user, password)}
         engagements.add_account(db, keystore, engagement, account)
-    modules = ["information_gathering", "authorization", "input_validation"]
+    modules = ["information_gathering", "authentication", "authorization", "session",
+               "input_validation"]  # fmt: skip
     scan = scans.start(db, engagement, "custom", modules)
     db.commit()
     scan_id, engagement_id = scan.id, engagement.id

@@ -35,7 +35,9 @@ def scan_id(factory: sessionmaker[Session], tmp_path: Path) -> Iterator[int]:
             {"name": "Restart", "target_url": "https://app.test/"},
         )
         engagement_id = engagement.id
-        scan = scans.start(session, engagement, "full")
+        # Only the dummy module (it stands in for information_gathering), so the real modules
+        # add no tasks of their own to the counts below.
+        scan = scans.start(session, engagement, "custom", ["information_gathering"])
         scan.settings_snapshot = {
             **scan.settings_snapshot,
             "checkpoint_enabled": False,

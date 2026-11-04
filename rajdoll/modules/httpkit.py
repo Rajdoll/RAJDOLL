@@ -57,11 +57,18 @@ def raw_request(request: httpx.Request, mask: str = MASK) -> str:
     return "\r\n".join(lines) + "\r\n\r\n" + body
 
 
+def mask_set_cookie(value: str) -> str:
+    """A Set-Cookie value with the cookie's value masked and its attributes kept."""
+    name, _, rest = value.partition("=")
+    _value, sep, attributes = rest.partition(";")
+    return f"{name}={MASK}{sep}{attributes}"
+
+
 def raw_response(response: httpx.Response) -> str:
     lines = [f"HTTP/1.1 {response.status_code} {response.reason_phrase}"]
-    for name, value in response.headers.items():
+    for name, value in response.headers.multi_items():
         if name.lower() == "set-cookie":
-            value = value.split("=", 1)[0] + "=" + MASK
+            value = mask_set_cookie(value)
         lines.append(f"{name}: {value}")
     return "\r\n".join(lines) + "\r\n\r\n" + response.text[:MAX_RESPONSE]
 
@@ -83,7 +90,7 @@ def mask_raw(text: str) -> str:
         if name in MASKED_HEADERS:
             lines[index] = f"{match.group(1)}: {MASK}{end}"
         elif name == "set-cookie":
-            lines[index] = f"{match.group(1)}: {match.group(2).split('=', 1)[0]}={MASK}{end}"
+            lines[index] = f"{match.group(1)}: {mask_set_cookie(match.group(2))}{end}"
     return "\n".join(lines)
 
 

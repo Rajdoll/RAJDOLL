@@ -105,10 +105,36 @@ class Fetched:
     text: str
     content_type: str
     exchange: Exchange
+    set_cookies: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
         return 200 <= self.status < 300
+
+
+def send(
+    client: httpx.Client, target: Target, headers: dict[str, str], mask: str, note: str
+) -> Fetched:
+    """One GET with exactly `headers` (cookies the client collected are dropped), redirects not
+    followed (a redirect is an answer, often a refusal to the login page). Session headers
+    show as `mask` in the evidence."""
+    client.cookies.clear()
+    response = client.get(
+        target.url, params=target.query or None, headers=headers, follow_redirects=False
+    )
+    exchange = Exchange(
+        httpkit.raw_request(response.request, mask),
+        httpkit.raw_response(response),
+        response.status_code,
+        note,
+    )
+    return Fetched(
+        response.status_code,
+        response.text[:MAX_TEXT],
+        response.headers.get("content-type", "").lower(),
+        exchange,
+        tuple(response.headers.get_list("set-cookie")),
+    )
 
 
 Fetch = Callable[[Target, str | None, str], Fetched]
@@ -126,21 +152,9 @@ def fetcher(
 
     def fetch(target: Target, account: str | None, note: str) -> Fetched:
         check_cancelled()
-        client.cookies.clear()  # each request carries one account's session, or none
         sent = headers.get(account, {}) if account else {}
-        # A redirect is an answer (often a refusal to the login page), never followed.
-        response = client.get(
-            target.url, params=target.query or None, headers=sent, follow_redirects=False
-        )
         mask = f"[sesi {account}]" if account else httpkit.MASK
-        exchange = Exchange(
-            httpkit.raw_request(response.request, mask),
-            httpkit.raw_response(response),
-            response.status_code,
-            note,
-        )
-        content_type = response.headers.get("content-type", "").lower()
-        return Fetched(response.status_code, response.text[:MAX_TEXT], content_type, exchange)
+        return send(client, target, sent, mask, note)
 
     return fetch
 

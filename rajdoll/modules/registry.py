@@ -27,11 +27,19 @@ MODULE_LABELS: dict[str, str] = {
 
 
 def available_modules() -> dict[str, Module]:
+    from rajdoll.modules.authentication import Authentication
     from rajdoll.modules.authorization import Authorization
     from rajdoll.modules.information_gathering import InformationGathering
     from rajdoll.modules.input_validation import InputValidation
+    from rajdoll.modules.session_management import SessionManagement
 
-    modules: list[Module] = [InformationGathering(), Authorization(), InputValidation()]
+    modules: list[Module] = [
+        InformationGathering(),
+        Authentication(),
+        Authorization(),
+        SessionManagement(),
+        InputValidation(),
+    ]
     found = {module.name: module for module in modules}
     # Tests (and later, plugins) can add modules: RAJDOLL_EXTRA_MODULES=package.module,...
     for path in filter(None, os.environ.get("RAJDOLL_EXTRA_MODULES", "").split(",")):

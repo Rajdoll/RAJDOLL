@@ -202,7 +202,9 @@ def test_mask_raw_masks_session_headers() -> None:
         "Cookie: body"
     )
     response = "HTTP/1.1 200 OK\nSet-Cookie: sid=abc; HttpOnly\n\nok"
-    assert httpkit.mask_raw(response) == "HTTP/1.1 200 OK\nSet-Cookie: sid=[sesi akun]\n\nok"
+    assert (
+        httpkit.mask_raw(response) == "HTTP/1.1 200 OK\nSet-Cookie: sid=[sesi akun]; HttpOnly\n\nok"
+    )
 
 
 def _finding(vuln_type: str, source: str, point: httpkit.Injection, **params: Any) -> dict:
