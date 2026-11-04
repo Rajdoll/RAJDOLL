@@ -2,7 +2,7 @@
 
 Asisten pribadi untuk vulnerability assessment (VA) aplikasi web. RAJDOLL menjalankan pipeline VA lengkap di laptop: recon, pengujian per kategori OWASP WSTG v4.2, validasi temuan secara deterministik, bantuan LLM lokal untuk tugas-tugas kecil, triase, laporan Markdown, dan retest.
 
-> **Status: sedang dibangun ulang.** Saat ini repo berada di fase **F2 (penugasan, scope, akun)**. Belum ada fitur VA yang bisa dipakai. Rencana lengkap ada di [`docs/v1/IPD.md`](docs/v1/IPD.md).
+> **Status: sedang dibangun ulang.** Saat ini repo berada di fase **F3 (container tools dan egress proxy)**. Belum ada fitur VA yang bisa dipakai. Rencana lengkap ada di [`docs/v1/IPD.md`](docs/v1/IPD.md).
 
 ## Dokumen
 
@@ -14,11 +14,11 @@ Asisten pribadi untuk vulnerability assessment (VA) aplikasi web. RAJDOLL menjal
 | [BSD](docs/v1/BSD.md) | Skema database dan kontrak API |
 | [IPD](docs/v1/IPD.md) | Fase pengerjaan dan kriteria selesai |
 
-## Menjalankan kerangka (F0)
+## Menjalankan
 
 Prasyarat: Windows dengan Docker Desktop (backend WSL2). Simpan repo di filesystem WSL (misalnya `~/RAJDOLL`), bukan di `/mnt/c`.
 
-1. Salin `.env.example` menjadi `.env`, lalu isi `POSTGRES_PASSWORD`.
+1. Salin `.env.example` menjadi `.env`, lalu isi `POSTGRES_PASSWORD`, `TOOLS_DB_PASSWORD`, dan `TOOLS_TOKEN` dengan nilai acak yang berbeda-beda.
 2. Jalankan:
 
    ```bash

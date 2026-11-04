@@ -16,7 +16,7 @@ The approved documents in `docs/v1/` define what to build. Read the relevant one
 
 ## Current phase
 
-**F1 — foundation (done).** F1a: the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b: single-user login and UI sessions (`rajdoll/services/auth.py`), CSRF, settings (`rajdoll/services/settings.py`), HTML/HTMX/JSON rendering (`rajdoll/api/render.py`), and the base UI. **F2 — engagements.** Engagement CRUD, scope rules (`rajdoll/core/scope.py`, deny by default, reused by the egress proxy in F3), target accounts with pasted sessions parsed by `rajdoll/services/target_sessions.py` and encrypted per engagement, session-check configuration, per-engagement scan settings, and deletion that removes the key file first (`rajdoll/services/engagements.py`). Next is F3 (tools container and egress proxy). See `docs/v1/IPD.md` section 4.
+**F1 — foundation (done).** F1a: the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b: single-user login and UI sessions (`rajdoll/services/auth.py`), CSRF, settings (`rajdoll/services/settings.py`), HTML/HTMX/JSON rendering (`rajdoll/api/render.py`), and the base UI. **F2 — engagements.** Engagement CRUD, scope rules (`rajdoll/core/scope.py`, deny by default, reused by the egress proxy in F3), target accounts with pasted sessions parsed by `rajdoll/services/target_sessions.py` and encrypted per engagement, session-check configuration, per-engagement scan settings, and deletion that removes the key file first (`rajdoll/services/engagements.py`). **F3 — tools container.** F3a: the egress proxy (`tools/proxy/`, a mitmproxy addon: proxy-credential context, scope before connect, audit rows, per-engagement rate limit, identity header), the tools entrypoint running proxy and runner together, `rajdoll_tools` login at bootstrap, and the account session check through the proxy (`rajdoll/services/session_check.py`). F3b adds the runner `/run`, the httpx and nuclei adapters, pinned tool binaries, and `testapp/`. See `docs/v1/IPD.md` section 4.
 
 ## Layout
 
@@ -63,6 +63,8 @@ pytest                              # each test module gets a fresh migrated dat
 
 Without that variable the database tests are skipped; CI sets `RAJDOLL_REQUIRE_DB_TESTS=1` so they can never be skipped there.
 
+Proxy tests need mitmproxy, which belongs to the tools image, not the main package: `pip install -e ".[dev]" -r tools/requirements.txt`. They are skipped without it; CI sets `RAJDOLL_REQUIRE_PROXY_TESTS=1`. `tests/test_proxy_integration.py` starts a real `mitmdump` against PostgreSQL and local HTTP/HTTPS servers.
+
 New migration: change the models, then `alembic revision --autogenerate -m "<what>"`, review the file, and keep `tests/test_migrations.py::test_models_match_migration` green.
 
 ## Web layer conventions
@@ -76,6 +78,13 @@ New migration: change the models, then `alembic revision --autogenerate -m "<wha
 - Services raise `ServiceError` subclasses (`ValidationFailed`, `NotFound`, `Conflict`) from `rajdoll/services/errors.py`; the app maps them to the BSD 10.1 error format. Section fragments catch them and re-render with the message (htmx swaps 409 as well as 422).
 - A section that can change the engagement status includes `_engagement_status.html` when `htmx` is true, so the header badge updates out of band.
 - Read input with `read_fields()` (`rajdoll/api/forms.py`): it merges query, JSON, and form fields the same way for every client.
+
+## Tools container conventions
+
+- Every request to a target goes through the egress proxy with credentials `task.<task_id>.<tool>` or `eng.<engagement_id>.<purpose>` and the `TOOLS_TOKEN` password; build proxy URLs with `rajdoll.services.session_check.proxy_url()`.
+- The proxy runs as the `rajdoll_tools` database role: it may read `task`, `scan`, `scope_rule`, and `engagement(id, settings)`, and insert into `request_log` and `scan_event`. Never widen that.
+- The tools image copies only `rajdoll/core/scope.py` from the main package; keep that module standard-library only.
+- The tools container must never mount the `secrets` volume.
 
 ## Conventions
 
