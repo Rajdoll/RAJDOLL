@@ -213,6 +213,8 @@ Pekerjaan:
 - Fitur **Uji sesi** dan cek sesi (PRD F-07, sebagian) lewat proxy.
 - Kerangka `testapp/`: aplikasi web rentan kecil yang berjalan sebagai layanan tambahan di profil compose khusus uji. Diisi contoh kerentanan bertahap di fase-fase berikutnya.
 
+Catatan pelaksanaan: F3 dikirim dalam dua PR. F3a berisi egress proxy dan Uji sesi; F3b berisi runner, adaptor httpx dan nuclei, image tools, dan `testapp`. Template nuclei resmi dipindah ke F5/F6 bersama modul yang memakainya.
+
 Kriteria selesai:
 - Request ke host di luar scope ditolak proxy dan tercatat `blocked_scope`.
 - Menjalankan nuclei lewat `/run` terhadap `testapp` menghasilkan baris audit untuk setiap request.

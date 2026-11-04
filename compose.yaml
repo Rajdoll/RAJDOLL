@@ -96,6 +96,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Deliberately vulnerable target for integration tests; started only with
+  # `docker compose --profile test up`. Never publish its port.
+  testapp:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: testapp/Dockerfile
+    image: rajdoll-testapp:dev
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
   secrets:

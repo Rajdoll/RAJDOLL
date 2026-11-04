@@ -7,8 +7,15 @@ import yaml
 COMPOSE = yaml.safe_load((Path(__file__).resolve().parent.parent / "compose.yaml").read_text())
 
 
-def test_exactly_four_services() -> None:
-    assert set(COMPOSE["services"]) == {"api", "worker", "tools", "db"}
+def test_exactly_four_services_outside_the_test_profile() -> None:
+    default = {n for n, s in COMPOSE["services"].items() if not s.get("profiles")}
+    assert default == {"api", "worker", "tools", "db"}
+
+
+def test_testapp_only_in_test_profile_and_unpublished() -> None:
+    testapp = COMPOSE["services"]["testapp"]
+    assert testapp["profiles"] == ["test"]
+    assert "ports" not in testapp
 
 
 def test_only_api_publishes_ports_and_only_on_localhost() -> None:

@@ -1,0 +1,33 @@
+id: rajdoll-exposed-env-file
+
+info:
+  name: Exposed .env configuration file
+  author: rajdoll
+  severity: high
+  description: |
+    The application serves its .env file over HTTP. These files usually hold database
+    credentials, API keys, and other secrets.
+  remediation: |
+    Keep .env outside the web root and block dotfiles in the web server configuration.
+  classification:
+    cwe-id: CWE-538
+  tags: rajdoll,exposure,config,wstg-conf-04
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: regex
+        part: body
+        regex:
+          - '(?m)^[A-Z][A-Z0-9_]*(PASSWORD|SECRET|KEY|TOKEN)[A-Z0-9_]*\s*='
+      - type: word
+        part: header
+        words:
+          - "text/html"
+        negative: true

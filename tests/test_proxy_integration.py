@@ -8,9 +8,7 @@ import datetime
 import ipaddress
 import json
 import os
-import socket
 import ssl
-import subprocess
 import sys
 import threading
 import time
@@ -28,33 +26,15 @@ from sqlalchemy.engine import make_url
 
 from rajdoll.core.bootstrap import enable_tools_login
 from rajdoll.services.session_check import make_prober, proxy_url
+from tests.helpers import MITMDUMP, free_port, start_mitmdump
 
-REPO = Path(__file__).resolve().parent.parent
 TOKEN = "integration-token"
 TOOLS_PASSWORD = "integration-tools-password"
-MITMDUMP = Path(sys.executable).parent / "mitmdump"
 
 if not MITMDUMP.exists():
     if os.environ.get("RAJDOLL_REQUIRE_PROXY_TESTS") == "1":
         pytest.fail(f"mitmdump not found next to {sys.executable}", pytrace=False)
     pytest.skip("mitmdump is installed only for proxy tests", allow_module_level=True)
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def _wait_for_port(port: int, timeout: float = 30.0) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                return
-        except OSError:
-            time.sleep(0.2)
-    raise TimeoutError(f"nothing listening on {port}")
 
 
 # Upstream target ----------------------------------------------------------------------
@@ -185,8 +165,8 @@ def env(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
         main = engagement({"rate_limit_rps": 1000}, {"name": "X-VA-Team", "value": "BSSN"})
         slow = engagement({"rate_limit_rps": 2}, None)
 
-    http_server = ThreadingHTTPServer(("127.0.0.1", _free_port()), _Handler)
-    https_server = ThreadingHTTPServer(("127.0.0.1", _free_port()), _Handler)
+    http_server = ThreadingHTTPServer(("127.0.0.1", free_port()), _Handler)
+    https_server = ThreadingHTTPServer(("127.0.0.1", free_port()), _Handler)
     cert, key = _self_signed(tmp)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
@@ -197,33 +177,10 @@ def env(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
     db_url = make_url(db_engine.url).set(
         drivername="postgresql", username="rajdoll_tools", password=TOOLS_PASSWORD
     )
-    proxy_port = _free_port()
-    process = subprocess.Popen(  # noqa: S603
-        [
-            str(MITMDUMP),
-            "--quiet",
-            "--listen-host",
-            "127.0.0.1",
-            "--listen-port",
-            str(proxy_port),
-            "--set",
-            f"confdir={tmp / 'mitm'}",
-            "--set",
-            "connection_strategy=lazy",
-            "--set",
-            "ssl_insecure=true",
-            "-s",
-            str(REPO / "tools" / "proxy" / "mitm_script.py"),
-        ],
-        env={
-            **os.environ,
-            "PYTHONPATH": str(REPO),
-            "RAJDOLL_PROXY_DATABASE_URL": db_url.render_as_string(hide_password=False),
-            "RAJDOLL_TOOLS_TOKEN": TOKEN,
-        },
+    process, proxy_port = start_mitmdump(
+        db_url.render_as_string(hide_password=False), TOKEN, tmp / "mitm"
     )
     try:
-        _wait_for_port(proxy_port)
         yield Env(
             engine=db_engine,
             proxy_port=proxy_port,

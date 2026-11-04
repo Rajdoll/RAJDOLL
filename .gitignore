@@ -44,6 +44,7 @@ logs/
 # Test outputs
 .pytest_cache/
 .ruff_cache/
+.tools/
 .coverage
 htmlcov/
 .tox/

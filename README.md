@@ -25,7 +25,9 @@ Prasyarat: Windows dengan Docker Desktop (backend WSL2). Simpan repo di filesyst
    docker compose up -d --build
    ```
 
-3. Buka `http://127.0.0.1:8000/health`. Responsnya harus `{"status": "ok", ...}`.
+3. Buka `http://127.0.0.1:8000`, buat password, lalu mulai dari **Penugasan baru**.
+
+Untuk menyalakan juga `testapp` (aplikasi rentan khusus pengujian, tidak dibuka ke luar Docker), pakai `docker compose --profile test up -d --build`. Di penugasan, URL targetnya `http://testapp:8080`.
 
 ## Pengembangan
 
