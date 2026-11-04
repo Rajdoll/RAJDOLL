@@ -11,10 +11,14 @@ from rajdoll.services.errors import FieldError, ValidationFailed
 
 
 class LlmSettings(BaseModel):
+    # Off: every LLM task uses its rule-based fallback (TRD P2); the scan never waits on an LLM.
+    enabled: bool = True
     base_url: HttpUrl = HttpUrl("http://host.docker.internal:1234/v1")
     model: str = Field(default="qwen3-4b", min_length=1, max_length=200)
+    # Encrypted with the master key (KeyStore.encrypt_app_secret), base64; never shown back.
     api_key_enc: str | None = None
     thinking: bool = False
+    timeout_s: int = Field(default=120, ge=5, le=900)
 
 
 class Defaults(BaseModel):
@@ -59,7 +63,9 @@ SETTING_KEYS = tuple(AppSettings.model_fields)
 FIELD_LABELS: dict[str, str] = {
     "llm.base_url": "Alamat server LLM",
     "llm.model": "Model LLM",
+    "llm.enabled": "LLM aktif",
     "llm.thinking": "Mode berpikir LLM",
+    "llm.timeout_s": "Batas waktu panggilan LLM",
     "llm_budget_per_scan": "Anggaran panggilan LLM per scan",
     "cvss_primary": "Versi CVSS utama",
     "defaults.rate_limit_rps": "Rate limit",

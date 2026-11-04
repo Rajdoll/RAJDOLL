@@ -138,6 +138,7 @@ def render_html(
         "layout": "partial.html" if htmx else "base.html",
         "csrf_token": getattr(request.state, "csrf_token", None),
         "authenticated": getattr(request.state, "authenticated", False),
+        "llm_indicator": getattr(request.state, "llm_indicator", None),
         "active_nav": None,
     }
     values.update(context or {})

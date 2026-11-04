@@ -126,6 +126,10 @@ class TaskContext:
     finding: Callable[[int], dict[str, Any]] = lambda _id: {}
     # Store a validator's verdict and its evidence.
     record_verdict: Callable[[int, Verdict], None] = lambda _id, _verdict: None
+    # Run an LLM task for this task's scan (rajdoll/llm/gateway.py): llm(task, messages,
+    # finding_id=..., endpoint_id=...) -> LlmOutcome, or None without an LLM. Callers always
+    # have a rule-based fallback for an outcome that is None or not ok (TRD P2).
+    llm: Callable[..., Any] = lambda *_args, **_kwargs: None
 
     def check_cancelled(self) -> None:
         if self.cancel_event.is_set():

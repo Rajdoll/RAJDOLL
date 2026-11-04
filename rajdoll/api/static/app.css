@@ -121,3 +121,7 @@ iframe.preview { width: 100%; height: 20rem; border: 1px solid var(--pico-muted-
 .report-preview pre { white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; max-height: 30rem; overflow: auto; }
 .report-preview table { font-size: 0.9rem; }
 
+/* LLM indicator in the navigation (AFD 1) */
+.badge.llm-local { color: var(--pico-ins-color); border-color: var(--pico-ins-color); text-decoration: none; }
+.badge.llm-api { color: var(--pico-del-color); border-color: var(--pico-del-color); font-weight: 600; text-decoration: none; }
+.badge.llm-off { color: var(--pico-muted-color); text-decoration: none; }

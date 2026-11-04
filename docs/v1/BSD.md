@@ -77,7 +77,7 @@ Kunci yang dipakai:
 
 | Kunci | Contoh nilai | Keterangan |
 |---|---|---|
-| `llm` | `{"base_url": "http://host.docker.internal:1234/v1", "model": "qwen3-4b", "api_key_enc": null, "thinking": false}` | `api_key_enc` dienkripsi dengan kunci utama. |
+| `llm` | `{"enabled": true, "base_url": "http://host.docker.internal:1234/v1", "model": "qwen3-4b", "api_key_enc": null, "thinking": false, "timeout_s": 120}` | `api_key_enc` dienkripsi dengan kunci utama (base64; AAD `app:llm.api_key`). Klien mengirim `api_key` dalam teks biasa (string kosong menghapusnya) dan tidak pernah bisa mengisi `api_key_enc` langsung; nilainya tidak pernah dikembalikan. `enabled = false`: setiap tugas LLM memakai jalan cadangan (F7). |
 | `llm_budget_per_scan` | `400` | Batas panggilan LLM per scan. |
 | `cvss_primary` | `"3.1"` | `"3.1"`, `"4.0"`, atau `"both"`. |
 | `defaults` | `{"rate_limit_rps": 10, "concurrency": 2, "checkpoint_enabled": true, "checkpoint_timeout_min": 15, "evidence_max_bytes": 1048576, "oob_enabled": false}` | Nilai bawaan untuk penugasan baru. |
@@ -181,7 +181,7 @@ Dipakai untuk scan biasa dan putaran retest.
 | `checkpoint_resolution` | `text` null | `user_continued`, `auto_continued`, `disabled`. |
 | `base_url` | `text` null | Untuk retest jika alamat clone berubah. |
 | `settings_snapshot` | `jsonb` | Pengaturan efektif saat scan dimulai, termasuk rate limit yang sedang berlaku (bisa diturunkan saat blokir). |
-| `llm_snapshot` | `jsonb` | `{"base_url", "model", "is_local"}` saat scan dimulai. |
+| `llm_snapshot` | `jsonb` | `{"enabled", "base_url", "model", "is_local", "thinking", "timeout_s", "budget"}` saat scan dimulai; scan memakai LLM yang dilihat asesor saat memulai (F7). |
 | `recon_summary` | `jsonb` null | Ditulis modul selama recon: `{"technologies": [{"name", "version"}], "servers": [..], "waf": {"detected", "name", "evidence", "blocks_attacks"}, "open_ports": [{"port", "protocol", "service", "product", "version"}], "api_specs": [url], "out_of_scope_hosts": {"host": jumlah}, "estimated_requests"}`. Di API checkpoint, `out_of_scope_hosts` ditampilkan sebagai `[{"host", "count"}]` dan digabung dengan host yang ditolak proxy di `request_log`. |
 | `stats` | `jsonb` | Cache angka untuk monitor: total request, ditolak scope, dicurigai blokir, laju saat ini, temuan per status. |
 | `error` | `text` null | |
@@ -354,7 +354,7 @@ Isi awal dipindahkan dari `multi_agent_system/data/enrichment_kb.json` lalu dite
 | `model` | `text` | |
 | `is_local` | `boolean` | |
 | `prompt_enc`, `output_enc` | `bytea` | |
-| `status` | `text` | `ok`, `schema_retry_ok`, `schema_error`, `timeout`, `error`, `skipped_budget`. |
+| `status` | `text` | `ok`, `schema_retry_ok`, `schema_error`, `timeout`, `error`, `skipped_budget`. Tidak ada baris jika LLM dimatikan atau server sedang dianggap tidak terjangkau (lihat TRD 5.4). |
 | `tokens_in`, `tokens_out`, `duration_ms` | `int` null | |
 | `created_at` | `timestamptz` | |
 
@@ -457,7 +457,7 @@ Peran `rajdoll_tools` dibuat oleh migrasi baseline tanpa `LOGIN`. Langkah bootst
 | `POST` | `/logout` | |
 | `POST` | `/settings/password` | Body: `current_password`, `new_password`. |
 | `GET`/`PATCH` | `/settings` | Membaca dan mengubah `app_setting`. |
-| `POST` | `/settings/llm/test` | Uji koneksi LLM; balikan: `{"ok", "model", "latency_ms", "error"}`. |
+| `POST` | `/settings/llm/test` | Uji koneksi LLM; balikan: `{"ok", "model", "latency_ms", "error"}`. Memakai nilai di form (`llm_base_url`/`base_url`, `llm_model`/`model`, `llm_api_key`/`api_key`) atau yang tersimpan, tanpa menyimpan. |
 
 ### 10.3 Penugasan, scope, akun
 

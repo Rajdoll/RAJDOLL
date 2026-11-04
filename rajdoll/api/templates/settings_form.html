@@ -6,17 +6,48 @@
     <ul>{% for message in errors %}<li>{{ message }}</li>{% endfor %}</ul>
   </div>
   {% endif %}
-  <fieldset>
+  <fieldset id="llm">
     <legend><strong>LLM</strong></legend>
     <label>
-      Alamat server LLM
+      <input type="checkbox" role="switch" name="llm_enabled"{% if settings.llm.enabled %} checked{% endif %}>
+      LLM aktif (jika mati, setiap tugas LLM memakai jalan cadangan berbasis aturan)
+    </label>
+    {% if llm_indicator and llm_indicator.state == "api" %}
+    <p class="warning-box banner banner-danger" role="alert">Alamat ini bukan alamat lokal: prompt (termasuk potongan request dan respons target) dikirim ke penyedia API di luar laptop.</p>
+    {% endif %}
+    <label>
+      Alamat server LLM (kompatibel OpenAI)
       <input type="url" name="llm_base_url" value="{{ settings.llm.base_url }}" required>
     </label>
     <label>
       Model
       <input type="text" name="llm_model" value="{{ settings.llm.model }}" required maxlength="200">
     </label>
-    <small>Uji koneksi dan kunci API tersedia mulai fase F7.</small>
+    <label>
+      Kunci API {% if settings.llm.api_key_enc %}<small class="muted">(tersimpan terenkripsi; kosongkan untuk tetap memakai yang lama)</small>{% else %}<small class="muted">(opsional; LM Studio tidak memerlukannya)</small>{% endif %}
+      <input type="password" name="llm_api_key" autocomplete="off" maxlength="500">
+    </label>
+    {% if settings.llm.api_key_enc %}
+    <label><input type="checkbox" name="llm_api_key_clear"> Hapus kunci API yang tersimpan</label>
+    {% endif %}
+    <div class="grid">
+      <label>
+        Batas waktu panggilan (detik)
+        <input type="number" name="llm_timeout_s" min="5" max="900" value="{{ settings.llm.timeout_s }}" required>
+      </label>
+      <label>
+        Anggaran panggilan per scan
+        <input type="number" name="llm_budget_per_scan" min="0" max="100000" value="{{ settings.llm_budget_per_scan }}" required>
+      </label>
+    </div>
+    <label>
+      <input type="checkbox" role="switch" name="llm_thinking"{% if settings.llm.thinking %} checked{% endif %}>
+      Mode berpikir (lebih lambat; bawaan mati)
+    </label>
+    <div class="controls">
+      <button type="button" class="secondary" hx-post="/settings/llm/test" hx-include="closest form" hx-target="#llm-test-result" hx-swap="innerHTML">Uji koneksi</button>
+      <span id="llm-test-result" aria-live="polite"></span>
+    </div>
   </fieldset>
   <fieldset>
     <legend><strong>CVSS</strong></legend>

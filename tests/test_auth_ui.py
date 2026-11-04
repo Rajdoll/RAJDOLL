@@ -148,8 +148,11 @@ def test_settings_page_shows_defaults(client: TestClient) -> None:
 
 def _settings_form(**overrides: str) -> dict[str, str]:
     form = {
+        "llm_enabled": "on",
         "llm_base_url": "http://host.docker.internal:1234/v1",
         "llm_model": "qwen3-4b",
+        "llm_timeout_s": "120",
+        "llm_budget_per_scan": "400",
         "cvss_primary": "3.1",
         "rate_limit_rps": "10",
         "concurrency": "2",

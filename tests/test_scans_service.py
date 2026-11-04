@@ -53,9 +53,13 @@ def test_start_snapshots_settings_and_activates_engagement(
     assert scan.settings_snapshot["rate_limit_rps"] == 3
     assert scan.settings_snapshot["checkpoint_enabled"] is True
     assert scan.llm_snapshot == {
+        "enabled": True,
         "base_url": "http://host.docker.internal:1234/v1",
         "model": "qwen3-4b",
         "is_local": True,
+        "thinking": False,
+        "timeout_s": 120,
+        "budget": 400,
     }
     assert engagement.status == "active"
     assert _events(db_session, scan) == ["notice"]
