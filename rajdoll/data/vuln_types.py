@@ -316,6 +316,149 @@ CATALOG: dict[str, VulnType] = {
                 "https://cwe.mitre.org/data/definitions/1004.html",
             ),
         ),
+        VulnType(
+            key="sensitive_file",
+            title="File Sensitif Dapat Diakses Publik",
+            wstg_id="WSTG-CONF-04",
+            cwe_id="CWE-538",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            description=(
+                "Server web menyajikan file yang tidak seharusnya publik, misalnya konfigurasi "
+                "(`.env`, `.git/config`, `docker-compose.yml`), file kata sandi, atau log "
+                "aplikasi, tanpa perlu login."
+            ),
+            impact=(
+                "Penyerang dapat membaca kredensial basis data, kunci API, alamat repositori "
+                "beserta kredensialnya, atau isi log yang membuka jalan ke serangan lanjutan."
+            ),
+            recommendation=(
+                "Hapus file tersebut dari direktori web atau blokir aksesnya di konfigurasi server "
+                "(misalnya tolak semua dotfile dan direktori `.git`), lalu ganti semua kredensial "
+                "yang sempat terbuka."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
+                "https://cwe.mitre.org/data/definitions/538.html",
+            ),
+        ),
+        VulnType(
+            key="backup_file",
+            title="File Cadangan Dapat Diunduh",
+            wstg_id="WSTG-CONF-04",
+            cwe_id="CWE-530",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            description=(
+                "Salinan cadangan file atau basis data (misalnya `index.php.bak`, `backup.sql`) "
+                "tersimpan di direktori web dan dapat diunduh siapa pun."
+            ),
+            impact=(
+                "Penyerang dapat membaca kode sumber, kredensial, atau isi basis data yang "
+                "seharusnya tidak pernah keluar dari server."
+            ),
+            recommendation=(
+                "Hapus file cadangan dari direktori web, simpan cadangan di luar web root, dan "
+                "blokir ekstensi cadangan (`.bak`, `.old`, `.sql`, `~`) di konfigurasi server."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
+                "https://cwe.mitre.org/data/definitions/530.html",
+            ),
+        ),
+        VulnType(
+            key="debug_exposed",
+            title="Halaman Debug atau Diagnostik Terbuka",
+            wstg_id="WSTG-CONF-02",
+            cwe_id="CWE-489",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+            description=(
+                "Halaman debug atau diagnostik (misalnya `phpinfo()`, mode debug framework, "
+                "`server-status`, endpoint actuator) dapat dibuka tanpa login."
+            ),
+            impact=(
+                "Penyerang mendapat detail internal: versi komponen, path file, variabel "
+                "lingkungan, dan konfigurasi yang memudahkan serangan lanjutan."
+            ),
+            recommendation=(
+                "Matikan mode debug di produksi, hapus halaman diagnostik, dan batasi endpoint "
+                "pemantauan hanya untuk jaringan internal atau pengguna yang berwenang."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/02-Test_Application_Platform_Configuration",
+                "https://cwe.mitre.org/data/definitions/489.html",
+            ),
+        ),
+        VulnType(
+            key="missing_security_headers",
+            title="Header Keamanan HTTP Tidak Lengkap",
+            wstg_id="WSTG-CONF-12",
+            cwe_id="CWE-693",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+            description=(
+                "Respons aplikasi tidak menyertakan satu atau lebih header keamanan: "
+                "`Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, atau "
+                "`Strict-Transport-Security` (HTTPS)."
+            ),
+            impact=(
+                "Peramban tidak mendapat lapisan perlindungan tambahan terhadap XSS, clickjacking, "
+                "MIME sniffing, dan downgrade ke HTTP."
+            ),
+            recommendation=(
+                "Tambahkan header keamanan di server web atau aplikasi: CSP yang ketat, "
+                "`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (atau CSP "
+                "`frame-ancestors`), dan HSTS untuk situs HTTPS."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/12-Test_for_Content_Security_Policy",
+                "https://owasp.org/www-project-secure-headers/",
+                "https://cwe.mitre.org/data/definitions/693.html",
+            ),
+        ),
+        VulnType(
+            key="version_disclosure",
+            title="Versi Perangkat Lunak Terlihat di Header",
+            wstg_id="WSTG-INFO-02",
+            cwe_id="CWE-200",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+            description=(
+                "Header respons (misalnya `Server` atau `X-Powered-By`) menyebut nama dan versi "
+                "perangkat lunak server atau framework."
+            ),
+            impact=(
+                "Penyerang dapat langsung mencari kerentanan yang diketahui untuk versi tersebut "
+                "tanpa perlu menebak."
+            ),
+            recommendation=(
+                "Hilangkan atau samarkan header versi di konfigurasi server dan framework "
+                "(misalnya `expose_php = Off`, `server_tokens off`)."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
+                "https://cwe.mitre.org/data/definitions/200.html",
+            ),
+        ),
+        VulnType(
+            key="http_trace",
+            title="Metode HTTP TRACE Aktif",
+            wstg_id="WSTG-CONF-06",
+            cwe_id="CWE-693",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+            description=(
+                "Server menjawab request TRACE dengan memantulkan seluruh request, termasuk "
+                "header-nya."
+            ),
+            impact=(
+                "Dalam kombinasi dengan kelemahan lain, TRACE dapat dipakai untuk membaca header "
+                "sensitif seperti cookie (Cross-Site Tracing)."
+            ),
+            recommendation=(
+                "Nonaktifkan metode TRACE di server web (misalnya `TraceEnable off` di Apache) dan "
+                "izinkan hanya metode yang dipakai aplikasi."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
+                "https://cwe.mitre.org/data/definitions/693.html",
+            ),
+        ),
     ]
 }
 

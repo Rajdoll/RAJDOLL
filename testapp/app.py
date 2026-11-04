@@ -45,6 +45,12 @@ WEAKNESSES = {
     "jwt-weak-secret": "JWTs from POST /api/v1/token are signed with the HMAC secret 'rahasia'",
     "no-lockout": "POST /login and POST /api/v1/token never limit failed attempts (CWE-307)",
     "cookie-flags": "GET /login starts a session cookie `sid` without HttpOnly or SameSite",
+    "git-config": "GET /.git/config serves the repository config with a deploy password",
+    "phpinfo": "GET /info.php is a leftover phpinfo() page (CWE-489)",
+    "backup-file": "GET /index.php.bak serves the old page's source with database credentials",
+    "missing-headers": "no response sets CSP, X-Content-Type-Options, or X-Frame-Options",
+    "version-header": "every response names its version: Server: rajdoll-testapp/1.0 (CWE-200)",
+    "http-trace": "TRACE echoes the request back on any path (WSTG-CONF-06)",
 }
 # Findings the scan must confirm (IPD F6 and F8 exit criteria): (type, path, parameter).
 # Authorization needs two accounts: Akun A = budi (admin), Akun B = sari (user). Each pasted
@@ -62,6 +68,13 @@ EXPECTED_FINDINGS: list[tuple[str, str, str | None]] = [
     ("weak_lockout", "/login", None),
     ("weak_lockout", "/api/v1/token", None),
     ("cookie_flags", "/login", "sid"),
+    ("sensitive_file", "/.env", None),
+    ("sensitive_file", "/.git/config", None),
+    ("debug_exposed", "/info.php", None),
+    ("backup_file", "/index.php.bak", None),
+    ("missing_security_headers", "/", None),
+    ("version_disclosure", "/", "Server"),
+    ("http_trace", "/", None),
 ]
 
 # (method, path template, how recon can find it). Paths use {id} for numeric segments.
@@ -98,6 +111,9 @@ RECON_ENDPOINTS: list[tuple[str, str, str]] = [
     ("GET", "/admin/pengguna", "link from /admin (admin account)"),
     ("POST", "/api/v1/token", "openapi"),
     ("GET", "/api/v1/saya", "openapi"),
+    ("GET", "/index.php", "link"),
+    ("GET", "/.git/config", "directory fuzzing"),
+    ("GET", "/info.php", "directory fuzzing"),
 ]
 # Query parameter only found by parameter discovery: /cari?debug=1 adds diagnostics.
 HIDDEN_PARAMS = {"/cari": ["debug"]}
@@ -118,8 +134,19 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.middleware("http")
+async def trace_echo(request: Request, call_next):  # type: ignore[no-untyped-def]
+    if request.method != "TRACE":
+        return await call_next(request)
+    # Weakness "http-trace": the request is echoed back, headers included.
+    lines = [f"TRACE {request.url.path} HTTP/1.1"]
+    lines += [f"{name}: {value}" for name, value in request.headers.items()]
+    return PlainTextResponse("\r\n".join(lines), media_type="message/http")
+
+
+@app.middleware("http")
 async def server_header(request: Request, call_next):  # type: ignore[no-untyped-def]
     response: Response = await call_next(request)
+    # Weakness "version-header" (and "missing-headers": no security header is ever set).
     response.headers["Server"] = "rajdoll-testapp/1.0"
     return response
 
@@ -154,7 +181,7 @@ def index() -> HTMLResponse:
         '<form method="post" action="/alat/ping"><input name="alamat" value="localhost">'
         "<button>Ping</button></form>"
         '<a href="/sapa?nama=Tamu">Sapa</a> <a href="/pratinjau?templat=Halo">Pratinjau</a> '
-        '<a href="/ambil?url=/health">Status layanan</a>'
+        '<a href="/ambil?url=/health">Status layanan</a> <a href="/index.php">Beranda lama</a>'
         '<div id="ringkasan"></div>',
         script=True,
     )
@@ -532,6 +559,43 @@ def fetch(url: str, request: Request) -> Response:
     except (OSError, ValueError, http.client.HTTPException) as exc:
         return PlainTextResponse(f"Gagal mengambil: {exc}", 502)
     return PlainTextResponse(body)
+
+
+@app.get("/.git/config")
+def git_config() -> PlainTextResponse:
+    # Weakness "git-config": the repository was deployed with its .git directory.
+    return PlainTextResponse(
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+        '[remote "origin"]\n\turl = https://deploy:testapp-not-a-real-secret@git.instansi.test/'
+        "aplikasi/testapp.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+    )
+
+
+@app.get("/info.php")
+def phpinfo() -> HTMLResponse:
+    # Weakness "phpinfo": a diagnostic page left on the server.
+    return HTMLResponse(
+        "<html><head><title>phpinfo()</title></head><body><table>"
+        '<tr><td class="e">PHP Version </td><td class="v">7.4.3</td></tr>'
+        '<tr><td class="e">System </td><td class="v">Linux testapp 5.15</td></tr>'
+        "</table><h2>PHP Extension</h2><p>Core, mysqli, session</p></body></html>"
+    )
+
+
+@app.get("/index.php")
+def old_index() -> HTMLResponse:
+    return _page("Beranda lama", "<h1>Beranda lama</h1><p>Halaman ini sudah tidak dipakai.</p>")
+
+
+@app.get("/index.php.bak")
+def old_index_backup() -> PlainTextResponse:
+    # Weakness "backup-file": an editor backup of the old page, with its source code.
+    return PlainTextResponse(
+        '<?php\n$db_host = "localhost";\n$db_user = "testapp";\n'
+        '$db_pass = "testapp-not-a-real-secret";\n$conn = mysqli_connect($db_host, $db_user, '
+        "$db_pass);\n?>\n<h1>Beranda lama</h1>\n",
+        media_type="application/octet-stream",
+    )
 
 
 @app.get("/.env")

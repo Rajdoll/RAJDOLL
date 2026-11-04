@@ -42,6 +42,7 @@ def test_resolve_modules() -> None:
 def test_registry_and_extra_modules(monkeypatch: pytest.MonkeyPatch) -> None:
     assert set(available_modules()) == {
         "information_gathering",
+        "configuration",
         "authentication",
         "authorization",
         "session",

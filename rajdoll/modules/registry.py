@@ -29,12 +29,14 @@ MODULE_LABELS: dict[str, str] = {
 def available_modules() -> dict[str, Module]:
     from rajdoll.modules.authentication import Authentication
     from rajdoll.modules.authorization import Authorization
+    from rajdoll.modules.configuration import Configuration
     from rajdoll.modules.information_gathering import InformationGathering
     from rajdoll.modules.input_validation import InputValidation
     from rajdoll.modules.session_management import SessionManagement
 
     modules: list[Module] = [
         InformationGathering(),
+        Configuration(),
         Authentication(),
         Authorization(),
         SessionManagement(),

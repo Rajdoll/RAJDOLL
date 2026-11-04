@@ -147,7 +147,8 @@ def test_testapp_jwt_alg_none_and_weak_secret(sessions: dict) -> None:
     assert "token palsu: alg=none" in found["jwt_alg_none"].evidence[2].request
     weak = found["jwt_weak_secret"]
     assert weak.poc["validator_params"]["secret"] == "rahasia"
-    assert "'rahasia'" in weak.note and "diterima" in weak.note
+    # The secret stays in the encrypted PoC, never in notes (they end up in plaintext logs).
+    assert "rahasia" not in weak.note and "diterima" in weak.note
 
 
 def test_signature_not_verified_is_reported_instead_of_alg_none() -> None:

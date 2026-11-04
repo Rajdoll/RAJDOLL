@@ -300,8 +300,8 @@ def jwt_checks(
         signed = forge(slot.token, secret, marker)
         ok, forged = try_forged(client, headers, slot, probe, account, signed, "diteken ulang")
         note = (
-            f"Secret HMAC token ditemukan di daftar secret umum: {secret!r}. Token dengan klaim "
-            f"tambahan yang diteken ulang dengan secret itu "
+            "Secret HMAC token ada di daftar secret umum (nilainya hanya di PoC). Token dengan "
+            "klaim tambahan yang diteken ulang dengan secret itu "
             + (f"diterima di {probe.target.label}." if ok else "tidak diterima; cek manual.")
         )
         found.append(
