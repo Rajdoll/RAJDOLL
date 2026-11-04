@@ -197,6 +197,125 @@ CATALOG: dict[str, VulnType] = {
                 "https://cwe.mitre.org/data/definitions/269.html",
             ),
         ),
+        VulnType(
+            key="jwt_signature_not_verified",
+            title="Tanda Tangan JWT Tidak Diverifikasi",
+            wstg_id="WSTG-SESS-10",
+            cwe_id="CWE-347",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            description=(
+                "Aplikasi menerima JSON Web Token yang tanda tangannya sudah diubah, sehingga "
+                "isi token (identitas, peran, masa berlaku) tidak dilindungi sama sekali."
+            ),
+            impact=(
+                "Penyerang dapat membuat token dengan klaim apa pun, misalnya menyamar sebagai "
+                "pengguna lain atau admin, tanpa mengetahui kunci penandatangan."
+            ),
+            recommendation=(
+                "Verifikasi tanda tangan setiap token di sisi server dengan library JWT yang "
+                "terpercaya, tetapkan algoritma yang diizinkan secara eksplisit, dan tolak token "
+                "yang gagal diverifikasi."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/06-Session_Management_Testing/10-Testing_JSON_Web_Tokens",
+                "https://cwe.mitre.org/data/definitions/347.html",
+            ),
+        ),
+        VulnType(
+            key="jwt_alg_none",
+            title="JWT Tanpa Tanda Tangan (alg: none) Diterima",
+            wstg_id="WSTG-SESS-10",
+            cwe_id="CWE-347",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            description=(
+                "Aplikasi menerima JSON Web Token dengan header `alg: none` dan tanpa tanda "
+                "tangan, sehingga siapa pun dapat membuat token yang dianggap sah."
+            ),
+            impact=(
+                "Penyerang dapat mengubah klaim token (identitas, peran) sesuka hati dan "
+                "mengambil alih akun mana pun, termasuk akun admin."
+            ),
+            recommendation=(
+                "Tolak token dengan algoritma `none` dan tetapkan daftar algoritma yang "
+                "diizinkan di sisi server; jangan mengambil algoritma dari header token."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/06-Session_Management_Testing/10-Testing_JSON_Web_Tokens",
+                "https://cwe.mitre.org/data/definitions/347.html",
+            ),
+        ),
+        VulnType(
+            key="jwt_weak_secret",
+            title="Secret Penandatangan JWT Lemah",
+            wstg_id="WSTG-SESS-10",
+            cwe_id="CWE-1391",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+            description=(
+                "JSON Web Token ditandatangani dengan HMAC memakai secret yang ada di daftar "
+                "secret umum, sehingga secret dapat ditebak dari satu token secara offline."
+            ),
+            impact=(
+                "Siapa pun yang memegang satu token (misalnya akun biasa) dapat menebak secret, "
+                "lalu membuat token sah dengan klaim apa pun, termasuk menyamar sebagai admin."
+            ),
+            recommendation=(
+                "Ganti secret dengan nilai acak minimal 256 bit dari pembangkit acak yang aman, "
+                "simpan di luar kode sumber, dan cabut semua token lama. Pertimbangkan algoritma "
+                "asimetris (RS256/ES256)."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/06-Session_Management_Testing/10-Testing_JSON_Web_Tokens",
+                "https://cwe.mitre.org/data/definitions/1391.html",
+            ),
+        ),
+        VulnType(
+            key="weak_lockout",
+            title="Tidak Ada Pembatasan Percobaan Login",
+            wstg_id="WSTG-ATHN-03",
+            cwe_id="CWE-307",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+            description=(
+                "Endpoint login menerima percobaan login gagal berturut-turut tanpa pembatasan: "
+                "tidak ada penolakan, penundaan, CAPTCHA, maupun penguncian sementara."
+            ),
+            impact=(
+                "Penyerang dapat menebak password secara otomatis (brute force atau credential "
+                "stuffing) sampai menemukan password yang benar."
+            ),
+            recommendation=(
+                "Batasi percobaan login per akun dan per alamat sumber (penundaan bertahap, "
+                "penguncian sementara, atau CAPTCHA setelah beberapa kegagalan), catat dan pantau "
+                "percobaan gagal, dan dorong autentikasi multifaktor."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/04-Authentication_Testing/03-Testing_for_Weak_Lock_Out_Mechanism",
+                "https://cwe.mitre.org/data/definitions/307.html",
+            ),
+        ),
+        VulnType(
+            key="cookie_flags",
+            title="Cookie Sesi tanpa Atribut Keamanan",
+            wstg_id="WSTG-SESS-02",
+            cwe_id="CWE-1004",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+            description=(
+                "Cookie sesi dibuat tanpa satu atau lebih atribut keamanan: `HttpOnly` (cookie "
+                "dapat dibaca JavaScript), `Secure` (cookie dapat terkirim lewat HTTP biasa), "
+                "atau `SameSite` (cookie ikut terkirim pada request lintas situs)."
+            ),
+            impact=(
+                "Sesi lebih mudah dicuri melalui XSS atau penyadapan jaringan, dan request "
+                "lintas situs (CSRF) lebih mudah membawa sesi pengguna."
+            ),
+            recommendation=(
+                "Set cookie sesi dengan `HttpOnly`, `Secure`, dan `SameSite=Lax` atau `Strict` "
+                "di konfigurasi framework atau server."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/06-Session_Management_Testing/02-Testing_for_Cookies_Attributes",
+                "https://cwe.mitre.org/data/definitions/1004.html",
+            ),
+        ),
     ]
 }
 

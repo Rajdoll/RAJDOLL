@@ -94,6 +94,8 @@ class PlanContext:
     has_session: bool = False
     # Labels of the engagement's target accounts, in the order they were added ("Akun A", ...).
     accounts: list[str] = field(default_factory=list)
+    # The engagement's session-check URL (a page only a logged-in account can open), if set.
+    session_check_url: str | None = None
     # Findings of this scan that still need validation (VALIDATION stage): {"id", "vuln_type"};
     # all findings the scan saw (AI_TRIAGE stage): {"id", "vuln_type", "title"}.
     findings: list[dict[str, Any]] = field(default_factory=list)

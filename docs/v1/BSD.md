@@ -294,6 +294,8 @@ Path disimpan relatif; host diambil dari endpoint temuan (atau `target_url` jika
 
 Untuk temuan Authorization, `account` adalah akun yang sesinya dipakai untuk mengirim PoC. `idor`: `validator_params` berisi `parameter`, `location` (`path` atau `query`), `owner_account` (pemilik objek), `control_path` dan `control_query` (objek pembanding milik akun pengirim, atau objek yang tidak ada). `privilege_escalation`: `privileged_account` dan `reference_path` (fungsi admin yang menolak akun pengirim; `null` jika kandidat hanya berdasarkan penilaian LLM). Detail temuan dan laporan menampilkan akun yang harus dipakai.
 
+Untuk temuan JWT (`jwt_signature_not_verified`, `jwt_alg_none`, `jwt_weak_secret`), `headers` berisi token palsu yang diterima dan `account` adalah akun yang tokennya diubah; `validator_params` berisi `location` (`header` atau `cookie`), `name`, `protected_path`, serta `variant` (`alg: none`) atau `secret` dan `forged_accepted` (secret lemah). `weak_lockout`: `body` berisi username acak dan password salah; `validator_params` berisi `user_field`, `password_field`, `other_fields`, `csrf_field`, dan `attempts`. `cookie_flags`: `account` (`null` jika cookie dibuat tanpa sesi) dan `validator_params` berisi `cookie` dan `missing`.
+
 Untuk temuan Input Validation, `query` dan `body` berisi request dengan payload deteksi, dan `validator_params` berisi `parameter`, `location` (`query`, `form`, `json`, `multipart`), `base` (nilai normal yang dipakai saat deteksi), serta rincian teknik (misalnya `technique`, `syntax`, `separator`).
 
 ### 6.3 `evidence`

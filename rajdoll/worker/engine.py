@@ -547,6 +547,7 @@ class Engine:
             endpoints=known,
             has_session=bool(accounts),
             accounts=accounts,
+            session_check_url=engagement.session_check_url,
             findings=(
                 findings.for_validation(session, scan.id)
                 if stage == ScanStage.VALIDATION

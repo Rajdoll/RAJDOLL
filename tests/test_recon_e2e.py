@@ -137,8 +137,11 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
     keystore = KeyStore(stack["secrets"])
 
     def login(user: str, password: str) -> str:
+        """The account's pasted session: the `sid` cookie and a JWT for the API."""
         form = {"username": user, "password": password}
-        return httpx.post(stack["app"] + "/login", data=form, trust_env=False).cookies["sid"]
+        sid = httpx.post(stack["app"] + "/login", data=form, trust_env=False).cookies["sid"]
+        api = httpx.post(stack["app"] + "/api/v1/token", json=form, trust_env=False)
+        return f"Cookie: sid={sid}\nAuthorization: Bearer {api.json()['token']}"
 
     with factory() as session, session.begin():
         engagement = engagements.create(
@@ -146,9 +149,15 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
         )
         engagements.update_overrides(session, engagement, {"rate_limit_rps": 100})
         for label, user, password in [("Akun A", "budi", "budi123"), ("Akun B", "sari", "sari123")]:
-            account = {"label": label, "session_text": f"sid={login(user, password)}"}
+            account = {"label": label, "session_text": login(user, password)}
             engagements.add_account(session, keystore, engagement, account)
-        modules = ["information_gathering", "authorization", "input_validation"]
+        modules = [
+            "information_gathering",
+            "authentication",
+            "authorization",
+            "session",
+            "input_validation",
+        ]
         scan = scans.start(session, engagement, "custom", modules)
         scan_id, engagement_id = scan.id, engagement.id
 

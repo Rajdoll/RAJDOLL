@@ -7,7 +7,12 @@ modules. RECON_ENDPOINTS lists every endpoint recon must find (IPD F5 exit crite
 way it can be discovered.
 """
 
+import base64
+import binascii
+import hashlib
+import hmac
 import http.client
+import json
 import secrets
 import sqlite3
 import subprocess
@@ -36,9 +41,14 @@ WEAKNESSES = {
     "privilege-escalation": (
         "GET /admin/pengguna checks only the login, not the admin role (CWE-269); /admin checks it"
     ),
+    "jwt-alg-none": "GET /api/v1/saya accepts an unsigned JWT with alg none (CWE-347)",
+    "jwt-weak-secret": "JWTs from POST /api/v1/token are signed with the HMAC secret 'rahasia'",
+    "no-lockout": "POST /login and POST /api/v1/token never limit failed attempts (CWE-307)",
+    "cookie-flags": "GET /login starts a session cookie `sid` without HttpOnly or SameSite",
 }
 # Findings the scan must confirm (IPD F6 and F8 exit criteria): (type, path, parameter).
-# Authorization needs two accounts: Akun A = budi (admin), Akun B = sari (user).
+# Authorization needs two accounts: Akun A = budi (admin), Akun B = sari (user). Each pasted
+# session carries the `sid` cookie and a JWT from POST /api/v1/token (Authorization: Bearer).
 EXPECTED_FINDINGS: list[tuple[str, str, str | None]] = [
     ("sqli", "/katalog", "nama"),
     ("xss_reflected", "/sapa", "nama"),
@@ -47,6 +57,11 @@ EXPECTED_FINDINGS: list[tuple[str, str, str | None]] = [
     ("ssrf", "/ambil", "url"),
     ("idor", "/akun/{id}", "id"),
     ("privilege_escalation", "/admin/pengguna", None),
+    ("jwt_alg_none", "/api/v1/saya", "Authorization"),
+    ("jwt_weak_secret", "/api/v1/saya", "Authorization"),
+    ("weak_lockout", "/login", None),
+    ("weak_lockout", "/api/v1/token", None),
+    ("cookie_flags", "/login", "sid"),
 ]
 
 # (method, path template, how recon can find it). Paths use {id} for numeric segments.
@@ -81,6 +96,8 @@ RECON_ENDPOINTS: list[tuple[str, str, str]] = [
     ("GET", "/pratinjau", "link"),
     ("GET", "/ambil", "link"),
     ("GET", "/admin/pengguna", "link from /admin (admin account)"),
+    ("POST", "/api/v1/token", "openapi"),
+    ("GET", "/api/v1/saya", "openapi"),
 ]
 # Query parameter only found by parameter discovery: /cari?debug=1 adds diagnostics.
 HIDDEN_PARAMS = {"/cari": ["debug"]}
@@ -94,6 +111,7 @@ PROFILES = {
     2: {"nama": "Sari Wulandari", "email": "sari@instansi.test", "nip": "199002022015022002"},
 }
 SESSIONS: dict[str, str] = {}
+JWT_SECRET = "rahasia"  # noqa: S105 (weakness "jwt-weak-secret": a dictionary word)
 PRODUCTS = {1: "Kopi Gayo", 2: "Teh Melati"}
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -210,6 +228,30 @@ def openapi_spec() -> dict[str, object]:
                     "responses": {"200": {"description": "Pengguna"}},
                 }
             },
+            "/api/v1/token": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "username": {"type": "string"},
+                                        "password": {"type": "string"},
+                                    },
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "Token JWT"}},
+                }
+            },
+            "/api/v1/saya": {
+                "get": {
+                    "security": [{"bearer": []}],
+                    "responses": {"200": {"description": "Pengguna yang login"}},
+                }
+            },
             "/api/v1/transfer": {
                 "post": {
                     "requestBody": {
@@ -238,6 +280,59 @@ def api_user(user_id: int) -> dict[str, object]:
     return {"id": user_id, "nama": name}
 
 
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _jwt_for(user: str) -> str:
+    header = _b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    claims = _b64url(json.dumps({"sub": user, "uid": USER_IDS[user]}).encode())
+    signature = hmac.new(JWT_SECRET.encode(), f"{header}.{claims}".encode(), hashlib.sha256)
+    return f"{header}.{claims}.{_b64url(signature.digest())}"
+
+
+def _jwt_user(request: Request) -> str | None:
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    try:
+        head, body, signature = token.strip().split(".")
+        header = json.loads(base64.urlsafe_b64decode(head + "=" * (-len(head) % 4)))
+        claims = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    except (ValueError, binascii.Error):
+        return None
+    alg = str(header.get("alg", "")).lower()
+    if alg == "hs256":
+        expected = hmac.new(JWT_SECRET.encode(), f"{head}.{body}".encode(), hashlib.sha256)
+        if not hmac.compare_digest(_b64url(expected.digest()), signature):
+            return None
+    elif alg != "none":  # weakness "jwt-alg-none": an unsigned token is accepted
+        return None
+    user = claims.get("sub") if isinstance(claims, dict) else None
+    return user if user in USERS else None
+
+
+@app.post("/api/v1/token")
+async def api_token(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    # Weakness "no-lockout" here too: failed attempts are never limited.
+    if not isinstance(body, dict) or USERS.get(str(body.get("username"))) != body.get("password"):
+        return JSONResponse({"detail": "Username atau password salah"}, status_code=401)
+    return JSONResponse({"token": _jwt_for(str(body["username"]))})
+
+
+@app.get("/api/v1/saya")
+def api_me(request: Request) -> Response:
+    user = _jwt_user(request)
+    if user is None:
+        return JSONResponse({"detail": "Token tidak valid"}, status_code=401)
+    data = PROFILES[USER_IDS[user]]
+    return JSONResponse({"pengguna": user, "nama": data["nama"], "email": data["email"]})
+
+
 @app.post("/api/v1/transfer")
 async def transfer(request: Request) -> dict[str, object]:
     body = await request.json()
@@ -245,16 +340,22 @@ async def transfer(request: Request) -> dict[str, object]:
 
 
 @app.get("/login")
-def login_form() -> HTMLResponse:
-    return _page(
+def login_form(request: Request) -> HTMLResponse:
+    response = _page(
         "Masuk",
         '<form method="post" action="/login"><input name="username"><input name="password" '
         'type="password"><button>Masuk</button></form>',
     )
+    if "sid" not in request.cookies:
+        # Weakness "cookie-flags": like many PHP applications, the login page starts the session
+        # cookie, here without HttpOnly or SameSite.
+        response.set_cookie("sid", secrets.token_hex(16), samesite=None)
+    return response
 
 
 @app.post("/login")
 def login(username: str = Form(...), password: str = Form(...)) -> Response:
+    # Weakness "no-lockout": failed attempts are never counted or limited.
     if USERS.get(username) != password:
         return _page("Masuk", "<p>Login gagal</p>")
     token = secrets.token_hex(16)

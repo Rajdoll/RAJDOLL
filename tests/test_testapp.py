@@ -31,7 +31,8 @@ def test_smoke_scan_expects_exactly_the_endpoints_testapp_registers() -> None:
 
 def test_smoke_scan_expects_exactly_the_findings_testapp_plants() -> None:
     assert _smoke_constant("EXPECTED_FINDINGS") == _testapp().EXPECTED_FINDINGS
-    assert len(_testapp().EXPECTED_FINDINGS) == len(_testapp().WEAKNESSES) - 1  # all but .env
+    # Every weakness but .env (Configuration, F8b); "no-lockout" is planted on two endpoints.
+    assert len(_testapp().EXPECTED_FINDINGS) == len(_testapp().WEAKNESSES) - 1 + 1
 
 
 def test_every_declared_endpoint_is_served() -> None:
