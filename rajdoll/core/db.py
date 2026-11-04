@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from rajdoll.core.config import get_settings
@@ -17,6 +18,12 @@ def get_engine() -> Engine:
 @lru_cache
 def get_sessionmaker() -> sessionmaker[Session]:
     return sessionmaker(bind=get_engine(), expire_on_commit=False)
+
+
+def listen_dsn(database_url: str) -> str:
+    """psycopg connection string (for LISTEN) from a SQLAlchemy URL."""
+    url = make_url(database_url).set(drivername="postgresql")
+    return url.render_as_string(hide_password=False)
 
 
 def session_scope() -> Iterator[Session]:

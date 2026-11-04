@@ -1,0 +1,71 @@
+{# Live fragment (SSE event `stage`; also the answer to pause/resume/cancel/checkpoint actions).
+   Keep it free of values that change on their own (a ticking duration): the stream only sends
+   fragments that changed, and a swap would clear what the user is typing in the rate field. #}
+<div class="page-head">
+  <hgroup>
+    <h2>Scan #{{ scan.number }} <span class="badge scan-{{ scan.status }}">{{ scan_status_labels[scan.status] }}</span></h2>
+    <p>Profil {{ profile_labels.get(scan.profile, "Retest") }}{% if scan.started_at %} · mulai {{ wib(scan.started_at) }} WIB{% if scan.finished_at %} · {{ duration(scan.started_at, scan.finished_at) }}{% endif %}{% else %} · menunggu worker{% endif %}</p>
+  </hgroup>
+  <div class="controls">
+    {% if scan.status in ["queued", "running", "awaiting_checkpoint"] %}
+    <form method="post" action="/scans/{{ scan.id }}/pause" hx-post="/scans/{{ scan.id }}/pause" hx-target="#scan-status">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="secondary">Jeda</button>
+    </form>
+    {% endif %}
+    {% if scan.status in ["paused", "failed"] %}
+    <form method="post" action="/scans/{{ scan.id }}/resume" hx-post="/scans/{{ scan.id }}/resume" hx-target="#scan-status">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if scan.paused_reason == "waf_blocked" %}
+      <input type="number" name="rate_limit_rps" min="0.1" max="1000" step="0.1" placeholder="Rate baru (req/dtk)" aria-label="Rate limit baru">
+      {% endif %}
+      <button type="submit">Lanjutkan</button>
+    </form>
+    {% endif %}
+    {% if scan.status in ["queued", "running", "awaiting_checkpoint", "paused"] %}
+    <form method="post" action="/scans/{{ scan.id }}/cancel" hx-post="/scans/{{ scan.id }}/cancel" hx-target="#scan-status" hx-confirm="Batalkan scan ini? Temuan yang sudah ada tetap disimpan.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="danger">Batalkan</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% if control_errors %}
+<div class="error" role="alert"><ul>{% for message in control_errors %}<li>{{ message }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if scan.status == "awaiting_checkpoint" %}
+<article class="banner banner-info" role="status">
+  Rencana pengujian siap ditinjau.
+  {% if scan.checkpoint_deadline %}Lanjut otomatis pukul {{ wib(scan.checkpoint_deadline) }} WIB ({{ minutes_left }} menit lagi).{% else %}Hitung mundur ditahan.{% endif %}
+  <div class="controls">
+    <a href="/scans/{{ scan.id }}/checkpoint" role="button" class="secondary">Buka checkpoint</a>
+    {% if scan.checkpoint_deadline %}
+    <form method="post" action="/scans/{{ scan.id }}/checkpoint/hold" hx-post="/scans/{{ scan.id }}/checkpoint/hold" hx-target="#scan-status">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="secondary outline">Tahan hitung mundur</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/scans/{{ scan.id }}/checkpoint/continue" hx-post="/scans/{{ scan.id }}/checkpoint/continue" hx-target="#scan-status">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Lanjutkan ke pengujian</button>
+    </form>
+  </div>
+</article>
+{% elif scan.status == "paused" %}
+<article class="banner {{ 'banner-info' if scan.paused_reason == 'manual' else 'banner-danger' }}" role="status">
+  Scan dijeda: {{ paused_labels[scan.paused_reason] }}.
+  {% if scan.paused_reason == "session_expired" %}<a href="/engagements/{{ scan.engagement_id }}/scope">Perbarui dan uji sesi</a>, lalu tekan Lanjutkan.{% endif %}
+  {% if scan.paused_reason == "waf_blocked" %}Lanjutkan dengan rate lebih rendah, atau biarkan dijeda sambil menunggu whitelist IP.{% endif %}
+</article>
+{% elif scan.status == "failed" %}
+<article class="banner banner-danger" role="alert">Scan gagal: {{ scan.error or "galat tidak diketahui" }}. Tekan Lanjutkan untuk meneruskan dari tugas terakhir yang belum selesai.</article>
+{% elif scan.status == "completed" %}
+<article class="banner banner-success" role="status">Scan selesai{% if findings.total %}: {{ findings.total }} temuan menunggu triase{% endif %}.</article>
+{% elif scan.status == "cancelled" %}
+<article class="banner banner-info" role="status">Scan dibatalkan. Temuan yang sudah ada tetap disimpan.</article>
+{% endif %}
+<ol class="steps" aria-label="Tahap scan">
+  {% for step in steps %}
+  <li class="step-{{ step.state }}"{% if step.state in ["current", "waiting"] %} aria-current="step"{% endif %}>{{ step.label }}</li>
+  {% endfor %}
+</ol>

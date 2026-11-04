@@ -1,0 +1,32 @@
+{# Banner for the engagement's active (or last failed) scan, on every engagement page (AFD 4). #}
+{% if banner_scan %}
+{% set s = banner_scan %}
+{% if s.status == "awaiting_checkpoint" %}
+<article class="banner banner-info" role="status">
+  Scan #{{ s.number }} menunggu checkpoint{% if s.checkpoint_deadline %} — lanjut otomatis pukul {{ wib(s.checkpoint_deadline) }} WIB ({{ banner_minutes }} menit lagi){% else %} — hitung mundur ditahan{% endif %}.
+  <a href="/scans/{{ s.id }}/checkpoint">Buka checkpoint</a>
+</article>
+{% elif s.status == "paused" and s.paused_reason == "session_expired" %}
+<article class="banner banner-danger" role="alert">
+  Scan #{{ s.number }} dijeda: sesi akun kedaluwarsa.
+  <a href="/engagements/{{ engagement.id }}/scope">Perbarui dan uji sesi</a>, lalu <a href="/scans/{{ s.id }}">lanjutkan scan</a>.
+</article>
+{% elif s.status == "paused" and s.paused_reason == "waf_blocked" %}
+<article class="banner banner-danger" role="alert">
+  Scan #{{ s.number }} dijeda: kemungkinan diblokir WAF. <a href="/scans/{{ s.id }}">Buka monitor</a>
+</article>
+{% elif s.status == "paused" %}
+<article class="banner banner-info" role="status">
+  Scan #{{ s.number }} dijeda oleh asesor. <a href="/scans/{{ s.id }}">Buka monitor</a>
+</article>
+{% elif s.status == "failed" %}
+<article class="banner banner-danger" role="alert">
+  Scan #{{ s.number }} gagal: {{ s.error or "galat tidak diketahui" }}. <a href="/scans/{{ s.id }}">Buka monitor</a> untuk melanjutkan.
+</article>
+{% else %}
+<article class="banner banner-info" role="status">
+  Scan #{{ s.number }} {{ scan_status_labels[s.status] }}{% if s.stage %} — tahap {{ stage_labels[s.stage] }}{% endif %}.
+  <a href="/scans/{{ s.id }}">Buka monitor</a>
+</article>
+{% endif %}
+{% endif %}

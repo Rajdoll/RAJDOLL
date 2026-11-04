@@ -1,0 +1,21 @@
+{% extends layout %}
+{% block title %}Scan #{{ scan.number }} · {{ engagement.name }} · RAJDOLL{% endblock %}
+{% block content %}
+{% include "_engagement_header.html" %}
+{# Live updates over SSE (AFD A4). `done` closes the stream once the scan has finished. #}
+<div id="scan-live"{% if not finished %} hx-ext="sse" sse-connect="/scans/{{ scan.id }}/events/stream?after_id={{ last_event_id }}" sse-close="done"{% endif %}>
+  <section id="scan-status" sse-swap="stage">{% include "_scan_status.html" %}</section>
+  <section id="scan-modules" sse-swap="task">{% include "_scan_modules.html" %}</section>
+  <div class="grid">
+    <section id="scan-stats" sse-swap="stats">{% include "_scan_stats.html" %}</section>
+    <section id="scan-findings" sse-swap="finding">{% include "_scan_findings.html" %}</section>
+  </div>
+  <section>
+    <details open>
+      <summary>Log</summary>
+      <ul id="scan-log" class="log" sse-swap="notice" hx-swap="afterbegin">{% include "_scan_log_lines.html" %}</ul>
+      <p><small><a href="/scans/{{ scan.id }}/events">Log lengkap</a> · <a href="/scans/{{ scan.id }}/tasks">Semua tugas</a></small></p>
+    </details>
+  </section>
+</div>
+{% endblock %}

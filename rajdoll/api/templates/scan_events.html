@@ -1,0 +1,12 @@
+{% extends layout %}
+{% block title %}Log scan #{{ scan.number }} · RAJDOLL{% endblock %}
+{% block content %}
+{% if htmx %}
+{% include "_scan_log_lines.html" %}
+{% else %}
+{% include "_engagement_header.html" %}
+<p><a href="/scans/{{ scan.id }}">← Monitor scan #{{ scan.number }}</a></p>
+<h2 class="h5">Log scan #{{ scan.number }}</h2>
+<ul class="log">{% include "_scan_log_lines.html" %}</ul>
+{% endif %}
+{% endblock %}

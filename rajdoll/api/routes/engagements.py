@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
+from rajdoll.api import pages
 from rajdoll.api.deps import current_session, get_db, get_keystore, get_prober, require_csrf
 from rajdoll.api.forms import read_fields
 from rajdoll.api.render import is_htmx, respond, service_error_response, wants_json
@@ -13,37 +14,13 @@ from rajdoll.core import scope as scope_rules
 from rajdoll.core.crypto import KeyStore
 from rajdoll.core.models import Engagement
 from rajdoll.services import engagements as svc
+from rajdoll.services import monitor
 from rajdoll.services import settings as app_settings
 from rajdoll.services.auth import ActiveSession
 from rajdoll.services.errors import ServiceError, ValidationFailed
 from rajdoll.services.session_check import Prober
 
 router = APIRouter()
-
-# Tabs from AFD section 1. A tab without an href is shown but not yet available.
-_TABS = [
-    ("summary", "Ringkasan", "", None),
-    ("scope", "Scope & Akun", "/scope", None),
-    ("scan", "Scan", None, "F4"),
-    ("findings", "Temuan", None, "F6"),
-    ("retest", "Retest", None, "F10"),
-    ("report", "Laporan", None, "F6"),
-    ("settings", "Pengaturan", "/settings", None),
-]
-
-
-def _tabs(engagement: Engagement, current: str) -> list[dict[str, Any]]:
-    return [
-        {
-            "key": key,
-            "label": label,
-            "href": f"/engagements/{engagement.id}{suffix}" if suffix is not None else None,
-            "phase": phase,
-            "current": key == current,
-        }
-        for key, label, suffix, phase in _TABS
-    ]
-
 
 # --------------------------------------------------------------------------------------
 # JSON shapes
@@ -81,14 +58,14 @@ def _engagement_json(db: Session, keystore: KeyStore, engagement: Engagement) ->
 # --------------------------------------------------------------------------------------
 
 
-def _base_context(engagement: Engagement, tab: str) -> dict[str, Any]:
-    return {"engagement": engagement, "tabs": _tabs(engagement, tab), "active_nav": "engagements"}
+def _base_context(db: Session, engagement: Engagement, tab: str) -> dict[str, Any]:
+    return pages.engagement_context(db, engagement, tab)
 
 
 def _scope_context(db: Session, keystore: KeyStore, engagement: Engagement) -> dict[str, Any]:
     target_host = scope_rules.url_host(engagement.target_url)
     return {
-        **_base_context(engagement, "scope"),
+        **_base_context(db, engagement, "scope"),
         "scope_rules": svc.scope_rule_rows(db, engagement.id),
         "target_host": target_host,
         "accounts": [
@@ -106,7 +83,7 @@ def _scope_context(db: Session, keystore: KeyStore, engagement: Engagement) -> d
 
 def _settings_context(db: Session, engagement: Engagement) -> dict[str, Any]:
     return {
-        **_base_context(engagement, "settings"),
+        **_base_context(db, engagement, "settings"),
         "overrides": svc.overrides(engagement),
         "app_defaults": app_settings.load(db).defaults,
         "details_errors": [],
@@ -142,7 +119,8 @@ def list_page(
 ) -> Response:
     rows = svc.list_engagements(db)
     counts = svc.finding_counts(db, [e.id for e in rows])
-    items = [{"engagement": e, "counts": counts[e.id]} for e in rows]
+    latest = monitor.latest_scans(db, [e.id for e in rows])
+    items = [{"engagement": e, "counts": counts[e.id], "scan": latest.get(e.id)} for e in rows]
     data = [
         {
             "id": e.id,
@@ -204,13 +182,14 @@ def summary_page(
 ) -> Response:
     engagement = svc.get(db, engagement_id)
     context = {
-        **_base_context(engagement, "summary"),
+        **_base_context(db, engagement, "summary"),
         "scope_count": len(svc.scope_patterns(db, engagement.id)),
         "accounts": [
             svc.account_summary(keystore, engagement, a) for a in svc.accounts(db, engagement.id)
         ],
         "counts": svc.finding_counts(db, [engagement.id])[engagement.id],
         "warnings": svc.warnings(db, engagement),
+        "latest_scan": monitor.latest_scans(db, [engagement.id]).get(engagement.id),
     }
     return respond(
         request,

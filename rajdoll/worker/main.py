@@ -3,23 +3,16 @@
 import logging
 import signal
 
-from sqlalchemy.engine import make_url
-
 from rajdoll import __version__
 from rajdoll.core.config import Settings, get_settings
 from rajdoll.core.crypto import KeyStore
-from rajdoll.core.db import get_sessionmaker
+from rajdoll.core.db import get_sessionmaker, listen_dsn
 from rajdoll.services import engagements
 from rajdoll.services.session_check import make_prober
 from rajdoll.worker.engine import Engine
 from rajdoll.worker.tools_client import ToolsClient
 
 log = logging.getLogger("rajdoll.worker")
-
-
-def listen_dsn(database_url: str) -> str:
-    """psycopg connection string for LISTEN, from the SQLAlchemy URL."""
-    return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
 def build_engine(settings: Settings) -> Engine:
