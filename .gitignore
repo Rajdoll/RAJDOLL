@@ -43,6 +43,7 @@ logs/
 
 # Test outputs
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .tox/
@@ -88,9 +89,6 @@ docs/*
 QWEN.md
 
 # Output directories
-information-gathering/subresult/
-information-gathering/logs/
-identity-testing/
 *.pcap
 
 # Compiled
@@ -102,28 +100,14 @@ identity-testing/
 *.dylib
 *.exe
 
-# Docker
-.dockerignore
-
 # Large files
 *.zip
 *.tar.gz
 *.rar
 
-# MCP temporary files
-/mcp_adapter/__pycache__/
-/multi_agent_system/__pycache__/
-Penelitian/
-docs/*
-!docs/v1/
-.github/
-pytest.ini
+# Local-only folders
 scripts/
 cache/
-multi_agent_system/evaluation/runs/
 
-# Generated artifacts (knowledge-graph cache, runtime DBs, benchmark outputs)
+# Generated artifacts
 graphify-out/
-multi_agent_system/data/*.db
-multi_agent_system/evaluation/reports/
-multi_agent_system/evaluation/benchmark_job_ids.txt
