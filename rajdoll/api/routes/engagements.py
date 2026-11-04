@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
-from rajdoll.api.deps import current_session, get_db, get_keystore, require_csrf
+from rajdoll.api.deps import current_session, get_db, get_keystore, get_prober, require_csrf
 from rajdoll.api.forms import read_fields
 from rajdoll.api.render import is_htmx, respond, service_error_response, wants_json
 from rajdoll.core import scope as scope_rules
@@ -16,6 +16,7 @@ from rajdoll.services import engagements as svc
 from rajdoll.services import settings as app_settings
 from rajdoll.services.auth import ActiveSession
 from rajdoll.services.errors import ServiceError, ValidationFailed
+from rajdoll.services.session_check import Prober
 
 router = APIRouter()
 
@@ -98,6 +99,7 @@ def _scope_context(db: Session, keystore: KeyStore, engagement: Engagement) -> d
         "account_errors": [],
         "session_check_errors": [],
         "session_check_saved": False,
+        "check_results": {},
         "host_matches": scope_rules.host_matches,
     }
 
@@ -543,3 +545,38 @@ async def session_check_update(
         lambda: svc.set_session_check(db, engagement, fields.get("url"), fields.get("marker")),
         saved_key="session_check_saved",
     )
+
+
+@router.post("/engagements/{engagement_id}/accounts/{account_id}/check")
+async def account_check(
+    engagement_id: int,
+    account_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    keystore: KeyStore = Depends(get_keystore),
+    prober: Prober = Depends(get_prober),
+    _: ActiveSession = Depends(require_csrf),
+) -> Response:
+    engagement = svc.get(db, engagement_id)
+    account = svc.get_account(db, engagement, account_id)
+    try:
+        result = svc.check_account(db, keystore, engagement, account, prober)
+    except ServiceError as exc:
+        db.rollback()
+        if wants_json(request):
+            return service_error_response(request, exc)
+        context = _scope_context(db, keystore, engagement)
+        context["account_errors"] = _errors(exc)
+        return respond(request, "_accounts_section.html", context, status_code=exc.status_code)
+    db.commit()
+    db.refresh(account)
+    context = _scope_context(db, keystore, engagement)
+    context["check_results"] = {account.id: result}
+    data = {
+        "status": account.session_status,
+        "checked_at": account.session_checked_at,
+        "checked": result.checked,
+        "message": result.message,
+        "http_status": result.status_code,
+    }
+    return respond(request, "_accounts_section.html", context, data=data)

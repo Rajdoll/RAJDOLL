@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from rajdoll.api.app import create_app
 from rajdoll.core.crypto import KeyStore
+from rajdoll.services.session_check import CheckResult
 
 PASSWORD = "correct horse battery"
 JSON = {"Accept": "application/json"}
@@ -30,11 +31,21 @@ class Ui:
         return {**JSON, "X-CSRF-Token": self.csrf}
 
 
+def _fake_prober(url: str, marker: str, session: dict, engagement_id: int) -> CheckResult:
+    if session.get("cookies", {}).get("sid") == "good":
+        return CheckResult(True, True, "Sesi valid.", 200)
+    return CheckResult(True, False, "Penanda login tidak ditemukan di halaman.", 200)
+
+
 @pytest.fixture
 def ui(db_engine: Engine, tmp_path: Path) -> Iterator[Ui]:
     with db_engine.begin() as conn:
         conn.execute(text("TRUNCATE app_user, ui_session, app_setting, engagement CASCADE"))
-    app = create_app(sessionmaker(bind=db_engine, expire_on_commit=False), KeyStore(tmp_path))
+    app = create_app(
+        sessionmaker(bind=db_engine, expire_on_commit=False),
+        KeyStore(tmp_path),
+        session_prober=_fake_prober,
+    )
     with TestClient(app, follow_redirects=False) as client:
         client.post("/setup", data={"password": PASSWORD, "password_confirm": PASSWORD})
         match = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/settings").text)
@@ -271,3 +282,43 @@ def test_pages_have_no_inline_scripts_or_styles(ui: Ui) -> None:
         html = ui.client.get(f"/engagements/{engagement_id}{suffix}").text
         assert re.search(r"<script(?![^>]*\bsrc=)", html) is None, suffix
         assert "style=" not in html, suffix
+
+
+def test_session_check_button(ui: Ui) -> None:
+    engagement_id = _create(ui)
+    for label, sid in (("Akun A", "good"), ("Akun B", "bad")):
+        ui.client.post(
+            f"/engagements/{engagement_id}/accounts",
+            data={"label": label, "session_text": f"sid={sid}"},
+            headers=ui.htmx(),
+        )
+    accounts = ui.client.get(f"/engagements/{engagement_id}/accounts", headers=JSON).json()[
+        "accounts"
+    ]
+    good, bad = accounts[0]["id"], accounts[1]["id"]
+
+    not_configured = ui.client.post(
+        f"/engagements/{engagement_id}/accounts/{good}/check", headers=ui.htmx()
+    )
+    assert not_configured.status_code == 422
+    assert "Atur URL cek sesi" in not_configured.text
+
+    ui.client.put(
+        f"/engagements/{engagement_id}/session-check",
+        data={"url": "https://simpeg.instansi.test/profil", "marker": "Budi"},
+        headers=ui.htmx(),
+    )
+    valid = ui.client.post(f"/engagements/{engagement_id}/accounts/{good}/check", headers=ui.htmx())
+    assert valid.status_code == 200
+    assert "Sesi valid." in valid.text
+    invalid = ui.client.post(
+        f"/engagements/{engagement_id}/accounts/{bad}/check", headers=ui.api()
+    ).json()
+    assert (invalid["status"], invalid["checked"]) == ("invalid", True)
+    statuses = {
+        a["label"]: a["session_status"]
+        for a in ui.client.get(f"/engagements/{engagement_id}/accounts", headers=JSON).json()[
+            "accounts"
+        ]
+    }
+    assert statuses == {"Akun A": "valid", "Akun B": "invalid"}

@@ -254,3 +254,42 @@ def test_delete_requires_exact_name_and_no_running_scan(
             select(func.count()).select_from(model).where(column == engagement_id)
         )
         assert count == 0, model.__name__
+
+
+def test_check_account_records_outcome(db_session: Session, keystore: KeyStore) -> None:
+    from rajdoll.services.session_check import CheckResult
+
+    engagement = _create(db_session, keystore)
+    account = svc.add_account(db_session, keystore, engagement, {"session_text": "sid=abc"})
+    calls: list[tuple] = []
+
+    def prober(url: str, marker: str, session: dict, engagement_id: int) -> CheckResult:
+        calls.append((url, marker, session, engagement_id))
+        return CheckResult(True, True, "Sesi valid.", 200)
+
+    with pytest.raises(ValidationFailed, match="Atur URL cek sesi"):
+        svc.check_account(db_session, keystore, engagement, account, prober)
+
+    svc.set_session_check(db_session, engagement, "https://simpeg.instansi.test/profil", "Budi")
+    result = svc.check_account(db_session, keystore, engagement, account, prober)
+    db_session.flush()
+    db_session.refresh(account)
+    assert result.valid
+    assert account.session_status == "valid"
+    assert account.session_checked_at is not None
+    assert calls == [
+        (
+            "https://simpeg.instansi.test/profil",
+            "Budi",
+            {"cookies": {"sid": "abc"}, "headers": {}},
+            engagement.id,
+        )
+    ]
+
+    def unreachable(*_: object) -> CheckResult:
+        return CheckResult(False, False, "Tidak bisa menghubungi target lewat proxy: x")
+
+    svc.check_account(db_session, keystore, engagement, account, unreachable)
+    db_session.flush()
+    db_session.refresh(account)
+    assert account.session_status == "valid"  # an inconclusive check changes nothing

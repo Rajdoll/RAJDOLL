@@ -16,11 +16,13 @@ from rajdoll.api.render import (
     service_error_response,
     wants_json,
 )
-from rajdoll.api.routes import auth, engagements, settings
+from rajdoll.api.routes import auth, engagements
+from rajdoll.api.routes import settings as settings_routes
 from rajdoll.core.config import get_settings
 from rajdoll.core.crypto import KeyStore
 from rajdoll.core.db import get_sessionmaker
 from rajdoll.services.errors import ServiceError
+from rajdoll.services.session_check import Prober, make_prober
 
 # Pico's icons are data: URIs; htmx indicator styles are disabled via htmx-config, so no
 # inline styles or scripts are needed anywhere (TRD 9).
@@ -38,13 +40,17 @@ SECURITY_HEADERS = {
 
 
 def create_app(
-    session_factory: sessionmaker[Session] | None = None, keystore: KeyStore | None = None
+    session_factory: sessionmaker[Session] | None = None,
+    keystore: KeyStore | None = None,
+    session_prober: Prober | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="RAJDOLL", version=__version__, docs_url=None, redoc_url=None, openapi_url=None
     )
     app.state.session_factory = session_factory or get_sessionmaker()
-    app.state.keystore = keystore or KeyStore(get_settings().secrets_dir)
+    config = get_settings()
+    app.state.keystore = keystore or KeyStore(config.secrets_dir)
+    app.state.session_prober = session_prober or make_prober(config.proxy_url, config.tools_token)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -99,7 +105,7 @@ def create_app(
 
     app.include_router(auth.router)
     app.include_router(engagements.router)
-    app.include_router(settings.router)
+    app.include_router(settings_routes.router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
 
