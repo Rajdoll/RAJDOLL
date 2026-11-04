@@ -17,6 +17,9 @@ dependencies = [
     "alembic==1.20.1",
     "psycopg[binary]==3.3.7",
     "cryptography==50.0.2",
+    "argon2-cffi==25.1.0",
+    "jinja2==3.1.6",
+    "python-multipart==0.0.33",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +33,9 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["rajdoll*"]
 
+[tool.setuptools.package-data]
+"rajdoll.api" = ["templates/*.html", "static/*.css", "static/vendor/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -37,6 +43,10 @@ extend-exclude = ["legacy"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency markers are meant to be called in argument defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Form", "fastapi.Body"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]

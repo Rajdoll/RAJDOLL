@@ -1,0 +1,9 @@
+{% extends layout %}
+{% block title %}Galat {{ status_code }} · RAJDOLL{% endblock %}
+{% block content %}
+<article class="narrow">
+  <header><h1>Galat {{ status_code }}</h1></header>
+  <p>{{ message }}</p>
+  <footer><a href="/">Kembali ke beranda</a></footer>
+</article>
+{% endblock %}
