@@ -103,6 +103,8 @@ Kunci yang dipakai:
 | `session_check_marker` | `text` null | Teks penanda login. |
 | `created_at`, `updated_at` | `timestamptz` | |
 
+Constraint (`CHECK`): `end_date >= start_date` jika keduanya terisi.
+
 ### 4.2 `scope_rule`
 
 | Kolom | Tipe | Keterangan |
@@ -182,6 +184,10 @@ Dipakai untuk scan biasa dan putaran retest.
 | `error` | `text` null | |
 | `created_at`, `started_at`, `finished_at` | `timestamptz` | |
 
+Constraint (`CHECK`):
+- `kind = 'scan'` wajib punya `profile`; `kind = 'retest'` wajib tanpa `profile`.
+- `status = 'paused'` jika dan hanya jika `paused_reason` terisi.
+
 ### 5.2 `task`
 
 | Kolom | Tipe | Keterangan |
@@ -218,7 +224,7 @@ Sumber data untuk log, notifikasi, dan SSE.
 | `message` | `text` | Pesan berbahasa Indonesia untuk UI. |
 | `data` | `jsonb` null | |
 
-Indeks: `(scan_id, id)`. Setiap insert diikuti `NOTIFY scan_events, '<scan_id>:<id>'`.
+Indeks: `(scan_id, id)`. Trigger `scan_event_notify` menjalankan `pg_notify('scan_events', '<scan_id>:<id>')` untuk setiap insert, siapa pun yang menulisnya (termasuk peran `rajdoll_tools`).
 
 ## 6. Tabel temuan dan pendukung
 
@@ -255,10 +261,11 @@ Indeks: `(scan_id, id)`. Setiap insert diikuti `NOTIFY scan_events, '<scan_id>:<
 
 Pemetaan severity dari skor (sama untuk CVSS 3.1 dan 4.0): 9.0–10.0 `critical`, 7.0–8.9 `high`, 4.0–6.9 `medium`, 0.1–3.9 `low`, 0.0 `info`.
 
-Aturan konsistensi (dijaga di service layer, sebagian dengan `CHECK`):
-- `validation = 'manual'` ⇒ `decision = 'accepted'` saat dibuat.
-- `retest_result <> 'not_tested'` ⇒ `decision = 'accepted'`.
-- `decision = 'rejected'` ⇒ `decision_reason` tidak kosong.
+Aturan konsistensi:
+- `validation = 'manual'` ⇒ `decision = 'accepted'` saat dibuat (service layer).
+- `retest_result <> 'not_tested'` ⇒ `decision = 'accepted'` (`CHECK`). Mengubah keputusan dari `accepted` harus mengembalikan `retest_result` ke `not_tested` lebih dulu.
+- `decision = 'rejected'` ⇒ `decision_reason` tidak kosong (`CHECK`).
+- `cvss31_score` dan `cvss40_score` di antara 0 dan 10 (`CHECK`).
 
 Indeks: `(engagement_id, decision, severity)`, `(engagement_id, validation)`.
 
@@ -401,6 +408,8 @@ Kunci data penugasan disimpan di volume `secrets`, **bukan di database**, agar s
 | `rajdoll_tools` | Egress proxy di `tools` | `SELECT` pada `task`, `scan`, `scope_rule`, `engagement` (kolom `id`, `settings`); `INSERT` pada `request_log` dan `scan_event`. |
 
 Dengan pembatasan ini, container `tools` tidak bisa membaca temuan, evidence, atau sesi.
+
+Peran `rajdoll_tools` dibuat oleh migrasi baseline tanpa `LOGIN`. Login dengan password diaktifkan di F3, saat egress proxy mulai menulis ke database.
 
 ## 9. Pemetaan istilah AFD
 

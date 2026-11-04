@@ -11,6 +11,23 @@ permissions:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rajdoll_app
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rajdoll_app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      RAJDOLL_TEST_DATABASE_URL: postgresql+psycopg://rajdoll_app:ci@127.0.0.1:5432/postgres
+      RAJDOLL_REQUIRE_DB_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,6 +58,14 @@ jobs:
         run: docker compose up -d --build --wait --wait-timeout 180
       - name: Check api health
         run: curl -fsS http://127.0.0.1:8000/health
+      - name: Check migrations ran (17 tables + alembic_version)
+        run: |
+          count=$(docker compose exec -T db psql -U rajdoll_app -d rajdoll -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
+          echo "public tables: $count"
+          test "$count" -eq 18
+      - name: Check master key was created
+        run: docker compose exec -T api test -s /secrets/master.key
       - name: Show service status
         if: always()
         run: docker compose ps

@@ -2,7 +2,7 @@
 
 Asisten pribadi untuk vulnerability assessment (VA) aplikasi web. RAJDOLL menjalankan pipeline VA lengkap di laptop: recon, pengujian per kategori OWASP WSTG v4.2, validasi temuan secara deterministik, bantuan LLM lokal untuk tugas-tugas kecil, triase, laporan Markdown, dan retest.
 
-> **Status: sedang dibangun ulang.** Saat ini repo berada di fase **F0 (persiapan)**. Belum ada fitur VA yang bisa dipakai. Rencana lengkap ada di [`docs/v1/IPD.md`](docs/v1/IPD.md).
+> **Status: sedang dibangun ulang.** Saat ini repo berada di fase **F1 (fondasi: database, enkripsi, login)**. Belum ada fitur VA yang bisa dipakai. Rencana lengkap ada di [`docs/v1/IPD.md`](docs/v1/IPD.md).
 
 ## Dokumen
 
@@ -35,6 +35,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ruff check . && ruff format --check . && pytest
 ```
+
+Tes database butuh PostgreSQL 16; isi `RAJDOLL_TEST_DATABASE_URL` (lihat `AGENTS.md`). Tanpa variabel itu, tes database dilewati.
 
 ## Kode lama
 
