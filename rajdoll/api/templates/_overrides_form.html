@@ -1,0 +1,43 @@
+<form id="overrides-form" hx-patch="/engagements/{{ engagement.id }}" hx-target="this" hx-swap="outerHTML">
+  <input type="hidden" name="section" value="overrides">
+  <h2>Pengaturan scan</h2>
+  <p><small>Kosongkan isian untuk memakai nilai bawaan aplikasi (ditampilkan samar di dalam isian).</small></p>
+  {% if overrides_saved %}<p class="success" role="status">Pengaturan scan disimpan.</p>{% endif %}
+  {% if overrides_errors %}<div class="error" role="alert"><ul>{% for message in overrides_errors %}<li>{{ message }}</li>{% endfor %}</ul></div>{% endif %}
+  <div class="grid">
+    <label>Rate limit (request per detik)
+      <input type="number" name="rate_limit_rps" step="0.1" min="0.1" max="1000" value="{{ overrides.rate_limit_rps if overrides.rate_limit_rps is not none else '' }}" placeholder="{{ app_defaults.rate_limit_rps }}">
+    </label>
+    <label>Tugas paralel
+      <input type="number" name="concurrency" min="1" max="16" value="{{ overrides.concurrency if overrides.concurrency is not none else '' }}" placeholder="{{ app_defaults.concurrency }}">
+    </label>
+  </div>
+  <div class="grid">
+    <label>Lanjut otomatis checkpoint (menit)
+      <input type="number" name="checkpoint_timeout_min" min="1" max="1440" value="{{ overrides.checkpoint_timeout_min if overrides.checkpoint_timeout_min is not none else '' }}" placeholder="{{ app_defaults.checkpoint_timeout_min }}">
+    </label>
+    <label>Ukuran maksimum body evidence (KB)
+      <input type="number" name="evidence_max_kb" min="4" max="16384" value="{{ (overrides.evidence_max_bytes // 1024) if overrides.evidence_max_bytes is not none else '' }}" placeholder="{{ app_defaults.evidence_max_bytes // 1024 }}">
+    </label>
+  </div>
+  <div class="grid">
+    {% for name, label, default_value in [("checkpoint_enabled", "Checkpoint setelah perencanaan", app_defaults.checkpoint_enabled), ("oob_enabled", "Pengujian out-of-band", app_defaults.oob_enabled)] %}
+    {% set current = overrides[name] %}
+    <label>{{ label }}
+      <select name="{{ name }}">
+        <option value="default"{% if current is none %} selected{% endif %}>Ikuti bawaan ({{ "aktif" if default_value else "nonaktif" }})</option>
+        <option value="on"{% if current is true %} selected{% endif %}>Aktif</option>
+        <option value="off"{% if current is false %} selected{% endif %}>Nonaktif</option>
+      </select>
+    </label>
+    {% endfor %}
+  </div>
+  <fieldset>
+    <legend>Header identitas <small>(opsional, agar trafik VA mudah dikenali dan di-whitelist instansi)</small></legend>
+    <div class="grid">
+      <label>Nama header <input name="identity_header_name" maxlength="64" value="{{ overrides.identity_header.name if overrides.identity_header else '' }}" placeholder="X-VA-Team"></label>
+      <label>Nilai <input name="identity_header_value" maxlength="256" value="{{ overrides.identity_header.value if overrides.identity_header else '' }}"></label>
+    </div>
+  </fieldset>
+  <button type="submit">Simpan pengaturan scan</button>
+</form>

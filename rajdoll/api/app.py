@@ -9,9 +9,18 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from rajdoll import __version__
 from rajdoll.api.deps import CsrfError, NotAuthenticatedError
-from rajdoll.api.render import STATIC_DIR, error_response, is_htmx, wants_json
-from rajdoll.api.routes import auth, pages, settings
+from rajdoll.api.render import (
+    STATIC_DIR,
+    error_response,
+    is_htmx,
+    service_error_response,
+    wants_json,
+)
+from rajdoll.api.routes import auth, engagements, settings
+from rajdoll.core.config import get_settings
+from rajdoll.core.crypto import KeyStore
 from rajdoll.core.db import get_sessionmaker
+from rajdoll.services.errors import ServiceError
 
 # Pico's icons are data: URIs; htmx indicator styles are disabled via htmx-config, so no
 # inline styles or scripts are needed anywhere (TRD 9).
@@ -28,11 +37,14 @@ SECURITY_HEADERS = {
 }
 
 
-def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
+def create_app(
+    session_factory: sessionmaker[Session] | None = None, keystore: KeyStore | None = None
+) -> FastAPI:
     app = FastAPI(
         title="RAJDOLL", version=__version__, docs_url=None, redoc_url=None, openapi_url=None
     )
     app.state.session_factory = session_factory or get_sessionmaker()
+    app.state.keystore = keystore or KeyStore(get_settings().secrets_dir)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -56,6 +68,10 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
         return error_response(
             request, 403, "csrf_failed", "Token keamanan tidak valid. Muat ulang halaman."
         )
+
+    @app.exception_handler(ServiceError)
+    async def service_error(request: Request, exc: ServiceError) -> Response:
+        return service_error_response(request, exc)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException) -> Response:
@@ -82,7 +98,7 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
         return {"status": "ok", "service": "api", "version": __version__}
 
     app.include_router(auth.router)
-    app.include_router(pages.router)
+    app.include_router(engagements.router)
     app.include_router(settings.router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

@@ -1,0 +1,21 @@
+<nav aria-label="breadcrumb"><ul><li><a href="/">Penugasan</a></li><li>{{ engagement.name }}</li></ul></nav>
+<div class="page-head">
+  <hgroup>
+    <h1>{{ engagement.name }}</h1>
+    <p>{% if engagement.organization %}{{ engagement.organization }} · {% endif %}{{ engagement.target_url }}</p>
+  </hgroup>
+  {% include "_engagement_badge.html" %}
+</div>
+<nav class="tabs" aria-label="Tab penugasan">
+  <ul>
+    {% for tab in tabs %}
+    <li>
+      {% if tab.href %}
+      <a href="{{ tab.href }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}</a>
+      {% else %}
+      <span class="tab-disabled" title="Tersedia mulai fase {{ tab.phase }}">{{ tab.label }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</nav>

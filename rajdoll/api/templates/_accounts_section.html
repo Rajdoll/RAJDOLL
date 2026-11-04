@@ -1,0 +1,38 @@
+<section id="accounts-section">
+  <h2>Akun target</h2>
+  <p><small>Tempel sesi dari Burp atau DevTools browser: header <code>Cookie:</code> / <code>Authorization:</code> per baris, string cookie <code>a=1; b=2</code>, atau seluruh request mentah. Nilai sesi disimpan terenkripsi dan tidak ditampilkan lagi; yang terlihat hanya nama cookie dan header. Uji IDOR butuh minimal dua akun. Tombol <em>Uji sesi</em> tersedia mulai fase F3.</small></p>
+  {% if account_errors %}<div class="error" role="alert">{% for message in account_errors %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}
+  {% for account in accounts %}
+  <article class="account">
+    <header>
+      <strong>{{ account.label }}</strong>
+      <span class="badge session-{{ account.session_status }}">{{ session_status_labels[account.session_status] }}</span>
+    </header>
+    <p><small>Cookie: {{ account.cookie_names | join(", ") or "—" }}<br>Header: {{ account.header_names | join(", ") or "—" }}</small></p>
+    <details>
+      <summary>Ganti sesi</summary>
+      <form hx-patch="/engagements/{{ engagement.id }}/accounts/{{ account.id }}" hx-target="#accounts-section" hx-swap="outerHTML">
+        <textarea name="session_text" rows="4" required aria-label="Sesi baru untuk {{ account.label }}" placeholder="Cookie: session=..."></textarea>
+        <button type="submit" class="secondary">Simpan sesi baru</button>
+      </form>
+    </details>
+    <footer>
+      <button type="button" class="outline secondary btn-small"
+              hx-delete="/engagements/{{ engagement.id }}/accounts/{{ account.id }}"
+              hx-target="#accounts-section" hx-swap="outerHTML"
+              hx-confirm="Hapus {{ account.label }} beserta sesinya?">Hapus akun</button>
+    </footer>
+  </article>
+  {% endfor %}
+  <details{% if not accounts or account_errors %} open{% endif %}>
+    <summary>Tambah akun</summary>
+    <form hx-post="/engagements/{{ engagement.id }}/accounts" hx-target="#accounts-section" hx-swap="outerHTML">
+      <label>Label <input name="label" value="{{ next_label }}" maxlength="50" required></label>
+      <label>
+        Sesi
+        <textarea name="session_text" rows="6" required placeholder="Cookie: session=abc123; theme=dark&#10;Authorization: Bearer eyJ..."></textarea>
+      </label>
+      <button type="submit">Tambah akun</button>
+    </form>
+  </details>
+</section>

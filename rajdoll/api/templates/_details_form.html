@@ -1,0 +1,19 @@
+{% set v = values | default({}) %}
+<form id="details-form" hx-patch="/engagements/{{ engagement.id }}" hx-target="this" hx-swap="outerHTML">
+  <input type="hidden" name="section" value="details">
+  <h2>Data penugasan</h2>
+  {% if details_saved %}<p class="success" role="status">Data penugasan disimpan.</p>{% endif %}
+  {% if details_errors %}<div class="error" role="alert"><ul>{% for message in details_errors %}<li>{{ message }}</li>{% endfor %}</ul></div>{% endif %}
+  <div class="grid">
+    <label>Nama aplikasi <input name="name" required maxlength="200" value="{{ v.get('name', engagement.name) }}"></label>
+    <label>Instansi <input name="organization" maxlength="200" value="{{ v.get('organization', engagement.organization or '') }}"></label>
+  </div>
+  <label>URL target <input type="url" name="target_url" required value="{{ v.get('target_url', engagement.target_url) }}"></label>
+  <div class="grid">
+    <label>Tanggal mulai <input type="date" name="start_date" value="{{ v.get('start_date', engagement.start_date.isoformat() if engagement.start_date else '') }}"></label>
+    <label>Tanggal selesai <input type="date" name="end_date" value="{{ v.get('end_date', engagement.end_date.isoformat() if engagement.end_date else '') }}"></label>
+  </div>
+  <label>Catatan <textarea name="notes" rows="3" maxlength="4000">{{ v.get('notes', engagement.notes or '') }}</textarea></label>
+  <button type="submit">Simpan data penugasan</button>
+  {% if htmx %}{% include "_engagement_status.html" %}{% endif %}
+</form>

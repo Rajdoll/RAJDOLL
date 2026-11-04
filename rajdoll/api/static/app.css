@@ -1,7 +1,38 @@
 /* Small additions on top of Pico.css. No inline styles are used anywhere (CSP style-src 'self'). */
 .narrow { max-width: 32rem; margin: 2rem auto; }
-.error { color: var(--pico-del-color); }
-.success { color: var(--pico-ins-color); }
+.error, .error p, .error li { color: var(--pico-del-color); }
+.success, .success p { color: var(--pico-ins-color); }
 .nav-form { margin: 0; }
 .nav-form button { margin: 0; padding: 0.25rem 0.75rem; }
 .brand { text-decoration: none; }
+.muted { color: var(--pico-muted-color); }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.page-head hgroup { margin-bottom: 0.5rem; }
+.h5 { font-size: 1.05rem; }
+ul.plain { list-style: none; padding-left: 0; }
+ul.plain li { list-style: none; }
+
+.badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 1rem; font-size: 0.8rem; border: 1px solid var(--pico-muted-border-color); white-space: nowrap; }
+.status-draft { color: var(--pico-muted-color); }
+.status-ready { color: var(--pico-primary); border-color: var(--pico-primary); }
+.status-active { color: var(--pico-ins-color); border-color: var(--pico-ins-color); }
+.status-done { color: var(--pico-secondary); }
+.session-valid { color: var(--pico-ins-color); border-color: var(--pico-ins-color); }
+.session-invalid { color: var(--pico-del-color); border-color: var(--pico-del-color); }
+.session-unknown { color: var(--pico-muted-color); }
+.sev { font-variant-numeric: tabular-nums; margin-right: 0.35rem; }
+.sev-critical, .sev-high { color: var(--pico-del-color); font-weight: 600; }
+
+.tabs ul { display: flex; gap: 0.25rem; flex-wrap: wrap; padding: 0; margin: 0 0 1.5rem; border-bottom: 1px solid var(--pico-muted-border-color); }
+.tabs li { list-style: none; padding: 0; margin: 0; }
+.tabs a, .tabs .tab-disabled { display: inline-block; padding: 0.5rem 0.9rem; text-decoration: none; border-bottom: 2px solid transparent; }
+.tabs a[aria-current="page"] { border-bottom-color: var(--pico-primary); font-weight: 600; }
+.tabs .tab-disabled { color: var(--pico-muted-color); cursor: not-allowed; }
+
+.btn-small { padding: 0.2rem 0.6rem; font-size: 0.85rem; margin: 0; }
+td.actions { text-align: right; width: 1%; white-space: nowrap; }
+article.account header { display: flex; gap: 0.75rem; align-items: center; }
+.warning-box { border-left: 4px solid var(--pico-del-color); }
+.danger-zone { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--pico-del-color); }
+button.danger { background-color: var(--pico-del-color); border-color: var(--pico-del-color); }
+main section + section, main form + form, main form + section { margin-top: 2.5rem; }

@@ -1,0 +1,27 @@
+<section id="scope-section">
+  <h2>Scope</h2>
+  <p><small>Hanya host di daftar ini yang boleh diuji; semua host lain ditolak. Pola <code>*.instansi.test</code> mencakup semua subdomain, tetapi tidak <code>instansi.test</code> sendiri.</small></p>
+  {% if scope_errors %}<div class="error" role="alert">{% for message in scope_errors %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}
+  <table>
+    <tbody>
+      {% for rule in scope_rules %}
+      <tr>
+        <td><code>{{ rule.pattern }}</code>{% if host_matches(rule.pattern, target_host) %} <small class="muted">mencakup URL target</small>{% endif %}</td>
+        <td class="actions">
+          <button type="button" class="outline secondary btn-small"
+                  hx-delete="/engagements/{{ engagement.id }}/scope/{{ rule.id }}"
+                  hx-target="#scope-section" hx-swap="outerHTML"
+                  hx-confirm="Hapus {{ rule.pattern }} dari scope?">Hapus</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form hx-post="/engagements/{{ engagement.id }}/scope" hx-target="#scope-section" hx-swap="outerHTML">
+    <fieldset role="group">
+      <input name="pattern" required placeholder="app.instansi.test atau *.instansi.test" aria-label="Host atau pola scope">
+      <button type="submit">Tambah</button>
+    </fieldset>
+  </form>
+  {% if htmx %}{% include "_engagement_status.html" %}{% endif %}
+</section>

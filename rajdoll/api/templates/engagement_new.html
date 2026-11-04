@@ -1,0 +1,27 @@
+{% extends layout %}
+{% block title %}Penugasan baru · RAJDOLL{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb"><ul><li><a href="/">Penugasan</a></li><li>Penugasan baru</li></ul></nav>
+<h1>Penugasan baru</h1>
+{% if errors %}
+<div class="error" role="alert"><p>Penugasan belum disimpan:</p><ul>{% for message in errors %}<li>{{ message }}</li>{% endfor %}</ul></div>
+{% endif %}
+<form method="post" action="/engagements">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="grid">
+    <label>Nama aplikasi <input name="name" required maxlength="200" value="{{ values.get('name', '') }}" autofocus></label>
+    <label>Instansi <input name="organization" maxlength="200" value="{{ values.get('organization', '') }}"></label>
+  </div>
+  <label>
+    URL target
+    <input type="url" name="target_url" required placeholder="https://app.instansi.test" value="{{ values.get('target_url', '') }}">
+    <small>Host dari URL ini otomatis masuk ke scope.</small>
+  </label>
+  <div class="grid">
+    <label>Tanggal mulai <input type="date" name="start_date" value="{{ values.get('start_date', '') }}"></label>
+    <label>Tanggal selesai <input type="date" name="end_date" value="{{ values.get('end_date', '') }}"></label>
+  </div>
+  <label>Catatan <textarea name="notes" rows="3" maxlength="4000" placeholder="Misalnya nomor surat tugas">{{ values.get('notes', '') }}</textarea></label>
+  <button type="submit">Simpan penugasan</button>
+</form>
+{% endblock %}

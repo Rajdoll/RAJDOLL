@@ -1,0 +1,43 @@
+{% extends layout %}
+{% block title %}Penugasan · RAJDOLL{% endblock %}
+{% block content %}
+<div class="page-head">
+  <hgroup>
+    <h1>Penugasan</h1>
+    <p>Daftar penugasan VA.</p>
+  </hgroup>
+  <a href="/engagements/new" role="button">+ Penugasan baru</a>
+</div>
+{% if items %}
+<div class="overflow-auto">
+<table class="striped">
+  <thead>
+    <tr><th>Aplikasi</th><th>Instansi</th><th>Status</th><th>Temuan diterima</th><th>Diperbarui</th></tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    {% set e = item.engagement %}
+    <tr>
+      <td><a href="/engagements/{{ e.id }}">{{ e.name }}</a><br><small class="muted">{{ e.target_url }}</small></td>
+      <td>{{ e.organization or "—" }}</td>
+      <td><span class="badge status-{{ e.status }}">{{ engagement_status_labels[e.status] }}</span></td>
+      <td>
+        {% set accepted = item.counts.accepted %}
+        {% if accepted.values() | sum == 0 %}—{% else %}
+        {% for sev in ["critical", "high", "medium", "low"] %}<span class="sev sev-{{ sev }}" title="{{ severity_labels[sev][1] }}">{{ accepted[sev] }}{{ severity_labels[sev][0] }}</span> {% endfor %}
+        {% endif %}
+      </td>
+      <td>{{ ago(e.updated_at) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p><small class="muted">K = kritis, T = tinggi, S = sedang, R = rendah.</small></p>
+{% else %}
+<article>
+  <p>Belum ada penugasan.</p>
+  <a href="/engagements/new" role="button" class="secondary">Buat penugasan pertama</a>
+</article>
+{% endif %}
+{% endblock %}
