@@ -40,13 +40,15 @@ def default_value(name: str) -> str:
     return "rajdoll"
 
 
-def raw_request(request: httpx.Request) -> str:
+def raw_request(request: httpx.Request, mask: str = MASK) -> str:
+    """The request as raw HTTP/1.1 text; session headers show `mask` (for example
+    `[sesi Akun B]` when the account matters, as in authorization tests)."""
     target = request.url.raw_path.decode("ascii", errors="replace")
     lines = [f"{request.method} {target} HTTP/1.1", f"Host: {request.url.netloc.decode()}"]
     for name, value in request.headers.items():
         if name.lower() in ("host", "content-length", "accept-encoding", "connection"):
             continue
-        lines.append(f"{name}: {MASK if name.lower() in MASKED_HEADERS else value}")
+        lines.append(f"{name}: {mask if name.lower() in MASKED_HEADERS else value}")
     try:
         content = request.content
     except httpx.RequestNotRead:  # multipart bodies are streamed

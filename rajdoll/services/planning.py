@@ -107,6 +107,15 @@ def plan_endpoints(session: Session, scan: Scan) -> list[dict[str, Any]]:
     return rows
 
 
+def skip_reason(name: str, available: set[str], account_count: int) -> str | None:
+    """Why a module the scan runs cannot test anything (a SKIP_LABELS key), or None."""
+    if name not in available:
+        return "not_available"
+    if name == "authorization" and account_count < 2:
+        return "needs_two_accounts"
+    return None
+
+
 def module_rows(
     scan: Scan, available: set[str], account_count: int, endpoints: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -114,12 +123,8 @@ def module_rows(
     rows = []
     for name in MODULE_LABELS:
         enabled = name in scan.modules
-        reason = None
-        if name not in available:
-            reason = "not_available"
-        elif name == "authorization" and account_count < 2:
-            reason = "needs_two_accounts"
-        elif not enabled:
+        reason = skip_reason(name, available, account_count)
+        if reason is None and not enabled:
             reason = "disabled"
         rows.append(
             {

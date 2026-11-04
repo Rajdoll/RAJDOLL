@@ -30,9 +30,9 @@ TAG_LABELS: dict[str, str] = {
 }
 
 _WRITE = {"POST", "PUT", "PATCH", "DELETE"}
-_ID_SEGMENT = re.compile(r"\{(?:id|uuid|hash|[A-Za-z_]*[Ii]d)\}")
-_ID_PARAM = re.compile(r"^(id|uid|.*[_-]id|.*Id|user|userid|account|akun|nik|nip|no|nomor)$", re.I)
-_ADMIN = re.compile(
+ID_SEGMENT = re.compile(r"\{(?:id|uuid|hash|[A-Za-z_]*[Ii]d)\}")
+ID_PARAM = re.compile(r"^(id|uid|.*[_-]id|.*Id|user|userid|account|akun|nik|nip|no|nomor)$", re.I)
+ADMIN_PATH = re.compile(
     r"(?:^|/)(admin|administrator|console|dashboard|manage|management|backoffice)(?:/|$|\.)", re.I
 )
 _AUTH = re.compile(
@@ -80,9 +80,9 @@ def rule_tags(endpoint: dict[str, Any]) -> list[str]:
     body_locations = {p.get("location") for p in endpoint.get("body_params") or []}
     tags: set[str] = set()
 
-    if _ID_SEGMENT.search(path) or any(_ID_PARAM.match(p) for p in params):
+    if ID_SEGMENT.search(path) or any(ID_PARAM.match(p) for p in params):
         tags.add("idor_candidate")
-    if _ADMIN.search(path):
+    if ADMIN_PATH.search(path):
         tags.add("admin")
     secrets = {"password", "pass", "pwd", "kata_sandi"} & {p.lower() for p in params}
     if _AUTH.search(path) or (method in _WRITE and secrets):

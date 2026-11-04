@@ -148,6 +148,55 @@ CATALOG: dict[str, VulnType] = {
                 "https://cwe.mitre.org/data/definitions/918.html",
             ),
         ),
+        VulnType(
+            key="idor",
+            title="Insecure Direct Object Reference (IDOR)",
+            wstg_id="WSTG-ATHZ-04",
+            cwe_id="CWE-639",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+            description=(
+                "Aplikasi menampilkan objek berdasarkan pengenal yang dikirim pengguna tanpa "
+                "memeriksa apakah objek tersebut milik pengguna yang sedang login, sehingga akun "
+                "lain dapat membuka objek milik akun ini hanya dengan mengganti pengenalnya."
+            ),
+            impact=(
+                "Pengguna yang sudah login dapat membaca data milik pengguna lain (data pribadi, "
+                "dokumen, transaksi) dengan menebak atau mengurutkan pengenal objek."
+            ),
+            recommendation=(
+                "Periksa kepemilikan atau hak akses setiap objek di sisi server untuk setiap "
+                "permintaan, berdasarkan identitas dari sesi, bukan dari parameter. Pertimbangkan "
+                "pengenal acak yang tidak dapat ditebak sebagai lapisan tambahan."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/04-Testing_for_Insecure_Direct_Object_References",
+                "https://cwe.mitre.org/data/definitions/639.html",
+            ),
+        ),
+        VulnType(
+            key="privilege_escalation",
+            title="Eskalasi Hak Akses (fungsi admin tanpa pemeriksaan peran)",
+            wstg_id="WSTG-ATHZ-03",
+            cwe_id="CWE-269",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+            description=(
+                "Sebuah fungsi administratif hanya memeriksa bahwa pengguna sudah login, tanpa "
+                "memeriksa perannya, sehingga akun berhak rendah yang ditolak di fungsi admin "
+                "lain tetap dapat membuka fungsi ini."
+            ),
+            impact=(
+                "Pengguna biasa dapat menjalankan atau melihat fungsi khusus admin, misalnya "
+                "daftar seluruh pengguna, pengaturan, atau perubahan data milik orang lain."
+            ),
+            recommendation=(
+                "Terapkan pemeriksaan peran di sisi server pada setiap fungsi administratif secara "
+                "terpusat (deny by default), bukan hanya menyembunyikan menu di antarmuka."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/05-Authorization_Testing/03-Testing_for_Privilege_Escalation",
+                "https://cwe.mitre.org/data/definitions/269.html",
+            ),
+        ),
     ]
 }
 
