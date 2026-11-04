@@ -4,7 +4,7 @@
 |---|---|
 | Dokumen | Technical Requirement Document (TRD) |
 | Acuan | PRD v1.1 (`docs/v1/PRD.md`) |
-| Status | Disetujui (v1.1, 4 November 2026) |
+| Status | Disetujui (v1.2, 4 November 2026) |
 | Dokumen terkait | AFD (alur dan layar), BSD (skema data dan API), IPD (tahapan) |
 
 Dokumen ini menjelaskan **bagaimana** kebutuhan di PRD dipenuhi secara teknis. Skema tabel dan kontrak API dirinci di BSD; di sini hanya disebut sejauh perlu untuk menjelaskan desain.
@@ -150,8 +150,11 @@ Semua tool HTTP dan validator diarahkan ke proxy internal berbasis mitmproxy. Pr
 | **Deteksi blokir dan WAF** | Lihat bagian 7. | F-48, F-49 |
 
 Detail teknis:
-- Adaptor menambahkan header internal `X-Rajdoll-Task: <id>` agar proxy tahu tugas mana yang mengirim request. Proxy menghapus header ini sebelum meneruskan ke target.
-- Proxy mendekripsi HTTPS dengan CA milik RAJDOLL yang dibuat saat instalasi. Tool pengujian umumnya sudah mengabaikan verifikasi sertifikat; untuk tool yang tidak, CA ini dipasang di image `tools`.
+- **Konteks request dibawa oleh kredensial proxy**, bukan header khusus, supaya tool yang tidak bisa menambah header tetap bisa dipakai. Username `task.<id_tugas>.<tool>` untuk tugas pipeline, `eng.<id_penugasan>.<keperluan>` untuk request langsung (misalnya `session_check`); password-nya token internal `TOOLS_TOKEN`. Kredensial dicek di setiap request HTTP dan di tahap `CONNECT` untuk HTTPS, lalu dihapus sebelum diteruskan. Tanpa kredensial yang valid, proxy menjawab 407.
+- Scope dicek **sebelum** koneksi ke target dibuka (`connection_strategy=lazy`): untuk HTTPS di tahap `CONNECT`, lalu sekali lagi untuk setiap request di dalam terowongan, termasuk header `Host`.
+- Rate limit diambil dari `scan.settings_snapshot` untuk tugas, dan dari `engagement.settings` untuk request langsung (bawaan 5 request per detik). Satu token bucket per penugasan.
+- Proxy mendekripsi HTTPS dengan CA yang dibuat mitmproxy di volume `tools-data`. CA ini tidak perlu dipasang di tool karena tool pengujian dan klien Python RAJDOLL memang tidak memverifikasi sertifikat target (clone umumnya memakai sertifikat self-signed).
+- Proxy dan runner berjalan dalam satu container lewat `tools/entrypoint.py`; jika salah satu berhenti, keduanya dihentikan agar Docker menyalakan ulang bersama.
 - Tool non-HTTP (nmap, testssl.sh) tidak lewat proxy. Targetnya dicek oleh adaptor sebelum dijalankan dan eksekusinya dicatat di audit log sebagai satu entri per pemanggilan.
 - Header identitas (PRD F-50) disisipkan oleh proxy jika diaktifkan di pengaturan penugasan.
 
@@ -363,7 +366,7 @@ Body evidence dipotong pada ukuran maksimum (bawaan 1 MB per body, bisa diatur),
 | Prasyarat | Windows dengan Docker Desktop (backend WSL2), LM Studio dengan server lokal aktif di port 1234, BitLocker atau Device encryption aktif di drive data Docker (bagian 8.2). |
 | Lokasi repo | Di dalam filesystem WSL (misalnya `~/RAJDOLL`), bukan di `/mnt/c`, agar akses berkas dan build jauh lebih cepat. |
 | Memori WSL2 | Bawaan WSL2 memakai maksimal 50% RAM (16 GB dari 32 GB). Ini cukup; bisa diatur lewat `%UserProfile%\.wslconfig` jika perlu. |
-| Volume | `pgdata` (database), `secrets` (kunci utama, kunci data penugasan, CA proxy, token internal), `nuclei-templates`. |
+| Volume | `pgdata` (database), `secrets` (kunci utama dan kunci data penugasan; hanya untuk `api` dan `worker`), `tools-data` (CA proxy dan, mulai F3b, template nuclei; hanya untuk `tools`). Token internal dan password peran `rajdoll_tools` diisi di `.env`. |
 | Instalasi pertama | `docker compose up -d`, lalu buka `http://127.0.0.1:8000` untuk membuat password dan memeriksa koneksi LLM. |
 | Pembaruan template nuclei | Perintah manual yang butuh internet, dicatat versinya. Tidak otomatis. |
 

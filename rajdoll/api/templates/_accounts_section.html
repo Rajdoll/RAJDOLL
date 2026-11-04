@@ -1,6 +1,6 @@
 <section id="accounts-section">
   <h2>Akun target</h2>
-  <p><small>Tempel sesi dari Burp atau DevTools browser: header <code>Cookie:</code> / <code>Authorization:</code> per baris, string cookie <code>a=1; b=2</code>, atau seluruh request mentah. Nilai sesi disimpan terenkripsi dan tidak ditampilkan lagi; yang terlihat hanya nama cookie dan header. Uji IDOR butuh minimal dua akun. Tombol <em>Uji sesi</em> tersedia mulai fase F3.</small></p>
+  <p><small>Tempel sesi dari Burp atau DevTools browser: header <code>Cookie:</code> / <code>Authorization:</code> per baris, string cookie <code>a=1; b=2</code>, atau seluruh request mentah. Nilai sesi disimpan terenkripsi dan tidak ditampilkan lagi; yang terlihat hanya nama cookie dan header. Uji IDOR butuh minimal dua akun. <em>Uji sesi</em> membuka URL cek sesi dengan sesi akun, lewat egress proxy.</small></p>
   {% if account_errors %}<div class="error" role="alert">{% for message in account_errors %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}
   {% for account in accounts %}
   <article class="account">
@@ -9,6 +9,8 @@
       <span class="badge session-{{ account.session_status }}">{{ session_status_labels[account.session_status] }}</span>
     </header>
     <p><small>Cookie: {{ account.cookie_names | join(", ") or "—" }}<br>Header: {{ account.header_names | join(", ") or "—" }}</small></p>
+    {% set result = check_results.get(account.id) %}
+    {% if result %}<p class="{{ 'success' if result.valid else 'error' }}" role="status">{{ result.message }}</p>{% endif %}
     <details>
       <summary>Ganti sesi</summary>
       <form hx-patch="/engagements/{{ engagement.id }}/accounts/{{ account.id }}" hx-target="#accounts-section" hx-swap="outerHTML">
@@ -17,6 +19,9 @@
       </form>
     </details>
     <footer>
+      <button type="button" class="secondary btn-small"
+              hx-post="/engagements/{{ engagement.id }}/accounts/{{ account.id }}/check"
+              hx-target="#accounts-section" hx-swap="outerHTML"{% if not engagement.session_check_url %} disabled title="Atur cek sesi di bawah dulu"{% endif %}>Uji sesi</button>
       <button type="button" class="outline secondary btn-small"
               hx-delete="/engagements/{{ engagement.id }}/accounts/{{ account.id }}"
               hx-target="#accounts-section" hx-swap="outerHTML"

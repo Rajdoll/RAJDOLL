@@ -22,6 +22,7 @@ from rajdoll.core.enums import (
 from rajdoll.core.models import Engagement, Finding, Scan, ScopeRule, TargetAccount
 from rajdoll.services import settings as app_settings
 from rajdoll.services.errors import Conflict, FieldError, NotFound, ValidationFailed
+from rajdoll.services.session_check import CheckResult, Prober
 from rajdoll.services.target_sessions import (
     SessionParseError,
     TargetSession,
@@ -470,6 +471,28 @@ def update_account(
         )
         account.session_status = SessionStatus.UNKNOWN
         account.session_checked_at = None
+
+
+def check_account(
+    session: Session,
+    keystore: KeyStore,
+    engagement: Engagement,
+    account: TargetAccount,
+    prober: Prober,
+) -> CheckResult:
+    """Run the session check for one account and record the outcome (AFD A2.3)."""
+    if not engagement.session_check_url or not engagement.session_check_marker:
+        raise ValidationFailed.one("session_check", "Atur URL cek sesi dan penanda login dulu.")
+    result = prober(
+        engagement.session_check_url,
+        engagement.session_check_marker,
+        account_session(keystore, engagement, account),
+        engagement.id,
+    )
+    if result.checked:
+        account.session_status = SessionStatus.VALID if result.valid else SessionStatus.INVALID
+        account.session_checked_at = func.now()
+    return result
 
 
 def remove_account(session: Session, account: TargetAccount) -> None:

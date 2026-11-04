@@ -409,7 +409,7 @@ Kunci data penugasan disimpan di volume `secrets`, **bukan di database**, agar s
 
 Dengan pembatasan ini, container `tools` tidak bisa membaca temuan, evidence, atau sesi.
 
-Peran `rajdoll_tools` dibuat oleh migrasi baseline tanpa `LOGIN`. Login dengan password diaktifkan di F3, saat egress proxy mulai menulis ke database.
+Peran `rajdoll_tools` dibuat oleh migrasi baseline tanpa `LOGIN`. Langkah bootstrap di `api` mengaktifkan login dengan password dari `TOOLS_DB_PASSWORD` (`.env`) setiap kali container menyala; `api` adalah satu-satunya layanan yang menerima password ini selain `tools`.
 
 ## 9. Pemetaan istilah AFD
 
@@ -464,7 +464,7 @@ Peran `rajdoll_tools` dibuat oleh migrasi baseline tanpa `LOGIN`. Login dengan p
 | `DELETE` | `/engagements/{id}/scope/{rule_id}` | Ditolak jika aturan terakhir atau `target_url` jadi di luar scope. |
 | `GET`/`POST` | `/engagements/{id}/accounts` | Body `POST`: `label`, `auth_method`, `session` (`cookies` dan/atau `headers`, atau teks mentah), `credentials` (untuk auto-login). |
 | `PATCH`/`DELETE` | `/engagements/{id}/accounts/{account_id}` | |
-| `POST` | `/engagements/{id}/accounts/{account_id}/check` | Uji sesi; balikan: `{"status": "valid", "checked_at"}`. |
+| `POST` | `/engagements/{id}/accounts/{account_id}/check` | Uji sesi lewat egress proxy; balikan: `{"status", "checked_at", "checked", "message", "http_status"}`. `checked = false` berarti pemeriksaan tidak bisa dijalankan (proxy atau target tidak terjangkau) dan status akun tidak diubah. |
 | `PUT` | `/engagements/{id}/session-check` | Body: `url`, `marker`. |
 | `GET` | `/engagements/{id}/endpoints` | Filter: `tag`, `excluded`, `source`. |
 
@@ -582,7 +582,7 @@ Pada contoh ini severity `high` mengikuti skor CVSS 4.0 (7.1) karena `cvss_prima
 
 ## 11. API internal (`worker` → `tools`)
 
-Hanya di jaringan internal Docker, dengan token bersama di header `Authorization: Bearer <token>` (token dibuat saat instalasi, disimpan di volume `secrets`).
+Hanya di jaringan internal Docker, dengan token bersama `TOOLS_TOKEN` (`.env`) di header `Authorization: Bearer <token>`. Token yang sama dipakai sebagai password kredensial egress proxy (TRD 4.2).
 
 | Metode | Path | Keterangan |
 |---|---|---|
