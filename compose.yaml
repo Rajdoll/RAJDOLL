@@ -1,0 +1,78 @@
+name: rajdoll
+
+# Only `api` publishes a port, and only on 127.0.0.1 (TRD 2.2, 9).
+# `db` and `tools` are reachable only on the internal Docker network.
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: rajdoll-app:dev
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    RAJDOLL_DATABASE_URL: postgresql+psycopg://rajdoll_app:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}@db:5432/rajdoll
+    RAJDOLL_SECRETS_DIR: /secrets
+    RAJDOLL_TOOLS_URL: http://tools:9000
+  volumes:
+    - secrets:/secrets
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: rajdoll
+      POSTGRES_USER: rajdoll_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rajdoll_app -d rajdoll"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "rajdoll.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      tools:
+        condition: service_healthy
+
+  tools:
+    build:
+      context: .
+      dockerfile: tools/Dockerfile
+    image: rajdoll-tools:dev
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  secrets:
