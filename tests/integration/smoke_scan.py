@@ -64,10 +64,20 @@ with Session() as db:
     check(len(recon) == 1 and recon[0].status == "done", f"recon task done ({recon[0].status})")
     titles = [e.get("title") for e in (recon[0].result_summary or {}).get("endpoints", [])]
     check("RAJDOLL testapp" in titles, f"httpx probe reached testapp (titles={titles})")
-    audited = list(db.scalars(select(RequestLog).where(RequestLog.task_id == recon[0].id)))
-    check(len(audited) > 0, f"recon traffic went through the proxy ({len(audited)} rows)")
-    check(all(r.scan_id == scan_id for r in audited), "audit rows carry the scan")
+    recon_task_id = recon[0].id
 
+# The proxy writes audit rows from a background thread, so they may land a moment later.
+audited: list = []
+deadline = time.monotonic() + 20
+while time.monotonic() < deadline and not audited:
+    with Session() as db:
+        audited = list(db.scalars(select(RequestLog).where(RequestLog.task_id == recon_task_id)))
+    if not audited:
+        time.sleep(1)
+check(len(audited) > 0, f"recon traffic went through the proxy ({len(audited)} rows)")
+check(all(r.scan_id == scan_id for r in audited), "audit rows carry the scan")
+
+with Session() as db:
     scans.checkpoint_continue(db, db.get(Scan, scan_id))
     db.commit()
 
