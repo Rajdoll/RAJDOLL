@@ -130,7 +130,8 @@ Agar tugas aman diulang, setiap temuan punya **sidik jari** (gabungan modul, jen
 
 ### 4.1 Runner
 
-- API HTTP internal: `POST /run` menerima nama tool, parameter bertipe, batas waktu, dan ID tugas; mengembalikan keluaran mentah dan hasil yang sudah dinormalisasi.
+- API HTTP internal: `POST /run` menerima `run_id` (dibuat pemanggil, dipakai untuk membatalkan), nama tool, parameter bertipe, batas waktu, ID tugas, dan scope; mengembalikan keluaran mentah dan hasil yang sudah dinormalisasi. Semua target dicek terhadap scope **sebelum** tool dijalankan; target di luar scope menghasilkan status `scope_rejected` tanpa menjalankan apa pun.
+- Setiap tool berjalan di direktori kerja sementara, dalam process group sendiri (agar batal dan timeout ikut menghentikan proses anak), dengan environment minimal tanpa variabel proxy warisan; satu-satunya jalan keluar adalah egress proxy yang diberikan adaptor lewat flag tool.
 - Setiap tool punya **adaptor** yang:
   1. menyusun argumen dari parameter bertipe (tanpa shell, tanpa `shell=True`, tanpa merangkai string perintah dari keluaran LLM),
   2. memeriksa target terhadap scope sebelum menjalankan,
@@ -162,10 +163,10 @@ Detail teknis:
 
 | Tool | Fungsi | Status dibanding sistem lama |
 |---|---|---|
-| nuclei (≥ 3.10) | Mesin utama: template dan mode DAST | Baru |
+| nuclei 3.11.1 | Mesin utama: template dan mode DAST | Baru |
 | katana | Crawling, termasuk mode headless untuk SPA | Dipertahankan, dipindah ke image `tools` |
 | ffuf | Fuzzing direktori dan parameter | Dipertahankan |
-| httpx (ProjectDiscovery) | Probe HTTP dan deteksi teknologi | Dipertahankan, menggantikan whatweb |
+| httpx (ProjectDiscovery) 1.12.0 | Probe HTTP dan deteksi teknologi | Dipertahankan, menggantikan whatweb |
 | nmap | Port scan dan deteksi layanan | Dipertahankan |
 | sqlmap | SQL injection | Dipertahankan |
 | dalfox | XSS | Dipertahankan |
@@ -180,7 +181,7 @@ Detail teknis:
 | tplmap | SSTI | **Dihapus** (tidak lagi dirawat), digantikan template nuclei dan verifikasi SSTI yang sudah ada |
 | ssrfmap, kxss | SSRF dan refleksi XSS | **Dihapus**, digantikan template nuclei dan dalfox |
 
-Semua tool dipasang dengan versi pasti di `Dockerfile` (sistem lama memakai `@latest` untuk beberapa tool). Template nuclei resmi dikunci pada satu rilis; template kustom RAJDOLL disimpan di repo (`templates/nuclei/`).
+Semua tool dipasang dengan versi pasti di `tools/Dockerfile` (sistem lama memakai `@latest` untuk beberapa tool). Tool berbasis Go (nuclei, httpx, dan nanti katana, ffuf, dalfox) dibangun dari source di tahap build terpisah dengan `go install modul@versi`, sehingga setiap modul diverifikasi terhadap checksum database Go. Template kustom RAJDOLL disimpan di repo (`templates/nuclei/`) dan disalin ke image; template nuclei resmi, dikunci pada satu rilis, ditambahkan bersama modul yang memakainya (F5/F6).
 
 **Out-of-band (interactsh) dimatikan secara bawaan.** Server interactsh publik berada di internet, sehingga data pengujian keluar dari laptop (melanggar NF-06), dan clone target belum tentu bisa menjangkau internet. Bisa diaktifkan per penugasan dengan peringatan, atau memakai server interactsh lokal di versi berikutnya.
 

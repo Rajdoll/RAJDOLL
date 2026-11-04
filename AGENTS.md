@@ -16,7 +16,7 @@ The approved documents in `docs/v1/` define what to build. Read the relevant one
 
 ## Current phase
 
-**F1 — foundation (done).** F1a: the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b: single-user login and UI sessions (`rajdoll/services/auth.py`), CSRF, settings (`rajdoll/services/settings.py`), HTML/HTMX/JSON rendering (`rajdoll/api/render.py`), and the base UI. **F2 — engagements.** Engagement CRUD, scope rules (`rajdoll/core/scope.py`, deny by default, reused by the egress proxy in F3), target accounts with pasted sessions parsed by `rajdoll/services/target_sessions.py` and encrypted per engagement, session-check configuration, per-engagement scan settings, and deletion that removes the key file first (`rajdoll/services/engagements.py`). **F3 — tools container.** F3a: the egress proxy (`tools/proxy/`, a mitmproxy addon: proxy-credential context, scope before connect, audit rows, per-engagement rate limit, identity header), the tools entrypoint running proxy and runner together, `rajdoll_tools` login at bootstrap, and the account session check through the proxy (`rajdoll/services/session_check.py`). F3b adds the runner `/run`, the httpx and nuclei adapters, pinned tool binaries, and `testapp/`. See `docs/v1/IPD.md` section 4.
+**F1 — foundation (done).** F1a: the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b: single-user login and UI sessions (`rajdoll/services/auth.py`), CSRF, settings (`rajdoll/services/settings.py`), HTML/HTMX/JSON rendering (`rajdoll/api/render.py`), and the base UI. **F2 — engagements.** Engagement CRUD, scope rules (`rajdoll/core/scope.py`, deny by default, reused by the egress proxy in F3), target accounts with pasted sessions parsed by `rajdoll/services/target_sessions.py` and encrypted per engagement, session-check configuration, per-engagement scan settings, and deletion that removes the key file first (`rajdoll/services/engagements.py`). **F3 — tools container.** F3a: the egress proxy (`tools/proxy/`, a mitmproxy addon: proxy-credential context, scope before connect, audit rows, per-engagement rate limit, identity header), the tools entrypoint running proxy and runner together, `rajdoll_tools` login at bootstrap, and the account session check through the proxy (`rajdoll/services/session_check.py`). F3b: the runner (`tools/runner/`: `/run` with scope pre-check and cancel, executor with minimal environment and process groups), the httpx and nuclei adapters, nuclei 3.11.1 and httpx 1.12.0 built from Go modules in `tools/Dockerfile`, the first custom nuclei template, and `testapp/`. Next is F4 (workflow engine). See `docs/v1/IPD.md` section 4.
 
 ## Layout
 
@@ -65,6 +65,16 @@ Without that variable the database tests are skipped; CI sets `RAJDOLL_REQUIRE_D
 
 Proxy tests need mitmproxy, which belongs to the tools image, not the main package: `pip install -e ".[dev]" -r tools/requirements.txt`. They are skipped without it; CI sets `RAJDOLL_REQUIRE_PROXY_TESTS=1`. `tests/test_proxy_integration.py` starts a real `mitmdump` against PostgreSQL and local HTTP/HTTPS servers.
 
+Tool tests need the real binaries. Build them with Go (the module proxy resolves the Go 1.26 toolchain automatically) and point `RAJDOLL_TOOL_BIN_DIR` at them:
+
+```bash
+GOBIN=$PWD/.tools go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1
+GOBIN=$PWD/.tools go install github.com/projectdiscovery/httpx/cmd/httpx@v1.12.0
+RAJDOLL_TOOL_BIN_DIR=$PWD/.tools pytest tests/test_runner_integration.py
+```
+
+CI runs the same flow inside the real containers: `docker compose --profile test up`, then `tests/integration/smoke_tools.py` is piped into the api container.
+
 New migration: change the models, then `alembic revision --autogenerate -m "<what>"`, review the file, and keep `tests/test_migrations.py::test_models_match_migration` green.
 
 ## Web layer conventions
@@ -85,6 +95,8 @@ New migration: change the models, then `alembic revision --autogenerate -m "<wha
 - The proxy runs as the `rajdoll_tools` database role: it may read `task`, `scan`, `scope_rule`, and `engagement(id, settings)`, and insert into `request_log` and `scan_event`. Never widen that.
 - The tools image copies only `rajdoll/core/scope.py` from the main package; keep that module standard-library only.
 - The tools container must never mount the `secrets` volume.
+- Adding a tool: an `Adapter` subclass in `tools/runner/adapters/` with a strict pydantic `Params` model (`extra="forbid"`), `targets()` for the runner's scope pre-check, `command()` returning argv that passes `ctx.proxy_url` to the tool, and `parse()` covered by a fixture from a real run in `tests/fixtures/`. Pin the binary in `tools/Dockerfile`.
+- `testapp/` is deliberately vulnerable. List each weakness in `WEAKNESSES`, keep it under the compose `test` profile, and never publish its port.
 
 ## Conventions
 

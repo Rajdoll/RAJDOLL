@@ -620,6 +620,13 @@ Contoh `POST /run`:
 
 Nilai `status`: `completed`, `failed`, `timeout`, `cancelled`, `scope_rejected`. Sesi akun dikirim oleh worker setiap pemanggilan dan tidak disimpan oleh `tools`.
 
+Catatan implementasi (F3b):
+- `run_id` dikirim oleh pemanggil (8–64 karakter `[A-Za-z0-9_-]`) supaya `POST /run/{run_id}/cancel` bisa dipanggil saat `/run` masih berjalan.
+- `scope_rejected` dibalas tanpa menjalankan tool, dengan daftar host di luar scope di `out_of_scope`.
+- Respons juga memuat `parse_error` (galat pengurai, keluaran mentah tetap dikembalikan) dan `stderr_tail`.
+- Parameter tool yang tidak valid dibalas 422 tanpa memantulkan nilai yang ditolak, karena nilai header bisa berisi sesi.
+- Tool yang tersedia: `httpx` (`urls`, `follow_redirects`, `threads`, `timeout_s`, `headers`) dan `nuclei` (`targets`, `templates`, `tags`, `severities`, `rate_limit`, `concurrency`, `timeout_s`, `follow_redirects`, `dast`, `oob`, `headers`). Model parameternya ada di `tools/runner/adapters/`.
+
 ## 12. Perubahan terhadap dokumen lain
 
 - **TRD 8.2 dan 12** diperbarui: kunci data penugasan disimpan sebagai berkas di volume `secrets`, bukan di database (bagian 7 dokumen ini).
