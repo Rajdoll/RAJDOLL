@@ -101,4 +101,10 @@ def validate(ctx: TaskContext, finding: dict[str, Any]) -> Verdict | None:
 
 def _load() -> None:
     """Import the validator modules so they register themselves."""
-    from rajdoll.validators import authentication, authorization, injection, session  # noqa: F401
+    from rajdoll.validators import (  # noqa: F401
+        authentication,
+        authorization,
+        configuration,
+        injection,
+        session,
+    )

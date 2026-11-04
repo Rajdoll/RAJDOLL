@@ -63,6 +63,9 @@ EXPECTED = [
     ("GET", "/admin/pengguna"),
     ("POST", "/api/v1/token"),
     ("GET", "/api/v1/saya"),
+    ("GET", "/index.php"),
+    ("GET", "/.git/config"),
+    ("GET", "/info.php"),
 ]
 # Copy of testapp.EXPECTED_FINDINGS, kept equal by tests/test_testapp.py.
 EXPECTED_FINDINGS = [
@@ -78,6 +81,13 @@ EXPECTED_FINDINGS = [
     ("weak_lockout", "/login", None),
     ("weak_lockout", "/api/v1/token", None),
     ("cookie_flags", "/login", "sid"),
+    ("sensitive_file", "/.env", None),
+    ("sensitive_file", "/.git/config", None),
+    ("debug_exposed", "/info.php", None),
+    ("backup_file", "/index.php.bak", None),
+    ("missing_security_headers", "/", None),
+    ("version_disclosure", "/", "Server"),
+    ("http_trace", "/", None),
 ]
 TARGET = "http://testapp:8080"
 
@@ -124,8 +134,8 @@ with Session() as db:
     for label, user, password in [("Akun A", "budi", "budi123"), ("Akun B", "sari", "sari123")]:
         account = {"label": label, "session_text": login(user, password)}
         engagements.add_account(db, keystore, engagement, account)
-    modules = ["information_gathering", "authentication", "authorization", "session",
-               "input_validation"]  # fmt: skip
+    modules = ["information_gathering", "configuration", "authentication", "authorization",
+               "session", "input_validation"]  # fmt: skip
     scan = scans.start(db, engagement, "custom", modules)
     db.commit()
     scan_id, engagement_id = scan.id, engagement.id

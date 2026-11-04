@@ -153,6 +153,7 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
             engagements.add_account(session, keystore, engagement, account)
         modules = [
             "information_gathering",
+            "configuration",
             "authentication",
             "authorization",
             "session",

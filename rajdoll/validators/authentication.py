@@ -75,7 +75,8 @@ def _jwt(ctx: TaskContext, finding: dict[str, Any]) -> Verdict:
     note = f"Token yang diubah diterima di {probe.target.label}, token asli diterima, tanpa token "
     note += f"ditolak (terulang {ROUNDS} kali)."
     if finding["vuln_type"] == "jwt_weak_secret":
-        note = f"Secret HMAC {params.get('secret')!r} cocok. " + note
+        # The secret itself stays in the encrypted PoC: notes end up in plaintext task logs.
+        note = "Secret HMAC dari daftar secret umum (lihat PoC) masih cocok. " + note
     return Verdict(True, tuple(evidence), note)
 
 
