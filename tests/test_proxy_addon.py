@@ -150,6 +150,38 @@ def test_tunnel_request_in_scope_is_forwarded_with_identity_header(
     assert orphan.response.status_code == 407
 
 
+def test_tls_scanner_tunnels_are_passed_through_and_audited(
+    proxy: EgressProxy, store: FakeStore
+) -> None:
+    from types import SimpleNamespace
+
+    def hello(connect: http.HTTPFlow) -> Any:
+        # The hook reads only the client connection and sets ignore_connection.
+        context = SimpleNamespace(client=connect.client_conn)
+        return SimpleNamespace(context=context, ignore_connection=False)
+
+    scanner = _flow("CONNECT", "app.instansi.test", auth=_auth("task.7.sslyze"))
+    asyncio.run(proxy.http_connect(scanner))
+    assert scanner.response is None
+    assert store.rows[-1]["method"] == "CONNECT" and store.rows[-1]["tool"] == "sslyze"
+    assert store.rows[-1]["outcome"] == "forwarded"
+    data = hello(scanner)
+    proxy.tls_clienthello(data)
+    assert data.ignore_connection is True
+
+    rows = len(store.rows)
+    crawler = _flow("CONNECT", "app.instansi.test", auth=_auth("task.7.nuclei"))
+    asyncio.run(proxy.http_connect(crawler))
+    assert len(store.rows) == rows  # an intercepted tunnel is audited per request instead
+    data = hello(crawler)
+    proxy.tls_clienthello(data)
+    assert data.ignore_connection is False
+
+    outside = _flow("CONNECT", "evil.example", auth=_auth("task.7.sslyze"))
+    asyncio.run(proxy.http_connect(outside))
+    assert outside.response is not None and outside.response.status_code == 403
+
+
 def test_host_header_mismatch_inside_tunnel_is_blocked(
     proxy: EgressProxy, store: FakeStore
 ) -> None:

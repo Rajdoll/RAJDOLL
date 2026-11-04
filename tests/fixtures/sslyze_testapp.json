@@ -1,0 +1,4633 @@
+{
+ "invalid_server_strings": [],
+ "server_scan_results": [
+  {
+   "uuid": "01037f2a-7f70-4cc6-942e-51f35d0349f3",
+   "server_location": {
+    "hostname": "127.0.0.1",
+    "port": 39895,
+    "connection_type": "VIA_HTTP_PROXY",
+    "ip_address": null,
+    "http_proxy_settings": {
+     "hostname": "127.0.0.1",
+     "port": 50801,
+     "basic_auth_user": "task.1.sslyze",
+     "basic_auth_password": "[token]"
+    }
+   },
+   "network_configuration": {
+    "tls_server_name_indication": "127.0.0.1",
+    "tls_opportunistic_encryption": null,
+    "tls_client_auth_credentials": null,
+    "xmpp_to_hostname": null,
+    "network_timeout": 5,
+    "network_max_retries": 3
+   },
+   "connectivity_status": "COMPLETED",
+   "connectivity_error_trace": null,
+   "connectivity_result": {
+    "highest_tls_version_supported": "TLS_1_3",
+    "cipher_suite_supported": "TLS_AES_256_GCM_SHA384",
+    "client_auth_requirement": "DISABLED",
+    "supports_ecdh_key_exchange": true
+   },
+   "scan_status": "COMPLETED",
+   "scan_result": {
+    "certificate_info": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "hostname_used_for_server_name_indication": "127.0.0.1",
+      "certificate_deployments": [
+       {
+        "received_certificate_chain": [
+         {
+          "as_pem": "-----BEGIN CERTIFICATE-----\nMIIC2TCCAcGgAwIBAgIUbTMr0j9kC6dSo3cwmF/r5fBQAqUwDQYJKoZIhvcNAQEL\nBQAwEjEQMA4GA1UEAwwHdGVzdGFwcDAeFw0yNjExMDMyMjA1MDVaFw0yNzExMDQy\nMjA1MDVaMBIxEDAOBgNVBAMMB3Rlc3RhcHAwggEiMA0GCSqGSIb3DQEBAQUAA4IB\nDwAwggEKAoIBAQDUIQhS9upuKuNqhzQS01zRZDOvCkChq3Oq/+9zkvudmi3+xL7m\nl5Jw+mJqipuCERAbd0W4LF6K5lbZug4vtQ9d0kEaGdZn6RIfi2lX/1lLQlnj2RuK\nkN4m3exE8l6SvE0D/NCzkMfiG6G5xtZC+L95SXXbV/0ZmNDrbK9/tEAucAREdfg6\nQfjlZyQi4cU+sxJV0cTgmL36UFkbY7f09quhsBx6ibmCUmP0r9AMLlWEHbDdoHMk\nrm8ABLPlR6xxmgknSDudl/47hN2GI2mOc0opoUuX+/lVJii92dEfqqNaQu3JtghW\nm+e0Nt/jR83DXtIw7yCxXi5Wt0h3hhRXHgkPAgMBAAGjJzAlMCMGA1UdEQQcMBqC\nB3Rlc3RhcHCCCWxvY2FsaG9zdIcEfwAAATANBgkqhkiG9w0BAQsFAAOCAQEAhOyr\nCsOvnb1V4mWA+/Jss28QVxWy2HEIs0mqGXiFvYjNr3dlCn/wJ3E7BQormZiJlulX\nLCqPOK+yaQXTD0o56Nt08qXnb/pXw7urXVXRdxqIM+pP7jQx1ydC4MUbBJuOSBAC\nDVCwXXDLr4ULGFzXLVJp8/CbqZLszTQ6KwoVn9tjLPiov7TTPam7ZhHyr0xVJ9oN\n9VxDlBHvljeArzdPdvQB0KG/qdjjFdtM8NTLC4nDZ0Lwc+wmAWcLjP1xJepsOXlw\nR2pURLSavxtDoOfPL2RuCuIwhuXywBQWuI8JBBI1fPJomxlaat4gg/WsZUuZTIeb\nAKaIMPvY6z6dwly2hA==\n-----END CERTIFICATE-----\n",
+          "hpkp_pin": "RkqoldbfDbnaan2TOqWcYPZ47vta0Xfk9hzFY6CCRYU=",
+          "fingerprint_sha1": "qvlE3Pjkh2+wCQnboBVwspABAm0=",
+          "fingerprint_sha256": "ffReWpnS3Ewd38hbjYNXAuP6TngKFNK7Koq3QcvGXSg=",
+          "serial_number": 623421149396776518792801487826525462453778645669,
+          "not_valid_before": "2026-11-03T22:05:05Z",
+          "not_valid_after": "2027-11-04T22:05:05Z",
+          "subject_alternative_name": {
+           "dns_names": [
+            "testapp",
+            "localhost"
+           ],
+           "ip_addresses": [
+            "127.0.0.1"
+           ]
+          },
+          "signature_hash_algorithm": {
+           "name": "sha256",
+           "digest_size": 32
+          },
+          "signature_algorithm_oid": {
+           "name": "sha256WithRSAEncryption",
+           "dotted_string": "1.2.840.113549.1.1.11"
+          },
+          "subject": {
+           "rfc4514_string": "CN=testapp",
+           "attributes": [
+            {
+             "oid": {
+              "name": "commonName",
+              "dotted_string": "2.5.4.3"
+             },
+             "value": "testapp",
+             "rfc4514_string": "CN=testapp"
+            }
+           ]
+          },
+          "issuer": {
+           "rfc4514_string": "CN=testapp",
+           "attributes": [
+            {
+             "oid": {
+              "name": "commonName",
+              "dotted_string": "2.5.4.3"
+             },
+             "value": "testapp",
+             "rfc4514_string": "CN=testapp"
+            }
+           ]
+          },
+          "public_key": {
+           "algorithm": "RSAPublicKey",
+           "key_size": 2048,
+           "rsa_e": 65537,
+           "rsa_n": 26778809593510603739012100334852507900433373492166637689533696060827392148636908510643292520737340037662904198367151419834288486614360677902356336243964906792505326161001575824227060589587968981624277162545291266989620165760347332157529046478801150894931629064018121832021511216950477346002872716313503923006113246170461675524035829990116371086508362200002098653490972968360020054287596937587827906339369219924988128078459294980547973056644261762912287095123676529122187471742535755743107737122552175779248847893712969455493626473100657521929578998970181536076033448017458886308295614974444885963008427847836678097167,
+           "ec_curve_name": null,
+           "ec_x": null,
+           "ec_y": null
+          }
+         }
+        ],
+        "leaf_certificate_has_must_staple_extension": false,
+        "leaf_certificate_is_ev": false,
+        "leaf_certificate_signed_certificate_timestamps_count": 0,
+        "received_chain_contains_anchor_certificate": null,
+        "received_chain_has_valid_order": true,
+        "path_validation_results": [
+         {
+          "trust_store": {
+           "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/google_aosp.pem",
+           "name": "Android",
+           "version": "16.0.0_r4",
+           "ev_oids": null
+          },
+          "verified_certificate_chain": null,
+          "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+          "was_validation_successful": false
+         },
+         {
+          "trust_store": {
+           "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/apple.pem",
+           "name": "Apple",
+           "version": "iOS 26, iPadOS 26, macOS 26, tvOS 26, visionOS 26 and watchOS 26",
+           "ev_oids": null
+          },
+          "verified_certificate_chain": null,
+          "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+          "was_validation_successful": false
+         },
+         {
+          "trust_store": {
+           "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/oracle_java.pem",
+           "name": "Java",
+           "version": "jdk-13.0.2",
+           "ev_oids": null
+          },
+          "verified_certificate_chain": null,
+          "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+          "was_validation_successful": false
+         },
+         {
+          "trust_store": {
+           "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/mozilla_nss.pem",
+           "name": "Mozilla",
+           "version": "2026-03-28",
+           "ev_oids": [
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.2.276.0.44.1.1.1.4"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.2.392.200091.100.721.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.2.40.0.17.1.22"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.2.616.1.113527.2.5.1.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.159.1.17.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.13177.10.1.3.10"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.14370.1.6"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.14777.6.1.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.14777.6.1.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.17326.10.14.2.1.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.17326.10.14.2.2.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.17326.10.8.12.1.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.17326.10.8.12.2.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.22234.2.5.2.3.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.23223.1.1.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.29836.1.10"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.34697.2.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.34697.2.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.34697.2.3"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.34697.2.4"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.36305.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.40869.1.1.22.3"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.4146.1.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.4788.2.202.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.6334.1.100.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.6449.1.2.1.5.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.782.1.2.1.8.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.7879.13.24.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "1.3.6.1.4.1.8024.0.2.100.1.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.156.112554.3"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.528.1.1003.1.2.7"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.578.1.26.1.3.3"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.756.1.83.21.0"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.756.1.89.1.2.1.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.792.3.0.3.1.1.5"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.792.3.0.4.1.1.4"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.113733.1.7.23.6"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.113733.1.7.48.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.114028.10.1.2"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.114171.500.9"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.114404.1.1.2.4.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.114412.2.1"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.114413.1.7.23.3"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.114414.1.7.23.3"
+            },
+            {
+             "name": "Unknown OID",
+             "dotted_string": "2.16.840.1.114414.1.7.24.3"
+            }
+           ]
+          },
+          "verified_certificate_chain": null,
+          "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+          "was_validation_successful": false
+         },
+         {
+          "trust_store": {
+           "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/microsoft_windows.pem",
+           "name": "Windows",
+           "version": "2026-03-28",
+           "ev_oids": null
+          },
+          "verified_certificate_chain": null,
+          "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+          "was_validation_successful": false
+         }
+        ],
+        "verified_chain_has_sha1_signature": null,
+        "verified_chain_has_legacy_symantec_anchor": null,
+        "ocsp_response": null,
+        "ocsp_response_is_trusted": null,
+        "verified_certificate_chain": null
+       }
+      ],
+      "certificate_deployment_with_sni_disabled": {
+       "received_certificate_chain": [
+        {
+         "as_pem": "-----BEGIN CERTIFICATE-----\nMIIC2TCCAcGgAwIBAgIUbTMr0j9kC6dSo3cwmF/r5fBQAqUwDQYJKoZIhvcNAQEL\nBQAwEjEQMA4GA1UEAwwHdGVzdGFwcDAeFw0yNjExMDMyMjA1MDVaFw0yNzExMDQy\nMjA1MDVaMBIxEDAOBgNVBAMMB3Rlc3RhcHAwggEiMA0GCSqGSIb3DQEBAQUAA4IB\nDwAwggEKAoIBAQDUIQhS9upuKuNqhzQS01zRZDOvCkChq3Oq/+9zkvudmi3+xL7m\nl5Jw+mJqipuCERAbd0W4LF6K5lbZug4vtQ9d0kEaGdZn6RIfi2lX/1lLQlnj2RuK\nkN4m3exE8l6SvE0D/NCzkMfiG6G5xtZC+L95SXXbV/0ZmNDrbK9/tEAucAREdfg6\nQfjlZyQi4cU+sxJV0cTgmL36UFkbY7f09quhsBx6ibmCUmP0r9AMLlWEHbDdoHMk\nrm8ABLPlR6xxmgknSDudl/47hN2GI2mOc0opoUuX+/lVJii92dEfqqNaQu3JtghW\nm+e0Nt/jR83DXtIw7yCxXi5Wt0h3hhRXHgkPAgMBAAGjJzAlMCMGA1UdEQQcMBqC\nB3Rlc3RhcHCCCWxvY2FsaG9zdIcEfwAAATANBgkqhkiG9w0BAQsFAAOCAQEAhOyr\nCsOvnb1V4mWA+/Jss28QVxWy2HEIs0mqGXiFvYjNr3dlCn/wJ3E7BQormZiJlulX\nLCqPOK+yaQXTD0o56Nt08qXnb/pXw7urXVXRdxqIM+pP7jQx1ydC4MUbBJuOSBAC\nDVCwXXDLr4ULGFzXLVJp8/CbqZLszTQ6KwoVn9tjLPiov7TTPam7ZhHyr0xVJ9oN\n9VxDlBHvljeArzdPdvQB0KG/qdjjFdtM8NTLC4nDZ0Lwc+wmAWcLjP1xJepsOXlw\nR2pURLSavxtDoOfPL2RuCuIwhuXywBQWuI8JBBI1fPJomxlaat4gg/WsZUuZTIeb\nAKaIMPvY6z6dwly2hA==\n-----END CERTIFICATE-----\n",
+         "hpkp_pin": "RkqoldbfDbnaan2TOqWcYPZ47vta0Xfk9hzFY6CCRYU=",
+         "fingerprint_sha1": "qvlE3Pjkh2+wCQnboBVwspABAm0=",
+         "fingerprint_sha256": "ffReWpnS3Ewd38hbjYNXAuP6TngKFNK7Koq3QcvGXSg=",
+         "serial_number": 623421149396776518792801487826525462453778645669,
+         "not_valid_before": "2026-11-03T22:05:05Z",
+         "not_valid_after": "2027-11-04T22:05:05Z",
+         "subject_alternative_name": {
+          "dns_names": [
+           "testapp",
+           "localhost"
+          ],
+          "ip_addresses": [
+           "127.0.0.1"
+          ]
+         },
+         "signature_hash_algorithm": {
+          "name": "sha256",
+          "digest_size": 32
+         },
+         "signature_algorithm_oid": {
+          "name": "sha256WithRSAEncryption",
+          "dotted_string": "1.2.840.113549.1.1.11"
+         },
+         "subject": {
+          "rfc4514_string": "CN=testapp",
+          "attributes": [
+           {
+            "oid": {
+             "name": "commonName",
+             "dotted_string": "2.5.4.3"
+            },
+            "value": "testapp",
+            "rfc4514_string": "CN=testapp"
+           }
+          ]
+         },
+         "issuer": {
+          "rfc4514_string": "CN=testapp",
+          "attributes": [
+           {
+            "oid": {
+             "name": "commonName",
+             "dotted_string": "2.5.4.3"
+            },
+            "value": "testapp",
+            "rfc4514_string": "CN=testapp"
+           }
+          ]
+         },
+         "public_key": {
+          "algorithm": "RSAPublicKey",
+          "key_size": 2048,
+          "rsa_e": 65537,
+          "rsa_n": 26778809593510603739012100334852507900433373492166637689533696060827392148636908510643292520737340037662904198367151419834288486614360677902356336243964906792505326161001575824227060589587968981624277162545291266989620165760347332157529046478801150894931629064018121832021511216950477346002872716313503923006113246170461675524035829990116371086508362200002098653490972968360020054287596937587827906339369219924988128078459294980547973056644261762912287095123676529122187471742535755743107737122552175779248847893712969455493626473100657521929578998970181536076033448017458886308295614974444885963008427847836678097167,
+          "ec_curve_name": null,
+          "ec_x": null,
+          "ec_y": null
+         }
+        }
+       ],
+       "leaf_certificate_has_must_staple_extension": false,
+       "leaf_certificate_is_ev": false,
+       "leaf_certificate_signed_certificate_timestamps_count": 0,
+       "received_chain_contains_anchor_certificate": null,
+       "received_chain_has_valid_order": true,
+       "path_validation_results": [
+        {
+         "trust_store": {
+          "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/google_aosp.pem",
+          "name": "Android",
+          "version": "16.0.0_r4",
+          "ev_oids": null
+         },
+         "verified_certificate_chain": null,
+         "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+         "was_validation_successful": false
+        },
+        {
+         "trust_store": {
+          "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/apple.pem",
+          "name": "Apple",
+          "version": "iOS 26, iPadOS 26, macOS 26, tvOS 26, visionOS 26 and watchOS 26",
+          "ev_oids": null
+         },
+         "verified_certificate_chain": null,
+         "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+         "was_validation_successful": false
+        },
+        {
+         "trust_store": {
+          "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/oracle_java.pem",
+          "name": "Java",
+          "version": "jdk-13.0.2",
+          "ev_oids": null
+         },
+         "verified_certificate_chain": null,
+         "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+         "was_validation_successful": false
+        },
+        {
+         "trust_store": {
+          "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/mozilla_nss.pem",
+          "name": "Mozilla",
+          "version": "2026-03-28",
+          "ev_oids": [
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.2.276.0.44.1.1.1.4"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.2.392.200091.100.721.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.2.40.0.17.1.22"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.2.616.1.113527.2.5.1.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.159.1.17.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.13177.10.1.3.10"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.14370.1.6"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.14777.6.1.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.14777.6.1.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.17326.10.14.2.1.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.17326.10.14.2.2.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.17326.10.8.12.1.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.17326.10.8.12.2.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.22234.2.5.2.3.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.23223.1.1.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.29836.1.10"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.34697.2.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.34697.2.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.34697.2.3"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.34697.2.4"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.36305.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.40869.1.1.22.3"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.4146.1.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.4788.2.202.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.6334.1.100.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.6449.1.2.1.5.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.782.1.2.1.8.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.7879.13.24.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "1.3.6.1.4.1.8024.0.2.100.1.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.156.112554.3"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.528.1.1003.1.2.7"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.578.1.26.1.3.3"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.756.1.83.21.0"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.756.1.89.1.2.1.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.792.3.0.3.1.1.5"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.792.3.0.4.1.1.4"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.113733.1.7.23.6"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.113733.1.7.48.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.114028.10.1.2"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.114171.500.9"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.114404.1.1.2.4.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.114412.2.1"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.114413.1.7.23.3"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.114414.1.7.23.3"
+           },
+           {
+            "name": "Unknown OID",
+            "dotted_string": "2.16.840.1.114414.1.7.24.3"
+           }
+          ]
+         },
+         "verified_certificate_chain": null,
+         "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+         "was_validation_successful": false
+        },
+        {
+         "trust_store": {
+          "path": "/tmp/claude-0/-home-user-RAJDOLL/70cff704-4102-5306-8ffb-248aa515dcaf/scratchpad/venv-sslyze/lib/python3.12/site-packages/sslyze/plugins/certificate_info/trust_stores/pem_files/microsoft_windows.pem",
+          "name": "Windows",
+          "version": "2026-03-28",
+          "ev_oids": null
+         },
+         "verified_certificate_chain": null,
+         "validation_error": "validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=testapp)>, ...)>)",
+         "was_validation_successful": false
+        }
+       ],
+       "verified_chain_has_sha1_signature": null,
+       "verified_chain_has_legacy_symantec_anchor": null,
+       "ocsp_response": null,
+       "ocsp_response_is_trusted": null,
+       "verified_certificate_chain": null
+      }
+     }
+    },
+    "ssl_2_0_cipher_suites": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "tls_version_used": "SSL_2_0",
+      "is_tls_version_supported": false,
+      "accepted_cipher_suites": [],
+      "rejected_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "SSL_CK_RC4_128_WITH_MD5",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "SSL_CK_RC4_128_EXPORT40_WITH_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "SSL_CK_RC2_128_CBC_WITH_MD5",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC2-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "SSL_CK_RC2_128_CBC_EXPORT40_WITH_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC2-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "SSL_CK_IDEA_128_CBC_WITH_MD5",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "IDEA-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "SSL_CK_DES_64_CBC_WITH_MD5",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DES-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "SSL_CK_DES_192_EDE3_CBC_WITH_MD5",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DES-CBC3-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       }
+      ]
+     }
+    },
+    "ssl_3_0_cipher_suites": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "tls_version_used": "SSL_3_0",
+      "is_tls_version_supported": false,
+      "accepted_cipher_suites": [],
+      "rejected_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_MD5",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_MD5",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_IDEA_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "IDEA-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC2-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_RC4_128_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_NULL_SHA",
+         "is_anonymous": true,
+         "key_size": 0,
+         "openssl_name": "AECDH-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "AECDH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "AECDH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_SEED_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_RC4_128_MD5",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_DES_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 56,
+         "openssl_name": "ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "ADH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "EDH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "EDH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       }
+      ]
+     }
+    },
+    "tls_1_0_cipher_suites": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "tls_version_used": "TLS_1_0",
+      "is_tls_version_supported": true,
+      "accepted_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "AES256-SHA"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-SHA"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-AES256-SHA"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BD7ubiehrN62FgIGsv98OPUBxss4V5cYHc7Uiy3l6RA1U/7qvkLeQgh7StKkNZThBotepVcitpOA2GyTbvJazuo=",
+         "curve_name": "secp256r1",
+         "x": "Pu5uJ6Gs3rYWAgay/3w49QHGyzhXlxgdztSLLeXpEDU=",
+         "y": "U/7qvkLeQgh7StKkNZThBotepVcitpOA2GyTbvJazuo=",
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-AES128-SHA"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BGVOGWB0s2fy8RgEGcz8FSnkXzwyD9qY0IoS6kj72e73jG9O1wfaSFFYZoaSzJ9wB37fSsM/2jwGOI5sAmXqXwI=",
+         "curve_name": "secp256r1",
+         "x": "ZU4ZYHSzZ/LxGAQZzPwVKeRfPDIP2pjQihLqSPvZ7vc=",
+         "y": "jG9O1wfaSFFYZoaSzJ9wB37fSsM/2jwGOI5sAmXqXwI=",
+         "prime": null,
+         "generator": null
+        }
+       }
+      ],
+      "rejected_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_MD5",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_MD5",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_IDEA_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "IDEA-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC2-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_RC4_128_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_NULL_SHA",
+         "is_anonymous": true,
+         "key_size": 0,
+         "openssl_name": "AECDH-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "AECDH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "AECDH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_SEED_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_RC4_128_MD5",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_DES_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 56,
+         "openssl_name": "ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "ADH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "EDH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "EDH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       }
+      ]
+     }
+    },
+    "tls_1_1_cipher_suites": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "tls_version_used": "TLS_1_1",
+      "is_tls_version_supported": true,
+      "accepted_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "AES256-SHA"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-SHA"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-AES256-SHA"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BOWjhK1f7wH7W70yPFMwgxXAIdVdbT8W9b/f1EBBTaFp6IvxPQrAWUXB9jLuensnCLFg7WFnoE8rA3DSrbXeaJ8=",
+         "curve_name": "secp256r1",
+         "x": "5aOErV/vAftbvTI8UzCDFcAh1V1tPxb1v9/UQEFNoWk=",
+         "y": "6IvxPQrAWUXB9jLuensnCLFg7WFnoE8rA3DSrbXeaJ8=",
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-AES128-SHA"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BF7YqK0sG7vfgAfNkvEZhLr/nBCqwTOLWYqEJLzaUz1nc1BMXPa66NZ6ggTbskyhqGWuXiIHTuVXqisSrdz9GDE=",
+         "curve_name": "secp256r1",
+         "x": "XtiorSwbu9+AB82S8RmEuv+cEKrBM4tZioQkvNpTPWc=",
+         "y": "c1BMXPa66NZ6ggTbskyhqGWuXiIHTuVXqisSrdz9GDE=",
+         "prime": null,
+         "generator": null
+        }
+       }
+      ],
+      "rejected_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_MD5",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_MD5",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_IDEA_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "IDEA-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC2-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_RC4_128_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_NULL_SHA",
+         "is_anonymous": true,
+         "key_size": 0,
+         "openssl_name": "AECDH-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "AECDH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "AECDH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_SEED_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_RC4_128_MD5",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_DES_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 56,
+         "openssl_name": "ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "ADH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "EDH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "EDH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       }
+      ]
+     }
+    },
+    "tls_1_2_cipher_suites": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "tls_version_used": "TLS_1_2",
+      "is_tls_version_supported": true,
+      "accepted_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "AES256-GCM-SHA384"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "AES256-SHA256"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "AES256-SHA"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-GCM-SHA256"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-SHA256"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-SHA"
+        },
+        "ephemeral_key": null
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-CHACHA20-POLY1305"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 253,
+         "public_bytes": "ZvXLU4jAMl8lJCVP0CApjiN7+PDyVZKVu671uQFxHHk=",
+         "curve_name": "X25519",
+         "x": null,
+         "y": null,
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-AES256-GCM-SHA384"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BOLkQm6reavjd2lKR/NFFLh9TVuuz2oo+sag4YCzgoskEnNkjoOyYkRIqtFCTDvdjy2TsSW7wMcfnOlI0prd5eE=",
+         "curve_name": "secp256r1",
+         "x": "4uRCbqt5q+N3aUpH80UUuH1NW67Paij6xqDhgLOCiyQ=",
+         "y": "EnNkjoOyYkRIqtFCTDvdjy2TsSW7wMcfnOlI0prd5eE=",
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-AES256-SHA384"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BP8Tx4IwgxMLhA6uRxljBiOZEvAVP7Bmh0ML03H1v1bx44dpm86AzXfTuf8cFdtmSVdej6rtXw50RiXJv6eE+HY=",
+         "curve_name": "secp256r1",
+         "x": "/xPHgjCDEwuEDq5HGWMGI5kS8BU/sGaHQwvTcfW/VvE=",
+         "y": "44dpm86AzXfTuf8cFdtmSVdej6rtXw50RiXJv6eE+HY=",
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-AES256-SHA"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BP6Bs7X41Vh4eC5rPM1S9r3yvaP0zqcCx0U1LBH6TIPZ6C6oJtolSyEdXY4RZjyABYezkCHHvAKgeJnqVyNieL4=",
+         "curve_name": "secp256r1",
+         "x": "/oGztfjVWHh4Lms8zVL2vfK9o/TOpwLHRTUsEfpMg9k=",
+         "y": "6C6oJtolSyEdXY4RZjyABYezkCHHvAKgeJnqVyNieL4=",
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-AES128-GCM-SHA256"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BEPOw0fUKryBafOvJQ7NV6T+s2voH+NGdhr661CGQbttL970GROPWdeMROWk1e/ytHlWA8hi4RJfKT8csH3DAE0=",
+         "curve_name": "secp256r1",
+         "x": "Q87DR9QqvIFp868lDs1XpP6za+gf40Z2GvrrUIZBu20=",
+         "y": "L970GROPWdeMROWk1e/ytHlWA8hi4RJfKT8csH3DAE0=",
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-AES128-SHA256"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BMLvGZ4DcF7w3E237LOdOVfPcnJSEe6Nj7nurokeS61rpp4SqG5B6pr+4OO1i8Y0JpybrEaRrU59NOIAM7UnHuU=",
+         "curve_name": "secp256r1",
+         "x": "wu8ZngNwXvDcTbfss505V89yclIR7o2Pue6uiR5LrWs=",
+         "y": "pp4SqG5B6pr+4OO1i8Y0JpybrEaRrU59NOIAM7UnHuU=",
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-AES128-SHA"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 256,
+         "public_bytes": "BNijM+iV4Ao1Al00B6tOE3/N4AKpVLH7rm7bJi/qAM1elZapiDGyRsMhAnMlAgmoFnUQACarMJV7qYTpyNE/Tow=",
+         "curve_name": "secp256r1",
+         "x": "2KMz6JXgCjUCXTQHq04Tf83gAqlUsfuubtsmL+oAzV4=",
+         "y": "lZapiDGyRsMhAnMlAgmoFnUQACarMJV7qYTpyNE/Tow=",
+         "prime": null,
+         "generator": null
+        }
+       }
+      ],
+      "rejected_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_RC4_128_MD5",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_SHA256",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_NULL_MD5",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "NULL-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_IDEA_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "IDEA-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "CAMELLIA256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "CAMELLIA128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_ARIA_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ARIA256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_ARIA_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ARIA128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_CCM_8",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES256-CCM8"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_256_CCM",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "AES256-CCM"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_CCM_8",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-CCM8"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_AES_128_CCM",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "AES128-CCM"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-RC2-CBC-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_RC4_128_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_NULL_SHA",
+         "is_anonymous": true,
+         "key_size": 0,
+         "openssl_name": "AECDH-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "AECDH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "AECDH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "AECDH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-RSA-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-RSA-AES256-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDH-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-ECDSA-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-ECDSA-AES256-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDH-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDH-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDH-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-RSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_CAMELLIA_256_CBC_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-RSA-CAMELLIA256-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_CAMELLIA_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-RSA-CAMELLIA128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_ARIA_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ARIA256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_ARIA_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ARIA128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-RC4-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_NULL_SHA",
+         "is_anonymous": false,
+         "key_size": 0,
+         "openssl_name": "ECDHE-ECDSA-NULL-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-CHACHA20-POLY1305"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_CAMELLIA_256_CBC_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-CAMELLIA256-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_CAMELLIA_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-CAMELLIA128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-ARIA256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_ARIA_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-ARIA128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-CCM8"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_CCM",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-CCM"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "ECDHE-ECDSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-CCM8"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_CCM",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-CCM"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "ECDHE-ECDSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "ECDHE-ECDSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_SEED_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_RC4_128_MD5",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_DES_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 56,
+         "openssl_name": "ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_256_CBC_SHA256",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-AES256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_256_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 256,
+         "openssl_name": "ADH-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_AES_128_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 128,
+         "openssl_name": "ADH-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 168,
+         "openssl_name": "ADH-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_RC4_40_MD5",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-RC4-MD5"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": true,
+         "key_size": 40,
+         "openssl_name": "EXP-ADH-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-AES256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "DH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-AES256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DH-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DH-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-CHACHA20-POLY1305"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-CAMELLIA256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-CAMELLIA128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_ARIA_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-ARIA256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_ARIA_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-ARIA128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_CCM_8",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-CCM8"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_CCM",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-CCM"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-RSA-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_CCM_8",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-CCM8"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_CCM",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-CCM"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-RSA-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "DHE-RSA-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-RSA-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_SEED_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-SEED-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_DES_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 56,
+         "openssl_name": "EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-CAMELLIA256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-CAMELLIA256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-CAMELLIA128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-CAMELLIA128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_ARIA_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-ARIA256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_ARIA_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-ARIA128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-AES256-GCM-SHA384"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_256_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-AES256-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_256_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "DHE-DSS-AES256-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-AES128-GCM-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_128_CBC_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-AES128-SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_AES_128_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "DHE-DSS-AES128-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 168,
+         "openssl_name": "EDH-DSS-DES-CBC3-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA",
+         "is_anonymous": false,
+         "key_size": 40,
+         "openssl_name": "EXP-EDH-DSS-DES-CBC-SHA"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       }
+      ]
+     }
+    },
+    "tls_1_3_cipher_suites": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "tls_version_used": "TLS_1_3",
+      "is_tls_version_supported": true,
+      "accepted_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_CHACHA20_POLY1305_SHA256",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "TLS_CHACHA20_POLY1305_SHA256"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 253,
+         "public_bytes": "8WXdMKN80ziHgnRC1G5hCSjE8NcVFezdXgo4gTbY1X4=",
+         "curve_name": "X25519",
+         "x": null,
+         "y": null,
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_AES_256_GCM_SHA384",
+         "is_anonymous": false,
+         "key_size": 256,
+         "openssl_name": "TLS_AES_256_GCM_SHA384"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 253,
+         "public_bytes": "cY3SfYXwGwQ6xN8nRjW0LWq0qsdgxvgCt2Dp74pQ01w=",
+         "curve_name": "X25519",
+         "x": null,
+         "y": null,
+         "prime": null,
+         "generator": null
+        }
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_AES_128_GCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "TLS_AES_128_GCM_SHA256"
+        },
+        "ephemeral_key": {
+         "type_name": "ECDH",
+         "size": 253,
+         "public_bytes": "xSgv1qgUHCPWixLFGhpItVw7YJt5qn7bM9D9od374w0=",
+         "curve_name": "X25519",
+         "x": null,
+         "y": null,
+         "prime": null,
+         "generator": null
+        }
+       }
+      ],
+      "rejected_cipher_suites": [
+       {
+        "cipher_suite": {
+         "name": "TLS_AES_128_CCM_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "TLS_AES_128_CCM_SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       },
+       {
+        "cipher_suite": {
+         "name": "TLS_AES_128_CCM_8_SHA256",
+         "is_anonymous": false,
+         "key_size": 128,
+         "openssl_name": "TLS_AES_128_CCM_8_SHA256"
+        },
+        "error_message": "Server interrupted the TLS handshake"
+       }
+      ]
+     }
+    },
+    "tls_compression": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "supports_compression": false
+     }
+    },
+    "tls_1_3_early_data": {
+     "status": "NOT_SCHEDULED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": null
+    },
+    "openssl_ccs_injection": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "is_vulnerable_to_ccs_injection": false
+     }
+    },
+    "tls_fallback_scsv": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "supports_fallback_scsv": true
+     }
+    },
+    "heartbleed": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "is_vulnerable_to_heartbleed": false
+     }
+    },
+    "robot": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "robot_result": "NOT_VULNERABLE_NO_ORACLE"
+     }
+    },
+    "session_renegotiation": {
+     "status": "COMPLETED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": {
+      "supports_secure_renegotiation": true,
+      "is_vulnerable_to_client_renegotiation_dos": false,
+      "client_renegotiations_success_count": 0
+     }
+    },
+    "session_resumption": {
+     "status": "NOT_SCHEDULED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": null
+    },
+    "elliptic_curves": {
+     "status": "NOT_SCHEDULED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": null
+    },
+    "http_headers": {
+     "status": "NOT_SCHEDULED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": null
+    },
+    "tls_extended_master_secret": {
+     "status": "NOT_SCHEDULED",
+     "error_reason": null,
+     "error_trace": null,
+     "result": null
+    }
+   }
+  }
+ ],
+ "date_scans_started": "2026-11-04T22:05:07.427626Z",
+ "date_scans_completed": "2026-11-04T22:05:12.274721Z",
+ "sslyze_version": "6.3.1",
+ "sslyze_url": "https://github.com/nabla-c0d3/sslyze"
+}

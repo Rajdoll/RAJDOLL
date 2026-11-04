@@ -90,6 +90,10 @@ EXPECTED_FINDINGS = [
     ("version_disclosure", "/", "Server"),
     ("http_trace", "/", None),
     ("error_disclosure", "/laporan", "limit"),
+    ("weak_tls_protocol", "/", None),  # the HTTPS site of serve.py
+    ("certificate_problem", "/", None),
+    ("cleartext_credentials", "/login", None),
+    ("cleartext_credentials", "/api/v1/token", None),
 ]
 TARGET = "http://testapp:8080"
 
@@ -137,7 +141,7 @@ with Session() as db:
         account = {"label": label, "session_text": login(user, password)}
         engagements.add_account(db, keystore, engagement, account)
     modules = ["information_gathering", "configuration", "authentication", "authorization",
-               "session", "input_validation", "error_handling"]  # fmt: skip
+               "session", "input_validation", "error_handling", "cryptography"]  # fmt: skip
     scan = scans.start(db, engagement, "custom", modules)
     db.commit()
     scan_id, engagement_id = scan.id, engagement.id

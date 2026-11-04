@@ -482,6 +482,124 @@ CATALOG: dict[str, VulnType] = {
                 "https://cwe.mitre.org/data/definitions/209.html",
             ),
         ),
+        VulnType(
+            key="weak_tls_protocol",
+            title="Protokol SSL/TLS Usang Masih Diterima",
+            wstg_id="WSTG-CRYP-01",
+            cwe_id="CWE-327",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            description=(
+                "Server masih menerima koneksi dengan protokol usang (SSL 2.0/3.0, TLS 1.0, atau "
+                "TLS 1.1) yang tidak lagi dianggap aman."
+            ),
+            impact=(
+                "Penyerang di jaringan dapat memaksa atau memanfaatkan protokol lemah untuk "
+                "menurunkan keamanan koneksi dan membuka peluang penyadapan."
+            ),
+            recommendation=(
+                "Nonaktifkan SSL 2.0/3.0, TLS 1.0, dan TLS 1.1 di server; izinkan hanya TLS 1.2 "
+                "dan TLS 1.3 dengan cipher suite modern."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security",
+                "https://ssl-config.mozilla.org/",
+                "https://cwe.mitre.org/data/definitions/327.html",
+            ),
+        ),
+        VulnType(
+            key="weak_cipher",
+            title="Cipher Suite TLS Lemah Diterima",
+            wstg_id="WSTG-CRYP-01",
+            cwe_id="CWE-327",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            description=(
+                "Server menerima cipher suite lemah, misalnya NULL, EXPORT, anonim, RC4, DES, "
+                "atau 3DES."
+            ),
+            impact=(
+                "Koneksi yang memakai cipher lemah dapat didekripsi atau dimanipulasi oleh "
+                "penyerang di jaringan."
+            ),
+            recommendation=(
+                "Batasi cipher suite pada yang direkomendasikan (AEAD seperti AES-GCM dan "
+                "ChaCha20-Poly1305 dengan forward secrecy)."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security",
+                "https://cwe.mitre.org/data/definitions/327.html",
+            ),
+        ),
+        VulnType(
+            key="certificate_problem",
+            title="Sertifikat TLS Tidak Tepercaya atau Tidak Valid",
+            wstg_id="WSTG-CRYP-01",
+            cwe_id="CWE-295",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N",
+            description=(
+                "Sertifikat TLS server tidak dapat diverifikasi: self-signed atau tidak "
+                "diterbitkan CA tepercaya, kedaluwarsa, tidak cocok dengan nama host, memakai "
+                "SHA-1, atau kuncinya terlalu pendek."
+            ),
+            impact=(
+                "Pengguna terbiasa mengabaikan peringatan sertifikat, sehingga serangan "
+                "man-in-the-middle dengan sertifikat palsu menjadi mudah."
+            ),
+            recommendation=(
+                "Pasang sertifikat dari CA tepercaya yang cocok dengan nama host, masih berlaku, "
+                "memakai SHA-256 atau lebih baik dan kunci RSA minimal 2048 bit (atau ECDSA)."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security",
+                "https://cwe.mitre.org/data/definitions/295.html",
+            ),
+        ),
+        VulnType(
+            key="tls_vulnerability",
+            title="Kerentanan Implementasi TLS",
+            wstg_id="WSTG-CRYP-01",
+            cwe_id="CWE-327",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            description=(
+                "Implementasi TLS server rentan terhadap serangan yang dikenal, misalnya "
+                "Heartbleed, ROBOT, injeksi CCS, renegosiasi tidak aman, atau kompresi TLS (CRIME)."
+            ),
+            impact=(
+                "Bergantung pada kerentanannya, penyerang dapat membaca memori server (termasuk "
+                "kunci privat), mendekripsi sesi, atau menyisipkan data ke koneksi."
+            ),
+            recommendation=(
+                "Perbarui pustaka TLS (misalnya OpenSSL) ke versi yang sudah diperbaiki, matikan "
+                "kompresi TLS dan renegosiasi yang tidak aman, lalu ganti kunci bila terdampak "
+                "Heartbleed."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/01-Testing_for_Weak_Transport_Layer_Security",
+                "https://cwe.mitre.org/data/definitions/327.html",
+            ),
+        ),
+        VulnType(
+            key="cleartext_credentials",
+            title="Kredensial Dikirim tanpa Enkripsi (HTTP)",
+            wstg_id="WSTG-CRYP-03",
+            cwe_id="CWE-319",
+            cvss31="CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N",
+            description=(
+                "Endpoint login menerima username dan password lewat HTTP biasa, tanpa "
+                "mengalihkan ke HTTPS."
+            ),
+            impact=(
+                "Siapa pun di jalur jaringan (Wi-Fi publik, jaringan kantor) dapat membaca "
+                "kredensial yang dikirim pengguna."
+            ),
+            recommendation=(
+                "Sajikan seluruh aplikasi lewat HTTPS, alihkan semua request HTTP ke HTTPS, dan "
+                "aktifkan HSTS."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/03-Testing_for_Sensitive_Information_Sent_via_Unencrypted_Channels",
+                "https://cwe.mitre.org/data/definitions/319.html",
+            ),
+        ),
     ]
 }
 

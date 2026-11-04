@@ -10,6 +10,7 @@ from tools.runner.adapters.katana import KatanaAdapter
 from tools.runner.adapters.nmap import NmapAdapter
 from tools.runner.adapters.nuclei import NucleiAdapter
 from tools.runner.adapters.sqlmap import SqlmapAdapter
+from tools.runner.adapters.sslyze import SslyzeAdapter
 
 
 def default_adapters() -> dict[str, Adapter]:
@@ -24,6 +25,7 @@ def default_adapters() -> dict[str, Adapter]:
         SqlmapAdapter(),
         CommixAdapter(),
         DalfoxAdapter(),
+        SslyzeAdapter(),
     ]
     return {adapter.name: adapter for adapter in adapters}
 
