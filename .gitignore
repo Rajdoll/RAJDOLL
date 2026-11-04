@@ -83,7 +83,8 @@ generate_bab4.py
 .claude/
 
 # Internal docs / design specs (local only)
-docs/
+docs/*
+!docs/v1/
 QWEN.md
 
 # Output directories
@@ -113,7 +114,8 @@ identity-testing/
 /mcp_adapter/__pycache__/
 /multi_agent_system/__pycache__/
 Penelitian/
-docs/
+docs/*
+!docs/v1/
 .github/
 pytest.ini
 scripts/
