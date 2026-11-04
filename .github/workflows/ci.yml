@@ -58,8 +58,8 @@ jobs:
           done
       - name: Validate compose file
         run: docker compose config --quiet
-      - name: Build and start
-        run: docker compose up -d --build --wait --wait-timeout 180
+      - name: Build and start (with the test target)
+        run: docker compose --profile test up -d --build --wait --wait-timeout 300
       - name: Check api health
         run: curl -fsS http://127.0.0.1:8000/health
       - name: Check migrations ran (17 tables + alembic_version)
@@ -80,13 +80,15 @@ jobs:
           "import httpx, sys; r = httpx.get('http://example.invalid/', proxy='http://tools:8081');
           print(r.status_code); sys.exit(r.status_code != 407)"
       - name: Check the tools container cannot read app secrets
-        run: docker compose exec -T tools sh -c 'test ! -e /secrets' 
+        run: docker compose exec -T tools sh -c 'test ! -e /secrets'
+      - name: Run nuclei and httpx through the runner and proxy against testapp
+        run: docker compose exec -T api python - < tests/integration/smoke_tools.py
       - name: Show service status
         if: always()
-        run: docker compose ps
+        run: docker compose --profile test ps
       - name: Show logs on failure
         if: failure()
-        run: docker compose logs --no-color
+        run: docker compose --profile test logs --no-color
       - name: Stop
         if: always()
-        run: docker compose down -v
+        run: docker compose --profile test down -v
