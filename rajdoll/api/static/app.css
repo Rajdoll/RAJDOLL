@@ -1,0 +1,7 @@
+/* Small additions on top of Pico.css. No inline styles are used anywhere (CSP style-src 'self'). */
+.narrow { max-width: 32rem; margin: 2rem auto; }
+.error { color: var(--pico-del-color); }
+.success { color: var(--pico-ins-color); }
+.nav-form { margin: 0; }
+.nav-form button { margin: 0; padding: 0.25rem 0.75rem; }
+.brand { text-decoration: none; }

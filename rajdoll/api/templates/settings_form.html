@@ -1,0 +1,64 @@
+<form id="settings-form" hx-patch="/settings" hx-target="this" hx-swap="outerHTML">
+  {% if saved %}<p class="success" role="status">Pengaturan disimpan.</p>{% endif %}
+  {% if errors %}
+  <div class="error" role="alert">
+    <p>Pengaturan belum disimpan:</p>
+    <ul>{% for message in errors %}<li>{{ message }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <fieldset>
+    <legend><strong>LLM</strong></legend>
+    <label>
+      Alamat server LLM
+      <input type="url" name="llm_base_url" value="{{ settings.llm.base_url }}" required>
+    </label>
+    <label>
+      Model
+      <input type="text" name="llm_model" value="{{ settings.llm.model }}" required maxlength="200">
+    </label>
+    <small>Uji koneksi dan kunci API tersedia mulai fase F7.</small>
+  </fieldset>
+  <fieldset>
+    <legend><strong>CVSS</strong></legend>
+    <label>
+      Versi utama (severity dan laporan)
+      <select name="cvss_primary">
+        {% for value, label in [("3.1", "CVSS 3.1"), ("4.0", "CVSS 4.0"), ("both", "Tampilkan keduanya (severity dari 3.1)")] %}
+        <option value="{{ value }}"{% if settings.cvss_primary == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </fieldset>
+  <fieldset>
+    <legend><strong>Nilai bawaan penugasan baru</strong></legend>
+    <div class="grid">
+      <label>
+        Rate limit (request per detik)
+        <input type="number" name="rate_limit_rps" step="0.1" min="0.1" max="1000" value="{{ settings.defaults.rate_limit_rps }}" required>
+      </label>
+      <label>
+        Tugas paralel
+        <input type="number" name="concurrency" min="1" max="16" value="{{ settings.defaults.concurrency }}" required>
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Lanjut otomatis checkpoint (menit)
+        <input type="number" name="checkpoint_timeout_min" min="1" max="1440" value="{{ settings.defaults.checkpoint_timeout_min }}" required>
+      </label>
+      <label>
+        Ukuran maksimum body evidence (KB)
+        <input type="number" name="evidence_max_kb" min="4" max="16384" value="{{ settings.defaults.evidence_max_bytes // 1024 }}" required>
+      </label>
+    </div>
+    <label>
+      <input type="checkbox" role="switch" name="checkpoint_enabled"{% if settings.defaults.checkpoint_enabled %} checked{% endif %}>
+      Checkpoint setelah perencanaan aktif
+    </label>
+    <label>
+      <input type="checkbox" role="switch" name="oob_enabled"{% if settings.defaults.oob_enabled %} checked{% endif %}>
+      Pengujian out-of-band (mengirim data ke server di internet)
+    </label>
+  </fieldset>
+  <button type="submit">Simpan pengaturan</button>
+</form>
