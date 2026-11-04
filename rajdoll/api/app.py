@@ -16,11 +16,11 @@ from rajdoll.api.render import (
     service_error_response,
     wants_json,
 )
-from rajdoll.api.routes import auth, engagements
+from rajdoll.api.routes import auth, engagements, scans
 from rajdoll.api.routes import settings as settings_routes
 from rajdoll.core.config import get_settings
 from rajdoll.core.crypto import KeyStore
-from rajdoll.core.db import get_sessionmaker
+from rajdoll.core.db import get_sessionmaker, listen_dsn
 from rajdoll.services.errors import ServiceError
 from rajdoll.services.session_check import Prober, make_prober
 
@@ -48,6 +48,11 @@ def create_app(
         title="RAJDOLL", version=__version__, docs_url=None, redoc_url=None, openapi_url=None
     )
     app.state.session_factory = session_factory or get_sessionmaker()
+    bind = app.state.session_factory.kw["bind"]
+    # The SSE stream LISTENs with its own connection to the same database.
+    app.state.listen_dsn = listen_dsn(bind.url.render_as_string(hide_password=False))
+    app.state.sse_heartbeat_seconds = 15.0
+    app.state.sse_max_seconds = 600.0
     config = get_settings()
     app.state.keystore = keystore or KeyStore(config.secrets_dir)
     app.state.session_prober = session_prober or make_prober(config.proxy_url, config.tools_token)
@@ -105,6 +110,7 @@ def create_app(
 
     app.include_router(auth.router)
     app.include_router(engagements.router)
+    app.include_router(scans.router)
     app.include_router(settings_routes.router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

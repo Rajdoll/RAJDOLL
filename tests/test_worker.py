@@ -6,8 +6,9 @@ import httpx
 import pytest
 
 from rajdoll.core.config import Settings
+from rajdoll.core.db import listen_dsn
 from rajdoll.modules.base import TransientTaskError
-from rajdoll.worker.main import build_engine, listen_dsn
+from rajdoll.worker.main import build_engine
 from rajdoll.worker.tools_client import ToolsClient
 
 

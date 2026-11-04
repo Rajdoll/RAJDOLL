@@ -20,7 +20,13 @@
     <tr>
       <td><a href="/engagements/{{ e.id }}">{{ e.name }}</a><br><small class="muted">{{ e.target_url }}</small></td>
       <td>{{ e.organization or "—" }}</td>
-      <td><span class="badge status-{{ e.status }}">{{ engagement_status_labels[e.status] }}</span></td>
+      <td>
+        <span class="badge status-{{ e.status }}">{{ engagement_status_labels[e.status] }}</span>
+        {% set s = item.scan %}
+        {% if s and s.status in ["queued", "running", "awaiting_checkpoint", "paused", "failed"] %}
+        <br><small><a href="/scans/{{ s.id }}">scan #{{ s.number }} {{ scan_status_labels[s.status] }}{% if s.status == "awaiting_checkpoint" and s.checkpoint_deadline %} ({{ wib(s.checkpoint_deadline) }}){% endif %}</a></small>
+        {% endif %}
+      </td>
       <td>
         {% set accepted = item.counts.accepted %}
         {% if accepted.values() | sum == 0 %}—{% else %}

@@ -1,0 +1,41 @@
+{% extends layout %}
+{% block title %}Tugas scan #{{ scan.number }} · RAJDOLL{% endblock %}
+{% block content %}
+{% include "_engagement_header.html" %}
+<p><a href="/scans/{{ scan.id }}">← Monitor scan #{{ scan.number }}</a></p>
+<h2 class="h5">Tugas scan #{{ scan.number }}</h2>
+<form method="get" action="/scans/{{ scan.id }}/tasks" class="filters">
+  <select name="status" aria-label="Status tugas">
+    <option value="">Semua status</option>
+    {% for value, text in task_status_labels.items() %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ text }}</option>{% endfor %}
+  </select>
+  <select name="module" aria-label="Modul">
+    <option value="">Semua modul</option>
+    {% for name in module_names %}<option value="{{ name }}"{% if filters.module == name %} selected{% endif %}>{{ module_label(name) }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="secondary">Saring</button>
+</form>
+{% if tasks %}
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>#</th><th>Tahap</th><th>Modul</th><th>Mesin</th><th>Status</th><th>Percobaan</th><th>Selesai</th><th>Keterangan</th></tr></thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.id }}</td>
+      <td>{{ stage_labels[task.stage] }}</td>
+      <td>{{ module_label(task.module) }}</td>
+      <td><code>{{ task.engine }}</code></td>
+      <td><span class="badge task-{{ task.status }}">{{ task_status_labels[task.status] }}</span></td>
+      <td>{{ task.attempt }}</td>
+      <td>{{ wib(task.finished_at, "%H:%M:%S") if task.finished_at else "—" }}</td>
+      <td>{% if task.error %}<small class="error">{{ task.error }}</small>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>Tidak ada tugas yang cocok.</p>
+{% endif %}
+{% endblock %}

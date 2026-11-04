@@ -15,6 +15,19 @@ async def read_fields(request: Request) -> dict[str, Any]:
             fields.update(body)
     elif content_type.startswith(("application/x-www-form-urlencoded", "multipart/form-data")):
         form = await request.form()
-        fields.update({key: value for key, value in form.items() if isinstance(value, str)})
+        for key in form:
+            values = [value for value in form.getlist(key) if isinstance(value, str)]
+            if values:
+                # A repeated key (checkboxes with one name) becomes a list.
+                fields[key] = values[0] if len(values) == 1 else values
     fields.pop("csrf_token", None)
     return fields
+
+
+def as_list(value: Any) -> list[str]:
+    """A field that may hold one value or several (checkboxes, JSON arrays)."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, list | tuple):
+        return [str(item) for item in value]
+    return [str(value)]

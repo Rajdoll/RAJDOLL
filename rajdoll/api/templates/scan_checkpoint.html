@@ -1,0 +1,35 @@
+{% extends layout %}
+{% block title %}Checkpoint scan #{{ scan.number }} · RAJDOLL{% endblock %}
+{% block content %}
+{% include "_engagement_header.html" %}
+<p><a href="/scans/{{ scan.id }}">← Monitor scan #{{ scan.number }}</a></p>
+<div{% if not finished %} hx-ext="sse" sse-connect="/scans/{{ scan.id }}/events/stream?after_id={{ last_event_id }}" sse-close="done"{% endif %}>
+  <section id="scan-status" sse-swap="stage">{% include "_scan_status.html" %}</section>
+</div>
+<section>
+  <h2 class="h5">Hasil recon</h2>
+  {% set recon = checkpoint.recon_summary %}
+  <h3 class="h6">Teknologi</h3>
+  {% if recon.technologies %}
+  <ul>{% for tech in recon.technologies %}<li>{{ tech.name }}{% if tech.version %} {{ tech.version }}{% endif %}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Belum terdeteksi.</p>{% endif %}
+  <h3 class="h6">Endpoint yang menjawab</h3>
+  {% if recon.endpoints %}
+  <div class="overflow-auto">
+  <table>
+    <thead><tr><th>URL</th><th>Status</th><th>Judul</th><th>Server</th></tr></thead>
+    <tbody>{% for ep in recon.endpoints %}<tr><td><code>{{ ep.url }}</code></td><td>{{ ep.status or "—" }}</td><td>{{ ep.title or "—" }}</td><td>{{ ep.server or "—" }}</td></tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">Belum ada.</p>{% endif %}
+</section>
+<section>
+  <h2 class="h5">Modul yang akan menguji</h2>
+  <ul>
+    {% for module in checkpoint.modules %}
+    <li>{{ module_labels.get(module.name, module.name) }}{% if not module.enabled %} <small class="muted">(belum tersedia, dilewati)</small>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <p><small class="muted">Menyunting rencana (endpoint, tanda, modul, tempel request dari Burp) tersedia mulai fase F5.</small></p>
+</section>
+{% endblock %}

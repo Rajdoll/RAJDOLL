@@ -1,0 +1,78 @@
+{% extends layout %}
+{% block title %}Scan · {{ engagement.name }} · RAJDOLL{% endblock %}
+{% block content %}
+{% include "_engagement_header.html" %}
+<section id="scan-start">
+  <h2 class="h5">Mulai scan</h2>
+  {% if start_errors %}
+  <div class="error" role="alert"><ul>{% for message in start_errors %}<li>{{ message }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if engagement.status == "draft" %}
+  <p>Penugasan masih draf: pastikan URL target berada di dalam <a href="/engagements/{{ engagement.id }}/scope">scope</a> sebelum memulai scan.</p>
+  {% elif unfinished %}
+  <p>Scan #{{ unfinished.number }} masih {{ scan_status_labels[unfinished.status] }}. Satu penugasan hanya menjalankan satu scan pada satu waktu. <a href="/scans/{{ unfinished.id }}">Buka monitor</a></p>
+  {% else %}
+  <form method="post" action="/engagements/{{ engagement.id }}/scans">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <fieldset>
+      <legend>Profil</legend>
+      <label><input type="radio" name="profile" value="full"{% if values.profile != "custom" %} checked{% endif %}> Lengkap — semua modul</label>
+      <label><input type="radio" name="profile" value="custom"{% if values.profile == "custom" %} checked{% endif %}> Kustom — hanya modul yang dicentang</label>
+    </fieldset>
+    <details{% if values.profile == "custom" %} open{% endif %}>
+      <summary>Modul untuk profil Kustom</summary>
+      <fieldset class="module-grid">
+        {% for module in modules %}
+        <label><input type="checkbox" name="modules" value="{{ module.name }}"{% if module.name in values.modules %} checked{% endif %}> {{ module.label }}{% if not module.available %} <small class="muted">(belum tersedia)</small>{% endif %}</label>
+        {% endfor %}
+      </fieldset>
+    </details>
+    <article class="confirm">
+      <h3 class="h5">Ringkasan</h3>
+      <table>
+        <tbody>
+          <tr><th scope="row">Target</th><td><code>{{ engagement.target_url }}</code></td></tr>
+          <tr><th scope="row">Scope</th><td>{% for pattern in scope %}<code>{{ pattern }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+          <tr><th scope="row">Akun</th><td>{% for account in accounts %}{{ account.label }} <span class="badge session-{{ account.session_status }}">{{ session_status_labels[account.session_status] }}</span>{% if not loop.last %} · {% endif %}{% else %}tidak ada{% endfor %}</td></tr>
+          <tr><th scope="row">Rate limit</th><td>{{ num(effective.rate_limit_rps) }} request/detik · {{ effective.concurrency }} tugas paralel</td></tr>
+          <tr><th scope="row">Checkpoint</th><td>{% if effective.checkpoint_enabled %}aktif, lanjut otomatis setelah {{ effective.checkpoint_timeout_min }} menit{% else %}dimatikan{% endif %}</td></tr>
+          <tr><th scope="row">LLM</th><td>{{ llm.model }} · {% if llm.local %}lokal{% else %}<strong>API</strong>{% endif %}</td></tr>
+        </tbody>
+      </table>
+      {% if start_warnings %}
+      <ul class="warnings">{% for message in start_warnings %}<li>{{ message }}</li>{% endfor %}</ul>
+      {% endif %}
+    </article>
+    <button type="submit">Mulai scan</button>
+  </form>
+  {% endif %}
+</section>
+<section>
+  <h2 class="h5">Riwayat scan</h2>
+  {% if history %}
+  <div class="overflow-auto">
+  <table class="striped">
+    <thead><tr><th>#</th><th>Profil</th><th>Status</th><th>Tahap</th><th>Mulai</th><th>Durasi</th><th>Tugas selesai</th><th></th></tr></thead>
+    <tbody>
+      {% for item in history %}
+      {% set s = item.scan %}
+      {% set total = item.modules | sum(attribute="total") %}
+      <tr>
+        <td>{{ s.number }}</td>
+        <td>{{ profile_labels.get(s.profile, "Retest") }}</td>
+        <td><span class="badge scan-{{ s.status }}">{{ scan_status_labels[s.status] }}</span>{% if s.checkpoint_resolution == "auto_continued" %}<br><small class="muted">checkpoint dilewati otomatis</small>{% endif %}</td>
+        <td>{{ stage_labels[s.stage] if s.stage else "—" }}</td>
+        <td>{{ wib(s.started_at, "%d-%m-%Y %H:%M") if s.started_at else "—" }}</td>
+        <td>{{ duration(s.started_at, s.finished_at) if s.started_at else "—" }}</td>
+        <td>{{ item.modules | sum(attribute="finished") }}/{{ total }}</td>
+        <td class="actions"><a href="/scans/{{ s.id }}">Buka</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>Belum ada scan.</p>
+  {% endif %}
+</section>
+{% endblock %}

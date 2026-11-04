@@ -1,0 +1,4 @@
+{# Log lines, newest first (SSE event `notice` prepends new ones). #}
+{% for event in log %}
+<li class="log-{{ event.level }}"><time datetime="{{ event.ts.isoformat() }}">{{ wib(event.ts, "%H:%M:%S") }}</time> {{ event.message }}</li>
+{% endfor %}

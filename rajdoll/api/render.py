@@ -1,6 +1,6 @@
 """Response rendering: full HTML page, HTMX fragment, or JSON from one route (BSD 10.1)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -48,12 +48,70 @@ def ago(moment: datetime | None) -> str:
     return "baru saja"
 
 
+# Indonesia has no daylight saving time, so a fixed offset is exact (BSD 1: shown in WIB).
+WIB = timezone(timedelta(hours=7), "WIB")
+
+
+def wib(moment: datetime | None, fmt: str = "%H:%M") -> str:
+    """Time in WIB, e.g. '09:12' or with fmt='%d-%m-%Y %H:%M'."""
+    if moment is None:
+        return "—"
+    return moment.astimezone(WIB).strftime(fmt)
+
+
+def num(value: float | int | None) -> str:
+    """Indonesian number: '10', '2,5', '18.420'."""
+    if value is None:
+        return "—"
+    if float(value).is_integer():
+        return f"{int(value):,}".replace(",", ".")
+    return f"{value:,.1f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+
+
+def duration(start: datetime | None, end: datetime | None = None) -> str:
+    """Short Indonesian duration, e.g. '38 mnt' or '2 j 5 mnt'."""
+    if start is None:
+        return "—"
+    seconds = max(0, int(((end or datetime.now(UTC)) - start).total_seconds()))
+    hours, minutes = seconds // 3600, (seconds % 3600) // 60
+    if hours:
+        return f"{hours} j {minutes} mnt"
+    if minutes:
+        return f"{minutes} mnt"
+    return f"{seconds} dtk"
+
+
+def _scan_labels() -> dict[str, Any]:
+    from rajdoll.modules.registry import label as module_label
+    from rajdoll.services import monitor, scans
+
+    return {
+        "scan_status_labels": monitor.STATUS_LABELS,
+        "paused_labels": monitor.PAUSED_LABELS,
+        "task_status_labels": monitor.TASK_STATUS_LABELS,
+        "profile_labels": monitor.PROFILE_LABELS,
+        "stage_labels": scans.STAGE_LABELS,
+        "module_label": module_label,
+    }
+
+
 templates.globals.update(
+    **_scan_labels(),
     engagement_status_labels=ENGAGEMENT_STATUS_LABELS,
     session_status_labels=SESSION_STATUS_LABELS,
     severity_labels=SEVERITY_LABELS,
     ago=ago,
+    wib=wib,
+    duration=duration,
+    num=num,
 )
+
+
+def render_fragment(template: str, context: dict[str, Any]) -> str:
+    """A template outside a request (SSE): always a fragment."""
+    values: dict[str, Any] = {"htmx": True, "layout": "partial.html", "active_nav": None}
+    values.update(context)
+    return templates.get_template(template).render(values)
 
 
 def is_htmx(request: Request) -> bool:

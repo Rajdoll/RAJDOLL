@@ -36,3 +36,38 @@ article.account header { display: flex; gap: 0.75rem; align-items: center; }
 .danger-zone { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--pico-del-color); }
 button.danger { background-color: var(--pico-del-color); border-color: var(--pico-del-color); }
 main section + section, main form + form, main form + section { margin-top: 2.5rem; }
+
+/* Scan monitor and banners (AFD 4, 5.3). */
+.banner { padding: 0.75rem 1rem; margin-bottom: 1rem; border-left: 4px solid var(--pico-primary); }
+.banner-danger { border-left-color: var(--pico-del-color); }
+.banner-success { border-left-color: var(--pico-ins-color); }
+.banner .controls { margin-top: 0.5rem; }
+.controls { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.controls form { margin: 0; display: flex; gap: 0.5rem; align-items: center; }
+.controls button, .controls [role="button"], .controls input { margin: 0; }
+.controls input[type="number"] { width: 11rem; }
+.scan-queued, .scan-paused, .scan-cancelled { color: var(--pico-muted-color); }
+.scan-running, .scan-awaiting_checkpoint { color: var(--pico-primary); border-color: var(--pico-primary); }
+.scan-completed { color: var(--pico-ins-color); border-color: var(--pico-ins-color); }
+.scan-failed { color: var(--pico-del-color); border-color: var(--pico-del-color); }
+.task-failed, .task-blocked { color: var(--pico-del-color); border-color: var(--pico-del-color); }
+.task-done { color: var(--pico-ins-color); border-color: var(--pico-ins-color); }
+.task-running { color: var(--pico-primary); border-color: var(--pico-primary); }
+ol.steps { display: flex; flex-wrap: wrap; gap: 0.25rem 0; padding: 0; margin: 0.5rem 0 1rem; }
+ol.steps li { list-style: none; padding: 0.2rem 0.6rem; color: var(--pico-muted-color); }
+ol.steps li + li::before { content: "→"; margin-right: 0.6rem; color: var(--pico-muted-color); }
+ol.steps li.step-done::after { content: " ✓"; }
+ol.steps li.step-skipped { text-decoration: line-through; }
+ol.steps li.step-done { color: var(--pico-ins-color); }
+ol.steps li.step-current, ol.steps li.step-waiting { color: var(--pico-primary); font-weight: 600; }
+table.modules progress { margin: 0; min-width: 6rem; }
+ul.log { list-style: none; padding: 0; max-height: 24rem; overflow-y: auto; font-size: 0.9rem; }
+ul.log li { list-style: none; padding: 0.1rem 0; }
+ul.log time { color: var(--pico-muted-color); font-variant-numeric: tabular-nums; margin-right: 0.5rem; }
+ul.log .log-warning { color: var(--pico-del-color); }
+ul.log .log-error { color: var(--pico-del-color); font-weight: 600; }
+.module-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+.filters { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.filters select, .filters button { width: auto; margin: 0; }
+ul.warnings li { color: var(--pico-del-color); }
+.h6 { font-size: 0.95rem; }

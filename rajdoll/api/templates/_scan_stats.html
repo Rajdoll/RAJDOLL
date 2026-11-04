@@ -1,0 +1,3 @@
+{# Live fragment (SSE event `stats`): traffic through the egress proxy. #}
+<h3 class="h5">Request</h3>
+<p>{{ num(requests.total) }} request · {{ num(requests.rate) }} req/dtk · ditolak scope: {{ num(requests.blocked_scope) }}</p>

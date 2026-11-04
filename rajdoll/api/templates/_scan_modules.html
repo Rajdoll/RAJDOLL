@@ -1,0 +1,25 @@
+{# Live fragment (SSE event `task`): task progress per module. #}
+<h3 class="h5">Tugas per modul</h3>
+{% set active = modules | selectattr("total") | list %}
+{% if active %}
+<div class="overflow-auto">
+<table class="modules">
+  <thead><tr><th>Modul</th><th>Tugas</th><th>Selesai</th><th>Gagal</th><th>Terblokir</th><th>Berjalan</th><th>Progres</th></tr></thead>
+  <tbody>
+    {% for row in active %}
+    <tr>
+      <td>{{ row.label }}</td>
+      <td>{{ row.total }}</td>
+      <td>{{ row.done }}</td>
+      <td>{{ row.failed }}</td>
+      <td>{{ row.blocked }}</td>
+      <td>{{ row.running }}</td>
+      <td><progress value="{{ row.finished }}" max="{{ row.total }}" aria-label="{{ row.label }}: {{ row.finished }} dari {{ row.total }} tugas"></progress></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Belum ada tugas.</p>
+{% endif %}

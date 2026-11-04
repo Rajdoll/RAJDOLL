@@ -40,6 +40,10 @@
     </tbody>
   </table>
   </div>
-  <p><small class="muted">Scan tersedia mulai fase F4.</small></p>
+  {% if latest_scan %}
+  <p><small>Scan terakhir: <a href="/scans/{{ latest_scan.id }}">#{{ latest_scan.number }}</a> <span class="badge scan-{{ latest_scan.status }}">{{ scan_status_labels[latest_scan.status] }}</span>{% if latest_scan.finished_at %} · {{ ago(latest_scan.finished_at) }}{% endif %}</small></p>
+  {% else %}
+  <p><small class="muted">Belum ada scan. <a href="/engagements/{{ engagement.id }}/scans">Mulai scan</a></small></p>
+  {% endif %}
 </article>
 {% endblock %}

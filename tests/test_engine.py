@@ -13,13 +13,13 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from rajdoll.core.crypto import KeyStore
+from rajdoll.core.db import listen_dsn
 from rajdoll.core.enums import ScanStage, ScanStatus, SessionStatus, TaskStatus
 from rajdoll.core.models import Engagement, Scan, ScanEvent, TargetAccount, Task
 from rajdoll.services import engagements, scans
 from rajdoll.services.errors import Conflict
 from rajdoll.services.session_check import CheckResult
 from rajdoll.worker.engine import Engine
-from rajdoll.worker.main import listen_dsn
 from tests.dummy_module import DummyModule
 
 FINISHED = {ScanStatus.COMPLETED, ScanStatus.CANCELLED, ScanStatus.FAILED}
