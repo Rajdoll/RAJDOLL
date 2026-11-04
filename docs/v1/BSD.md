@@ -4,7 +4,7 @@
 |---|---|
 | Dokumen | Backend Schema Document (BSD): skema database dan kontrak API |
 | Acuan | PRD v1.1, TRD v1.1, AFD v1.0 |
-| Status | Draf untuk ditinjau |
+| Status | Disetujui (v1.0, 4 November 2026) |
 
 ---
 
