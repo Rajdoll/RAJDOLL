@@ -459,6 +459,29 @@ CATALOG: dict[str, VulnType] = {
                 "https://cwe.mitre.org/data/definitions/693.html",
             ),
         ),
+        VulnType(
+            key="error_disclosure",
+            title="Pesan Error Membocorkan Detail Internal",
+            wstg_id="WSTG-ERRH-01",
+            cwe_id="CWE-209",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+            description=(
+                "Input yang tidak terduga membuat aplikasi menampilkan pesan error mentah: stack "
+                "trace, halaman debug framework, atau path file di server."
+            ),
+            impact=(
+                "Penyerang mengetahui teknologi, struktur kode, path instalasi, dan kadang "
+                "potongan query atau konfigurasi, yang memudahkan serangan lanjutan."
+            ),
+            recommendation=(
+                "Matikan mode debug di produksi, tangani error secara terpusat dengan pesan umum "
+                "untuk pengguna, dan catat detail error hanya di log server."
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/08-Testing_for_Error_Handling/01-Testing_For_Improper_Error_Handling",
+                "https://cwe.mitre.org/data/definitions/209.html",
+            ),
+        ),
     ]
 }
 

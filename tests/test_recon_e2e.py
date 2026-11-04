@@ -158,6 +158,7 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
             "authorization",
             "session",
             "input_validation",
+            "error_handling",
         ]
         scan = scans.start(session, engagement, "custom", modules)
         scan_id, engagement_id = scan.id, engagement.id

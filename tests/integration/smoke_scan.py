@@ -66,6 +66,7 @@ EXPECTED = [
     ("GET", "/index.php"),
     ("GET", "/.git/config"),
     ("GET", "/info.php"),
+    ("GET", "/laporan"),
 ]
 # Copy of testapp.EXPECTED_FINDINGS, kept equal by tests/test_testapp.py.
 EXPECTED_FINDINGS = [
@@ -88,6 +89,7 @@ EXPECTED_FINDINGS = [
     ("missing_security_headers", "/", None),
     ("version_disclosure", "/", "Server"),
     ("http_trace", "/", None),
+    ("error_disclosure", "/laporan", "limit"),
 ]
 TARGET = "http://testapp:8080"
 
@@ -135,7 +137,7 @@ with Session() as db:
         account = {"label": label, "session_text": login(user, password)}
         engagements.add_account(db, keystore, engagement, account)
     modules = ["information_gathering", "configuration", "authentication", "authorization",
-               "session", "input_validation"]  # fmt: skip
+               "session", "input_validation", "error_handling"]  # fmt: skip
     scan = scans.start(db, engagement, "custom", modules)
     db.commit()
     scan_id, engagement_id = scan.id, engagement.id

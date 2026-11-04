@@ -17,6 +17,7 @@ import secrets
 import sqlite3
 import subprocess
 import threading
+import traceback
 import urllib.request
 from html import escape
 
@@ -51,6 +52,7 @@ WEAKNESSES = {
     "missing-headers": "no response sets CSP, X-Content-Type-Options, or X-Frame-Options",
     "version-header": "every response names its version: Server: rajdoll-testapp/1.0 (CWE-200)",
     "http-trace": "TRACE echoes the request back on any path (WSTG-CONF-06)",
+    "debug-traceback": "GET /laporan?limit= shows a Python traceback for a non-number (CWE-209)",
 }
 # Findings the scan must confirm (IPD F6 and F8 exit criteria): (type, path, parameter).
 # Authorization needs two accounts: Akun A = budi (admin), Akun B = sari (user). Each pasted
@@ -75,6 +77,7 @@ EXPECTED_FINDINGS: list[tuple[str, str, str | None]] = [
     ("missing_security_headers", "/", None),
     ("version_disclosure", "/", "Server"),
     ("http_trace", "/", None),
+    ("error_disclosure", "/laporan", "limit"),
 ]
 
 # (method, path template, how recon can find it). Paths use {id} for numeric segments.
@@ -114,6 +117,7 @@ RECON_ENDPOINTS: list[tuple[str, str, str]] = [
     ("GET", "/index.php", "link"),
     ("GET", "/.git/config", "directory fuzzing"),
     ("GET", "/info.php", "directory fuzzing"),
+    ("GET", "/laporan", "link"),
 ]
 # Query parameter only found by parameter discovery: /cari?debug=1 adds diagnostics.
 HIDDEN_PARAMS = {"/cari": ["debug"]}
@@ -181,7 +185,8 @@ def index() -> HTMLResponse:
         '<form method="post" action="/alat/ping"><input name="alamat" value="localhost">'
         "<button>Ping</button></form>"
         '<a href="/sapa?nama=Tamu">Sapa</a> <a href="/pratinjau?templat=Halo">Pratinjau</a> '
-        '<a href="/ambil?url=/health">Status layanan</a> <a href="/index.php">Beranda lama</a>'
+        '<a href="/ambil?url=/health">Status layanan</a> <a href="/index.php">Beranda lama</a> '
+        '<a href="/laporan?limit=10">Laporan</a>'
         '<div id="ringkasan"></div>',
         script=True,
     )
@@ -459,6 +464,18 @@ def product(product_id: int) -> Response:
     if name is None:
         return _page("Produk", "<p>Tidak ditemukan</p>")
     return _page(name, f"<h1>{name}</h1>")
+
+
+@app.get("/laporan")
+def report(limit: str = "10") -> Response:
+    try:
+        rows = int(limit)
+    except ValueError:
+        # Weakness "debug-traceback": a debug error handler left on. The message is escaped and
+        # plain text, so the value is not an XSS or template-injection weakness as well.
+        return PlainTextResponse(escape(traceback.format_exc()), status_code=500)
+    items = "".join(f"<li>Transaksi {n}</li>" for n in range(1, min(rows, 20) + 1))
+    return _page("Laporan", f"<h1>Laporan</h1><ul>{items}</ul>")
 
 
 @app.get("/cari")
