@@ -23,6 +23,9 @@ from tools.runner.adapters.request import InjectionParams, injected_value, mark
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 LOOPBACK = {"localhost", "127.0.0.1", "::1", "[::1]"}
+# commix splits --headers on the two characters backslash and n, not on a newline: with a newline,
+# a second header (Authorization after Cookie) becomes part of the first header's value.
+HEADER_SEPARATOR = "\\n"
 
 
 class CommixParams(InjectionParams, BaseParams):
@@ -36,6 +39,8 @@ class CommixParams(InjectionParams, BaseParams):
     def _not_loopback(self) -> "CommixParams":
         if (urlsplit(self.request.url).hostname or "").lower() in LOOPBACK:
             raise ValueError("commix bypasses the proxy for loopback targets")
+        if any(HEADER_SEPARATOR in f"{k}{v}" for k, v in self.headers.items()):
+            raise ValueError("a header contains commix's header separator")
         return self
 
 
@@ -82,7 +87,8 @@ class CommixAdapter(Adapter):
             "--output-dir", str(ctx.workdir / "out"),
         ]  # fmt: skip
         if params.headers:
-            argv += ["--headers", "\n".join(f"{k}: {v}" for k, v in params.headers.items())]
+            headers = (f"{k}: {v}" for k, v in params.headers.items())
+            argv += ["--headers", HEADER_SEPARATOR.join(headers)]
         if params.request.method != "GET" or marked.data is not None:
             argv += ["--method", params.request.method]
         if marked.data is not None:

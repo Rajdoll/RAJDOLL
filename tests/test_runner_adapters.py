@@ -582,7 +582,8 @@ def test_commix_command_and_environment(ctx: RunContext) -> None:
     params = CommixParams(
         request={"method": "POST", "url": "http://testapp:8080/alat/ping",
                  "body": {"alamat": "localhost"}},
-        parameter="alamat", location="body", headers={"Cookie": "sid=1"},
+        parameter="alamat", location="body",
+        headers={"Cookie": "sid=1", "Authorization": "Bearer a.b.c"},
     )  # fmt: skip
     adapter = CommixAdapter()
     argv = adapter.command(params, ctx)
@@ -590,7 +591,8 @@ def test_commix_command_and_environment(ctx: RunContext) -> None:
     assert _flag_value(argv, "--data") == "alamat=localhost*"
     assert _flag_value(argv, "--technique") == "ce"
     assert _flag_value(argv, "--answers") == "pseudo-terminal=N,non-custom=N"
-    assert _flag_value(argv, "--headers") == "Cookie: sid=1"
+    # commix splits --headers on a literal backslash-n, not on a newline.
+    assert _flag_value(argv, "--headers") == "Cookie: sid=1\\nAuthorization: Bearer a.b.c"
     assert "--proxy" not in argv  # commix's own proxy option leaks its first request
     assert {"--batch", "--ignore-stdin"} <= set(argv)
     assert adapter.environment(params, ctx) == {
@@ -607,6 +609,7 @@ def test_commix_command_and_environment(ctx: RunContext) -> None:
         {"techniques": "cf"},
         {"request": {"url": "http://127.0.0.1:8080/a", "query": {"q": "1"}}},
         {"request": {"url": "http://localhost/a", "query": {"q": "1"}}},
+        {"headers": {"Cookie": "a=1\\nX-Injected: 1"}},
     ],
 )
 def test_commix_params_are_strict(bad: dict) -> None:
