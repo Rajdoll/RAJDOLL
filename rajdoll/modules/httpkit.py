@@ -64,6 +64,27 @@ def raw_response(response: httpx.Response) -> str:
     return "\r\n".join(lines) + "\r\n\r\n" + response.text[:MAX_RESPONSE]
 
 
+_HEADER_LINE = re.compile(r"^([A-Za-z0-9-]+):[ \t]*(.*)$")
+
+
+def mask_raw(text: str) -> str:
+    """Session headers in a raw request or response from a tool, masked like `raw_request`."""
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        if not line.strip("\r"):
+            break  # end of the header block
+        match = _HEADER_LINE.match(line.rstrip("\r"))
+        if not match:
+            continue
+        name = match.group(1).lower()
+        end = "\r" if line.endswith("\r") else ""
+        if name in MASKED_HEADERS:
+            lines[index] = f"{match.group(1)}: {MASK}{end}"
+        elif name == "set-cookie":
+            lines[index] = f"{match.group(1)}: {match.group(2).split('=', 1)[0]}={MASK}{end}"
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True)
 class Injection:
     """One parameter of one endpoint, with the endpoint's other parameters at default values."""
@@ -105,6 +126,22 @@ class Injection:
             raw_request(response.request), raw_response(response), response.status_code, note
         )
         return response, exchange
+
+    @property
+    def tool_location(self) -> str | None:
+        """Where the tools' request spec carries the parameter (None for multipart)."""
+        if self.location == "query":
+            return "query"
+        return "body" if self.body_location in ("form", "json") else None
+
+    def request_spec(self, value: str | None = None) -> dict[str, Any]:
+        """The request as the injection tools take it (tools/runner/adapters/request.py)."""
+        query, body = self.request_parts(value) if value is not None else (self.query, self.body)
+        spec: dict[str, Any] = {"method": self.method, "url": self.url, "query": dict(query)}
+        if self.method != "GET" and body and self.body_location in ("form", "json"):
+            spec["body"] = dict(body)
+            spec["body_encoding"] = self.body_location
+        return spec
 
     def poc(self, value: str, validator: str, **params: Any) -> dict[str, Any]:
         """BSD 6.2 PoC spec: path relative to the target, no session (taken at run time)."""

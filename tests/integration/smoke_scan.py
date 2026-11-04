@@ -24,7 +24,7 @@ from rajdoll.core.config import get_settings
 from rajdoll.core.crypto import KeyStore
 from rajdoll.core.db import get_sessionmaker
 from rajdoll.core.models import Endpoint, Finding, RequestLog, Scan, ScanEvent, Task
-from rajdoll.services import engagements, inventory, scans
+from rajdoll.services import engagements, findings, inventory, scans
 
 # Copy of testapp.RECON_ENDPOINTS (the api image does not contain testapp); kept equal by
 # tests/test_testapp.py.
@@ -63,7 +63,7 @@ EXPECTED = [
 EXPECTED_FINDINGS = [
     ("sqli", "/katalog", "nama"),
     ("xss_reflected", "/sapa", "nama"),
-    ("cmdi", "/alat/ping", "host"),
+    ("cmdi", "/alat/ping", "alamat"),
     ("ssti", "/pratinjau", "templat"),
     ("ssrf", "/ambil", "url"),
 ]
@@ -155,7 +155,7 @@ with Session() as db:
     scans.checkpoint_continue(db, db.get(Scan, scan_id))
     db.commit()
 
-scan = wait_for(lambda s: s.status not in ("running", "queued"), scan_id, timeout=900)
+scan = wait_for(lambda s: s.status not in ("running", "queued"), scan_id, timeout=1800)
 check(scan.status == "completed", f"scan completes after the checkpoint (status={scan.status})")
 check(scan.checkpoint_resolution == "user_continued", "checkpoint resolution recorded")
 
@@ -178,6 +178,27 @@ with Session() as db:
         check(found.get(key) == "confirmed", f"finding {key} confirmed ({found.get(key)})")
     extra = sorted(set(found) - set(EXPECTED_FINDINGS))
     check(not extra, f"no findings beyond testapp's weaknesses ({extra})")
+    # Each tool's evidence lands on the same finding as the probes' (one per fingerprint).
+    notes = {
+        (f.vuln_type, f.parameter): " | ".join(
+            row["note"] or "" for row in findings.evidence_rows(db, keystore, f)
+        )
+        for f in db.scalars(select(Finding).where(Finding.engagement_id == engagement_id))
+    }
+    for key, tool_note in [
+        (("sqli", "nama"), "payload sqlmap"),
+        (("sqli", "nama"), "nuclei sqli-error-based"),
+        (("cmdi", "alamat"), "payload commix"),
+        (("xss_reflected", "nama"), "payload dalfox"),
+        (("ssti", "templat"), "nuclei reflection-ssti"),
+    ]:
+        check(tool_note in notes.get(key, ""), f"{tool_note} evidence on {key}")
+    commix_rows = db.scalar(
+        select(RequestLog.id).where(
+            RequestLog.engagement_id == engagement_id, RequestLog.tool == "commix"
+        )
+    )
+    check(commix_rows is not None, "commix traffic went through the proxy")
 
 with Session() as db:
     types = list(

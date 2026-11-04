@@ -257,3 +257,22 @@ def test_input_validation_weaknesses_become_confirmed_findings(scan_run: dict) -
         assert "sid=" not in "".join(e["request"] for e in evidence)  # session masked
         poc = findings.poc(session, scan_run["keystore"], sqli)
         assert (poc["path"], poc["validator"]) == ("/katalog", "sqli")
+
+        # The tools found the same weaknesses as the probes and added their evidence to the
+        # same findings (one finding per fingerprint). commix is not run against a loopback
+        # target (it bypasses proxies there); the compose smoke scan covers it.
+        def notes(key: tuple[str, str, str]) -> str:
+            rows = findings.evidence_rows(session, scan_run["keystore"], found[key])
+            return " | ".join(r["note"] or "" for r in rows)
+
+        assert "payload sqlmap" in notes(("sqli", "/katalog", "nama"))
+        assert "nuclei sqli-error-based" in notes(("sqli", "/katalog", "nama"))
+        assert "payload dalfox" in notes(("xss_reflected", "/sapa", "nama"))
+        assert "nuclei reflection-ssti" in notes(("ssti", "/pratinjau", "templat"))
+        tasks = dict(
+            session.execute(
+                text("SELECT engine, count(*) FROM task WHERE scan_id = :s GROUP BY engine"),
+                {"s": scan_id},
+            ).all()
+        )
+        assert {"sqlmap", "commix", "dalfox", "nuclei:dast", "custom:inpv"} <= set(tasks)

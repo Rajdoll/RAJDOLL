@@ -270,3 +270,65 @@ def test_browser_records_runtime_requests_and_blocked_hosts(env: Env) -> None:
     rows = env.audit("browser", 3)
     blocked = [r for r in rows if r["outcome"] == "blocked_scope"]
     assert {r["host"] for r in blocked} == {"cdn.luar.test"}
+
+
+# F6b: Input Validation tools ------------------------------------------------------------------
+
+
+@_needs("sqlmap")
+def test_sqlmap_finds_the_sql_injection_through_the_proxy(env: Env) -> None:
+    request = {"url": env.testapp + "/katalog", "query": {"nama": "rajdoll"}}
+    body = env.run("sqlmap", {"request": request, "parameter": "nama", "techniques": "BE"})
+    assert body["status"] == "completed", body["stderr_tail"]
+    points = body["normalized"]["candidates"]
+    assert {p["technique"] for p in points} == {"boolean-based blind", "error-based"}
+    assert all(p["value"].startswith("rajdoll'") and p["dbms"] == "SQLite" for p in points)
+    rows = env.audit("sqlmap", 5)
+    assert rows and all(r["outcome"] == "forwarded" for r in rows)
+
+    clean = {"url": env.testapp + "/sapa", "query": {"nama": "rajdoll"}}
+    body = env.run("sqlmap", {"request": clean, "parameter": "nama"})
+    assert body["status"] == "completed" and body["normalized"]["candidates"] == []
+
+
+@_needs("dalfox")
+def test_dalfox_finds_the_reflected_xss_through_the_proxy(env: Env) -> None:
+    request = {"url": env.testapp + "/sapa", "query": {"nama": "rajdoll"}}
+    body = env.run("dalfox", {"request": request, "parameters": ["nama"]})
+    assert body["status"] == "completed", body["stderr_tail"]
+    hits = body["normalized"]["candidates"]
+    assert hits and {h["type"] for h in hits} <= {"V", "R"}
+    assert all(h["parameter"] == "nama" and h["value"].startswith("rajdoll") for h in hits)
+    assert env.audit("dalfox", 10)
+
+
+@_needs("commix")
+def test_commix_is_refused_for_loopback_targets(env: Env) -> None:
+    # commix bypasses every proxy for loopback hosts; the compose smoke scan runs it for real.
+    request = {"method": "POST", "url": env.testapp + "/alat/ping", "body": {"alamat": "x"}}
+    response = env.client.post(
+        "/run",
+        json={
+            "run_id": f"it-{uuid.uuid4().hex[:12]}", "task_id": env.task_id,
+            "scan_id": env.scan_id, "tool": "commix", "timeout_s": 60, "scope": ["127.0.0.1"],
+            "params": {"request": request, "parameter": "alamat", "location": "body"},
+        },
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )  # fmt: skip
+    assert response.status_code == 422
+    assert env.audit("commix", 0) == []
+
+
+def test_nuclei_dast_fuzzes_get_and_post_requests(env: Env) -> None:
+    requests = [
+        {"url": env.testapp + "/katalog", "query": {"nama": "rajdoll"}},
+        {"url": env.testapp + "/pratinjau", "query": {"templat": "rajdoll"}},
+        {"method": "POST", "url": env.testapp + "/alat/ping", "body": {"alamat": "x"}},
+    ]
+    body = env.run("nuclei", {"requests": requests, "templates": ["dast"], "dast": True})
+    assert body["status"] == "completed", body["stderr_tail"]
+    found = {(c["template_path"], c["url"]) for c in body["normalized"]["candidates"]}
+    assert ("dast/sqli/sqli-error-based.yaml", env.testapp + "/katalog?nama=rajdoll") in found
+    assert ("dast/ssti/reflection-ssti.yaml", env.testapp + "/pratinjau?templat=rajdoll") in found
+    rows = env.audit("nuclei", 20)
+    assert any(r["method"] == "POST" and r["url"].endswith("/alat/ping") for r in rows)

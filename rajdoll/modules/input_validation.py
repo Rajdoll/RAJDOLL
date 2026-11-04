@@ -1,9 +1,13 @@
-"""Input Validation (WSTG-INPV), first increment: SQLi, reflected XSS, command injection, SSTI,
-and SSRF with RAJDOLL's own probes (IPD F6). sqlmap, dalfox, commix, and nuclei DAST join in F6b.
+"""Input Validation (WSTG-INPV): SQLi, reflected XSS, command injection, SSTI, and SSRF (IPD F6).
 
-Testing stage: one task per endpoint the plan assigns to Input Validation; every parameter of
-the endpoint is probed. Hits become candidate findings (`needs_manual_check`); the validation
-stage confirms them.
+Testing stage, per endpoint the plan assigns to Input Validation:
+- `custom:inpv`: RAJDOLL's own probes on every parameter (rajdoll/modules/injection_checks.py);
+- `sqlmap`, `commix`, `dalfox`: the tools on every query, form, and JSON parameter
+  (rajdoll/modules/injection_tools.py);
+and `nuclei:dast` tasks that run the pinned DAST templates over batches of endpoints.
+
+Hits become candidate findings (`needs_manual_check`); a tool and a probe that find the same
+weakness add evidence to one finding (same fingerprint). The validation stage confirms them.
 """
 
 from __future__ import annotations
@@ -11,10 +15,12 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from rajdoll.core.enums import ScanStage
-from rajdoll.modules import httpkit, injection_checks
+from rajdoll.modules import httpkit, injection_checks, injection_tools
 from rajdoll.modules.base import Candidate, PlanContext, TaskContext, TaskSpec
 
 MAX_ENDPOINTS = 200
+NUCLEI_BATCH = 50
+TOOL_ENGINES = ("sqlmap", "commix", "dalfox")
 
 
 class InputValidation:
@@ -24,28 +30,47 @@ class InputValidation:
     def plan(self, ctx: PlanContext) -> list[TaskSpec]:
         if ctx.stage != ScanStage.TESTING:
             return []
-        specs = []
-        for endpoint in ctx.endpoints:
-            if self.name not in endpoint.get("modules", []):
-                continue
-            if not httpkit.injections(endpoint):
-                continue
-            specs.append(
-                TaskSpec(
-                    "custom:inpv",
-                    {
-                        "endpoint_id": endpoint["id"],
-                        "method": endpoint["method"],
-                        "url": endpoint["url"],
-                        "query_params": endpoint.get("query_params", []),
-                        "body_params": endpoint.get("body_params", []),
-                        "content_type": endpoint.get("content_type"),
-                    },
-                )
-            )
-        return specs[:MAX_ENDPOINTS]
+        specs: list[TaskSpec] = []
+        batch: list[dict[str, Any]] = []
+        chosen = [
+            e for e in ctx.endpoints if self.name in e.get("modules", []) and httpkit.injections(e)
+        ][:MAX_ENDPOINTS]
+        for endpoint in chosen:
+            target = {
+                "endpoint_id": endpoint["id"],
+                "method": endpoint["method"],
+                "url": endpoint["url"],
+                "query_params": endpoint.get("query_params", []),
+                "body_params": endpoint.get("body_params", []),
+                "content_type": endpoint.get("content_type"),
+            }
+            specs.append(TaskSpec("custom:inpv", target))
+            if injection_tools.tool_points(target):
+                specs += [TaskSpec(engine, target) for engine in TOOL_ENGINES]
+                batch.append(target)
+        for start in range(0, len(batch), NUCLEI_BATCH):
+            chunk = batch[start : start + NUCLEI_BATCH]
+            specs.append(TaskSpec("nuclei:dast", {"endpoints": chunk}))
+        return specs
 
     def run(self, ctx: TaskContext) -> dict[str, Any]:
+        if ctx.engine == "custom:inpv":
+            return self._run_probes(ctx)
+        if ctx.engine == "nuclei:dast":
+            found = list(injection_tools.nuclei_dast(ctx, list(ctx.target["endpoints"])))
+        elif ctx.engine in TOOL_ENGINES:
+            found = list(getattr(injection_tools, ctx.engine)(ctx, dict(ctx.target)))
+        else:
+            raise ValueError(f"unknown engine {ctx.engine}")
+        reported = []
+        for item in found:
+            ctx.report_candidate(item.candidate)
+            reported.append(f"{item.candidate.vuln_type}:{item.point.parameter}")
+        if reported:
+            ctx.log(f"{ctx.engine}: kandidat {', '.join(reported)}")
+        return {"candidates": reported}
+
+    def _run_probes(self, ctx: TaskContext) -> dict[str, Any]:
         endpoint = dict(ctx.target)
         headers = ctx.session_headers(None)
         reported: list[str] = []

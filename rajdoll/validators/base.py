@@ -42,23 +42,49 @@ class ValidationModule:
     def plan(self, ctx: PlanContext) -> list[TaskSpec]:
         if ctx.stage != ScanStage.VALIDATION:
             return []
-        _load()
+        # Every finding gets a task: a type without its own validator may still be confirmed by
+        # a second run of the tool that found it (rajdoll/validators/tools.py).
         return [
-            TaskSpec(f"validator:{f['vuln_type']}", {"finding_id": f["id"]})
-            for f in ctx.findings
-            if f["vuln_type"] in VALIDATORS
+            TaskSpec(f"validator:{f['vuln_type']}", {"finding_id": f["id"]}) for f in ctx.findings
         ]
 
     def run(self, ctx: TaskContext) -> dict[str, Any]:
-        _load()
         finding = ctx.finding(int(ctx.target["finding_id"]))
         if not finding:
             return {"skipped": "finding no longer exists"}
-        verdict = VALIDATORS[finding["vuln_type"]](ctx, finding)
+        verdict = validate(ctx, finding)
+        if verdict is None:
+            ctx.log(f"{finding['vuln_type']} #{finding['id']}: belum ada validator; cek manual.")
+            return {"finding_id": finding["id"], "skipped": "no validator"}
         ctx.record_verdict(finding["id"], verdict)
         state = "terkonfirmasi" if verdict.confirmed else "perlu cek manual"
         ctx.log(f"{finding['vuln_type']} #{finding['id']}: {state}. {verdict.note or ''}".strip())
         return {"finding_id": finding["id"], "confirmed": verdict.confirmed, "note": verdict.note}
+
+
+def validate(ctx: TaskContext, finding: dict[str, Any]) -> Verdict | None:
+    """The type's validator first; if it does not confirm, a second run of the finding's tool.
+
+    None when nothing applies (the finding stays `needs_manual_check`).
+    """
+    _load()
+    from rajdoll.validators import tools
+
+    verdicts: list[Verdict] = []
+    own = VALIDATORS.get(finding["vuln_type"])
+    if own is not None:
+        verdicts.append(own(ctx, finding))
+    if not (verdicts and verdicts[0].confirmed):
+        second = tools.rerun(ctx, finding)
+        if second is not None:
+            verdicts.append(second)
+    if not verdicts:
+        return None
+    evidence = tuple(e for v in verdicts for e in v.evidence)
+    decisive = next((v for v in verdicts if v.confirmed), None)
+    if decisive is not None:
+        return Verdict(True, evidence, decisive.note)
+    return Verdict(False, evidence, " ".join(v.note or "" for v in verdicts).strip())
 
 
 def _load() -> None:

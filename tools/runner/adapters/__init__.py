@@ -2,11 +2,14 @@
 
 from tools.runner.adapters.base import Adapter, AdapterError, RunContext
 from tools.runner.adapters.browser import BrowserAdapter, XssCheckAdapter
+from tools.runner.adapters.commix import CommixAdapter
+from tools.runner.adapters.dalfox import DalfoxAdapter
 from tools.runner.adapters.ffuf import FfufAdapter
 from tools.runner.adapters.httpx import HttpxAdapter
 from tools.runner.adapters.katana import KatanaAdapter
 from tools.runner.adapters.nmap import NmapAdapter
 from tools.runner.adapters.nuclei import NucleiAdapter
+from tools.runner.adapters.sqlmap import SqlmapAdapter
 
 
 def default_adapters() -> dict[str, Adapter]:
@@ -18,6 +21,9 @@ def default_adapters() -> dict[str, Adapter]:
         NmapAdapter(),
         BrowserAdapter(),
         XssCheckAdapter(),
+        SqlmapAdapter(),
+        CommixAdapter(),
+        DalfoxAdapter(),
     ]
     return {adapter.name: adapter for adapter in adapters}
 

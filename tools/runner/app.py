@@ -197,7 +197,10 @@ def create_app(
                 request.run_id,
                 argv,
                 cwd=workdir,
-                env=tool_environment(cfg.bin_dir, cfg.tool_home),
+                env={
+                    **tool_environment(cfg.bin_dir, cfg.tool_home),
+                    **adapter.environment(params, ctx),
+                },
                 timeout_s=request.timeout_s,
             )
             try:
