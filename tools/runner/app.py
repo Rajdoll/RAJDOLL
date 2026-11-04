@@ -116,14 +116,15 @@ def create_app(
             if not Path(argv[0]).exists():
                 versions[name] = "missing"
                 continue
-            cfg.tool_home.mkdir(parents=True, exist_ok=True)
-            result = await executor.run(
-                f"version-{name}",
-                argv,
-                cwd=cfg.tool_home,
-                env=tool_environment(cfg.bin_dir, cfg.tool_home),
-                timeout_s=30,
-            )
+            # A throwaway directory: /health must answer even where tool_home cannot be created.
+            with tempfile.TemporaryDirectory(prefix="version-") as scratch:
+                result = await executor.run(
+                    f"version-{name}",
+                    argv,
+                    cwd=Path(scratch),
+                    env=tool_environment(cfg.bin_dir, Path(scratch)),
+                    timeout_s=30,
+                )
             output = result.stdout + result.stderr_tail
             patterns = (adapter.version_pattern,) if adapter.version_pattern else _VERSIONS
             match = next((m for p in patterns if (m := p.search(output))), None)
