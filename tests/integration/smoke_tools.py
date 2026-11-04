@@ -82,6 +82,11 @@ health = httpx.get(f"{settings.tools_url}/health", timeout=60).json()
 print("tools:", health["tools"])
 check(health["tools"].get("nuclei") == "3.11.1", "nuclei 3.11.1 installed")
 check(health["tools"].get("httpx") == "1.12.0", "httpx 1.12.0 installed")
+check(health["tools"].get("katana") == "1.8.0", "katana 1.8.0 installed")
+# ffuf v2.2.1 still reports the version constant of its previous release.
+check(health["tools"].get("ffuf") == "2.1.0", "ffuf v2.2.1 installed (reports 2.1.0)")
+check(health["tools"].get("nmap", "missing") not in ("missing", "unknown"), "nmap installed")
+check(health["tools"].get("browser") == "1.63.0", "Playwright 1.63.0 installed")
 
 nuclei = run("nuclei", {"targets": ["http://testapp:8080"]}, ["testapp"])
 ids = [c["template_id"] for c in nuclei.get("normalized", {}).get("candidates", [])]

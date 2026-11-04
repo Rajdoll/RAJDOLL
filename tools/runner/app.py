@@ -27,11 +27,13 @@ from pydantic import BaseModel, Field, ValidationError
 
 from rajdoll.core.scope import in_scope
 from tools.runner.adapters import Adapter, AdapterError, RunContext, default_adapters
+from tools.runner.audit import AuditUnavailable, ExecAudit
 from tools.runner.executor import Executor, tool_environment
 
 RUNNER_VERSION = "1.0.0.dev0"
 MAX_RAW_OUTPUT = 200_000
-_VERSION = re.compile(r"v?(\d+\.\d+\.\d+)")
+# x.y.z first; nmap reports only x.y ("Nmap version 7.95").
+_VERSIONS = (re.compile(r"v?(\d+\.\d+\.\d+)"), re.compile(r"(\d+\.\d+)"))
 
 
 @dataclass
@@ -50,6 +52,15 @@ class RunnerConfig:
     )
     tool_home: Path = field(
         default_factory=lambda: Path(os.environ.get("RAJDOLL_TOOL_HOME", "/data/home"))
+    )
+    wordlist_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get("RAJDOLL_WORDLIST_DIR", "/opt/rajdoll-wordlists")
+        )
+    )
+    # Database for `tool_exec` audit rows of non-HTTP tools (the proxy's least-privilege role).
+    audit_dsn: str | None = field(
+        default_factory=lambda: os.environ.get("RAJDOLL_PROXY_DATABASE_URL") or None
     )
     work_root: Path | None = None
 
@@ -88,6 +99,7 @@ def create_app(
         openapi_url=None,
     )
     app.state.executor = executor
+    audit = ExecAudit(cfg.audit_dsn) if cfg.audit_dsn else None
 
     def authorize(authorization: str | None) -> None:
         if not cfg.token:
@@ -112,7 +124,9 @@ def create_app(
                 env=tool_environment(cfg.bin_dir, cfg.tool_home),
                 timeout_s=30,
             )
-            match = _VERSION.search(result.stdout + result.stderr_tail)
+            output = result.stdout + result.stderr_tail
+            patterns = (adapter.version_pattern,) if adapter.version_pattern else _VERSIONS
+            match = next((m for p in patterns if (m := p.search(output))), None)
             versions[name] = match.group(1) if match else "unknown"
         return versions
 
@@ -153,6 +167,15 @@ def create_app(
         base = {"run_id": request.run_id, "tool": request.tool}
         if outside:
             return JSONResponse({**base, "status": "scope_rejected", "out_of_scope": outside})
+        if adapter.audit_exec and audit is not None:
+            host = urlsplit(adapter.targets(params)[0]).hostname or ""
+            try:
+                await asyncio.to_thread(
+                    audit.record, request.task_id, request.tool, adapter.audit_summary(params), host
+                )
+            except AuditUnavailable as exc:
+                # A tool that bypasses the proxy never runs without its audit row (TRD 4.2).
+                return JSONResponse({"detail": f"audit log unavailable: {exc}"}, status_code=503)
 
         cfg.tool_home.mkdir(parents=True, exist_ok=True)
         workdir = Path(tempfile.mkdtemp(prefix="run-", dir=cfg.work_root))
@@ -162,6 +185,7 @@ def create_app(
             workdir=workdir,
             bin_dir=cfg.bin_dir,
             template_dir=cfg.template_dir,
+            wordlist_dir=cfg.wordlist_dir,
         )
         try:
             try:

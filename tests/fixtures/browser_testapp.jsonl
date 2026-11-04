@@ -1,0 +1,25 @@
+{"type": "request", "method": "GET", "url": "http://testapp:8080/", "resource_type": "document", "content_type": null, "post_data": null, "page": "http://testapp:8080/"}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/static/app.js", "resource_type": "script", "content_type": null, "post_data": null, "page": "http://testapp:8080/"}
+{"type": "request", "method": "GET", "url": "http://cdn.luar.test/lib.js", "resource_type": "script", "content_type": null, "post_data": null, "page": "http://testapp:8080/"}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/api/v1/ringkasan", "resource_type": "fetch", "content_type": null, "post_data": null, "page": "http://testapp:8080/"}
+{"type": "page", "url": "http://testapp:8080/", "final_url": "http://testapp:8080/", "status": 200, "title": "RAJDOLL testapp"}
+{"type": "form", "method": "GET", "action": "http://testapp:8080/cari", "enctype": "application/x-www-form-urlencoded", "params": ["q"], "page": "http://testapp:8080/"}
+{"type": "form", "method": "POST", "action": "http://testapp:8080/kontak", "enctype": "application/x-www-form-urlencoded", "params": ["nama", "pesan"], "page": "http://testapp:8080/"}
+{"type": "link", "url": "http://testapp:8080/login", "page": "http://testapp:8080/", "followed": true}
+{"type": "link", "url": "http://testapp:8080/profil", "page": "http://testapp:8080/", "followed": true}
+{"type": "link", "url": "http://testapp:8080/produk", "page": "http://testapp:8080/", "followed": true}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/login", "resource_type": "document", "content_type": null, "post_data": null, "page": "http://testapp:8080/login"}
+{"type": "page", "url": "http://testapp:8080/login", "final_url": "http://testapp:8080/login", "status": 200, "title": "Masuk"}
+{"type": "form", "method": "POST", "action": "http://testapp:8080/login", "enctype": "application/x-www-form-urlencoded", "params": ["username", "password"], "page": "http://testapp:8080/login"}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/profil", "resource_type": "document", "content_type": null, "post_data": null, "page": "http://testapp:8080/profil"}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/login", "resource_type": "document", "content_type": null, "post_data": null, "page": "http://testapp:8080/profil"}
+{"type": "page", "url": "http://testapp:8080/profil", "final_url": "http://testapp:8080/login", "status": 200, "title": "Masuk"}
+{"type": "form", "method": "POST", "action": "http://testapp:8080/login", "enctype": "application/x-www-form-urlencoded", "params": ["username", "password"], "page": "http://testapp:8080/profil"}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/produk", "resource_type": "document", "content_type": null, "post_data": null, "page": "http://testapp:8080/produk"}
+{"type": "page", "url": "http://testapp:8080/produk", "final_url": "http://testapp:8080/produk", "status": 200, "title": "Produk"}
+{"type": "link", "url": "http://testapp:8080/produk/1", "page": "http://testapp:8080/produk", "followed": true}
+{"type": "link", "url": "http://testapp:8080/produk/2", "page": "http://testapp:8080/produk", "followed": true}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/produk/1", "resource_type": "document", "content_type": null, "post_data": null, "page": "http://testapp:8080/produk/1"}
+{"type": "page", "url": "http://testapp:8080/produk/1", "final_url": "http://testapp:8080/produk/1", "status": 200, "title": "Kopi Gayo"}
+{"type": "request", "method": "GET", "url": "http://testapp:8080/produk/2", "resource_type": "document", "content_type": null, "post_data": null, "page": "http://testapp:8080/produk/2"}
+{"type": "page", "url": "http://testapp:8080/produk/2", "final_url": "http://testapp:8080/produk/2", "status": 200, "title": "Teh Melati"}

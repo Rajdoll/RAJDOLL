@@ -40,11 +40,15 @@ async def _drain(stream: asyncio.StreamReader | None, limit: int, keep: str) -> 
 def tool_environment(bin_dir: Path, home: Path) -> dict[str, str]:
     """Only what tools need. Proxy variables are deliberately absent: adapters pass the
     egress proxy explicitly, so nothing can bypass it through an inherited setting."""
-    return {
+    env = {
         "PATH": f"{bin_dir}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(home),
         "LANG": "C.UTF-8",
     }
+    # Where Playwright's pinned Chromium lives (the `browser` adapter).
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        env["PLAYWRIGHT_BROWSERS_PATH"] = os.environ["PLAYWRIGHT_BROWSERS_PATH"]
+    return env
 
 
 class Executor:
