@@ -167,6 +167,28 @@ def test_updating_session_resets_status(db_session: Session, keystore: KeyStore)
     assert svc.account_session(keystore, engagement, account)["cookies"] == {"sid": "new"}
 
 
+def test_account_username_is_optional_and_encrypted(
+    db_session: Session, keystore: KeyStore
+) -> None:
+    engagement = _create(db_session, keystore)
+    account = svc.add_account(
+        db_session, keystore, engagement, {"session_text": "sid=1", "username": " budi.santoso "}
+    )
+    assert b"budi" not in (account.credentials_enc or b"")
+    assert svc.account_username(keystore, engagement, account) == "budi.santoso"
+    assert svc.account_summary(keystore, engagement, account)["username"] == "budi.santoso"
+    svc.update_account(db_session, keystore, engagement, account, {"username": "sari"})
+    assert svc.account_username(keystore, engagement, account) == "sari"
+    assert svc.account_session(keystore, engagement, account)["cookies"] == {"sid": "1"}
+    svc.update_account(db_session, keystore, engagement, account, {"username": ""})
+    assert account.credentials_enc is None
+    assert svc.account_summary(keystore, engagement, account)["username"] == ""
+    with pytest.raises(ValidationFailed, match="Username"):
+        svc.update_account(db_session, keystore, engagement, account, {"username": "a\nb"})
+    plain = svc.add_account(db_session, keystore, engagement, {"session_text": "sid=2"})
+    assert svc.account_username(keystore, engagement, plain) == ""
+
+
 def test_account_warnings(db_session: Session, keystore: KeyStore) -> None:
     engagement = _create(db_session, keystore)
     assert any("Belum ada akun" in w for w in svc.warnings(db_session, engagement))

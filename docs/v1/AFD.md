@@ -52,7 +52,7 @@ Navigasi atas selalu berisi: **Penugasan**, **Template temuan**, **Pengaturan**,
 
 1. **Scope:** daftar host atau pola (misalnya `app.instansi.test`, `*.instansi.test`). Bisa tambah dan hapus.
 2. **Akun:** tambah akun dengan label (bawaan "Akun A" dan "Akun B"). Untuk tiap akun pilih cara:
-   - **Tempel sesi:** tempel cookie dan/atau header dari Burp atau DevTools browser.
+   - **Tempel sesi:** tempel cookie dan/atau header dari Burp atau DevTools browser. Username akun boleh diisi (opsional) untuk uji enumerasi akun; disimpan terenkripsi.
    - **Auto-login** (Should): username, password, URL login, dan selector form.
 3. **Cek sesi:** isi satu URL yang hanya bisa dibuka saat login dan teks penanda login (misalnya nama pengguna). Tombol **Uji sesi** memeriksa setiap akun dan menampilkan hasil valid atau tidak.
 4. Penugasan menjadi **siap** jika scope tidak kosong dan URL target ada di dalam scope. Akun tidak wajib, tetapi:

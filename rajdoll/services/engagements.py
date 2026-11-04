@@ -237,6 +237,32 @@ def account_session(keystore: KeyStore, engagement: Engagement, account: TargetA
     )
 
 
+def account_username(keystore: KeyStore, engagement: Engagement, account: TargetAccount) -> str:
+    """The account's username, if the assessor gave one (Identity Management uses it)."""
+    if account.credentials_enc is None:
+        return ""
+    data = cipher(keystore, engagement).decrypt_json(
+        "target_account", "credentials_enc", account.credentials_enc
+    )
+    return str(data.get("username") or "")
+
+
+def _set_username(
+    keystore: KeyStore, engagement: Engagement, account: TargetAccount, raw: Any
+) -> None:
+    username = str(raw or "").strip()
+    if len(username) > 200 or any(ord(ch) < 0x20 for ch in username):
+        raise ValidationFailed.one(
+            "username", "Username maksimal 200 karakter, tanpa karakter kontrol."
+        )
+    if not username:
+        account.credentials_enc = None
+        return
+    account.credentials_enc = cipher(keystore, engagement).encrypt_json(
+        "target_account", "credentials_enc", {"username": username}
+    )
+
+
 def account_summary(
     keystore: KeyStore, engagement: Engagement, account: TargetAccount
 ) -> dict[str, Any]:
@@ -249,6 +275,7 @@ def account_summary(
         "session_checked_at": account.session_checked_at,
         "cookie_names": sorted(data.get("cookies", {})),
         "header_names": sorted(data.get("headers", {})),
+        "username": account_username(keystore, engagement, account),
     }
 
 
@@ -444,6 +471,8 @@ def add_account(
         ),
         session_status=SessionStatus.UNKNOWN,
     )
+    if data.get("username"):
+        _set_username(keystore, engagement, account, data["username"])
     session.add(account)
     session.flush()
     return account
@@ -465,6 +494,8 @@ def update_account(
 ) -> None:
     if "label" in data:
         account.label = _validated_label(session, engagement, data["label"], exclude=account.id)
+    if "username" in data:
+        _set_username(keystore, engagement, account, data["username"])
     if data.get("session_text") or data.get("session"):
         target_session = _session_from_input(data)
         account.session_enc = cipher(keystore, engagement).encrypt_json(

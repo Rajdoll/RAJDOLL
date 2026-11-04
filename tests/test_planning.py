@@ -65,6 +65,7 @@ def test_modules_follow_tags() -> None:
         "input_validation",
         "authentication",
         "session",
+        "identity",  # account enumeration on login endpoints (F8b-4)
         "error_handling",
         "cryptography",
     ]
