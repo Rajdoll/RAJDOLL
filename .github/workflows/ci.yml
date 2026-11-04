@@ -83,6 +83,8 @@ jobs:
         run: docker compose exec -T tools sh -c 'test ! -e /secrets'
       - name: Run nuclei and httpx through the runner and proxy against testapp
         run: docker compose exec -T api python - < tests/integration/smoke_tools.py
+      - name: Run a scan through the worker against testapp
+        run: docker compose exec -T api python - < tests/integration/smoke_scan.py
       - name: Show service status
         if: always()
         run: docker compose --profile test ps

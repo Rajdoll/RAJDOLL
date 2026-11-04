@@ -17,7 +17,11 @@ class Settings(BaseSettings):
     tools_db_password: str = ""
     llm_base_url: str = "http://host.docker.internal:1234/v1"
     llm_model: str = "qwen3-4b"
-    worker_heartbeat_seconds: float = 30.0
+    profiles_dir: str = "profiles"
+    worker_poll_seconds: float = 5.0
+    worker_lease_seconds: float = 60.0
+    worker_max_parallel: int = 4
+    session_check_seconds: float = 300.0
 
 
 @lru_cache

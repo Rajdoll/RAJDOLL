@@ -1,0 +1,17 @@
+# Profil "Lengkap": semua modul uji (PRD F-12, TRD 3.1). Modul yang belum diimplementasikan
+# dilewati dengan pemberitahuan di log scan.
+name: full
+label: Lengkap
+modules:
+  - information_gathering
+  - configuration
+  - identity
+  - authentication
+  - authorization
+  - session
+  - input_validation
+  - error_handling
+  - cryptography
+  - business_logic
+  - file_upload
+  - client_side

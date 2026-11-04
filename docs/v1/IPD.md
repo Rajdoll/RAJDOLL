@@ -234,6 +234,8 @@ Pekerjaan:
 - `scan_event`, endpoint SSE, halaman Monitor scan, tab Scan, profil `full.yaml`.
 - Modul tiruan (dummy) untuk menguji pipeline sebelum modul sungguhan ada.
 
+Catatan pelaksanaan: F4 dikirim dalam dua PR. F4a berisi mesin workflow (antrean, tahap, checkpoint, jeda/lanjut/batal, pemulihan, jeda karena sesi kedaluwarsa), layanan scan, profil `full.yaml`, modul tiruan, dan langkah pertama modul Information Gathering (probe httpx di tahap recon). F4b berisi endpoint SSE, halaman Monitor scan, dan tab Scan.
+
 Kriteria selesai:
 - Uji: worker dimatikan di tengah tahap pengujian, dinyalakan lagi, dan scan selesai tanpa tugas ganda.
 - Uji: checkpoint lanjut otomatis setelah batas waktu; hold menghentikan hitung mundur.

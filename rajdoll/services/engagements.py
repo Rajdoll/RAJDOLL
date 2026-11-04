@@ -290,7 +290,7 @@ def warnings(session: Session, engagement: Engagement) -> list[str]:
 # --------------------------------------------------------------------------------------
 
 
-def _recompute_status(session: Session, engagement: Engagement) -> None:
+def recompute_status(session: Session, engagement: Engagement) -> None:
     """draft ⇄ ready follows scope validity (AFD A2.4); active and done are left alone."""
     if engagement.status not in (EngagementStatus.DRAFT, EngagementStatus.READY):
         return
@@ -317,7 +317,7 @@ def create(session: Session, keystore: KeyStore, data: dict[str, Any]) -> Engage
     session.flush()
     host = scope_rules.url_host(values.target_url)
     session.add(ScopeRule(engagement_id=engagement.id, pattern=scope_rules.normalize_pattern(host)))
-    _recompute_status(session, engagement)
+    recompute_status(session, engagement)
     return engagement
 
 
@@ -329,7 +329,7 @@ def update_details(session: Session, engagement: Engagement, data: dict[str, Any
     engagement.notes = values.notes
     engagement.start_date = values.start_date
     engagement.end_date = values.end_date
-    _recompute_status(session, engagement)
+    recompute_status(session, engagement)
 
 
 def set_status(session: Session, engagement: Engagement, status: str) -> None:
@@ -342,7 +342,7 @@ def set_status(session: Session, engagement: Engagement, status: str) -> None:
         if engagement.status != EngagementStatus.DONE:
             raise Conflict("Hanya penugasan berstatus selesai yang bisa dibuka kembali.")
         engagement.status = EngagementStatus.DRAFT
-        _recompute_status(session, engagement)
+        recompute_status(session, engagement)
     else:
         raise ValidationFailed.one("status", "Perubahan status tidak dikenal.")
 
@@ -365,7 +365,7 @@ def add_scope(session: Session, engagement: Engagement, raw_pattern: str) -> Sco
         raise ValidationFailed.one("pattern", f"{pattern} sudah ada di scope.")
     rule = ScopeRule(engagement_id=engagement.id, pattern=pattern)
     session.add(rule)
-    _recompute_status(session, engagement)
+    recompute_status(session, engagement)
     return rule
 
 
@@ -385,7 +385,7 @@ def remove_scope(session: Session, engagement: Engagement, rule_id: int) -> None
             "Aturan ini tidak bisa dihapus karena URL cek sesi akan berada di luar scope."
         )
     session.delete(rule)
-    _recompute_status(session, engagement)
+    recompute_status(session, engagement)
 
 
 def next_account_label(session: Session, engagement_id: int) -> str:

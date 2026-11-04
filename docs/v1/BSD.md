@@ -200,8 +200,8 @@ Constraint (`CHECK`):
 | `target` | `jsonb` | `{"endpoint_ids": [..], "parameter": "q", "finding_id": null, "account": "Akun B"}`. |
 | `params` | `jsonb` | Parameter tool atau cek. |
 | `status` | `text` | `pending`, `running`, `done`, `failed`, `skipped`, `blocked`. |
-| `attempt` | `smallint` default 0 | |
-| `locked_by` | `text` null | ID proses worker. |
+| `attempt` | `smallint` default 0 | Jumlah percobaan. Naik saat diambil worker; turun lagi bila tugas dihentikan karena jeda atau worker berhenti dengan baik. |
+| `locked_by` | `text` null | ID proses worker (`host:pid:acak`). |
 | `locked_at`, `started_at`, `finished_at` | `timestamptz` null | |
 | `result_summary` | `jsonb` null | Ringkasan hasil (jumlah kandidat, endpoint baru). |
 | `raw_output_enc` | `bytea` null | Keluaran mentah tool, dipotong pada batas ukuran. |
@@ -209,6 +209,8 @@ Constraint (`CHECK`):
 | `created_at` | `timestamptz` | |
 
 Indeks: `(scan_id, status)`, dan indeks parsial `(created_at) WHERE status = 'pending'` untuk pengambilan antrean.
+
+Catatan implementasi (F4): `locked_at` berfungsi sebagai *lease*. Worker yang menjalankan tugas memperbaruinya setiap putaran (bawaan 5 detik). Tugas `running` yang `locked_at`-nya lebih tua dari batas lease (bawaan 60 detik, `RAJDOLL_WORKER_LEASE_SECONDS`) dianggap milik worker yang mati dan dikembalikan ke `pending`; setelah 3 percobaan, tugas ditandai `failed`. Selain trigger `scan_events`, layanan scan mengirim `NOTIFY rajdoll_worker` saat scan dimulai, dijeda, dilanjutkan, dibatalkan, atau checkpoint dilanjutkan, agar worker langsung bereaksi tanpa menunggu polling.
 
 ### 5.3 `scan_event`
 
@@ -220,7 +222,7 @@ Sumber data untuk log, notifikasi, dan SSE.
 | `scan_id` | FK → `scan` cascade | |
 | `ts` | `timestamptz` | |
 | `level` | `text` | `info`, `warning`, `error`. |
-| `type` | `text` | `stage_changed`, `task_finished`, `finding_created`, `checkpoint_waiting`, `paused`, `resumed`, `session_expired`, `block_suspected`, `block_sustained`, `rate_reduced`, `completed`, `failed`. |
+| `type` | `text` | `stage_changed`, `task_finished`, `finding_created`, `checkpoint_waiting`, `paused`, `resumed`, `session_expired`, `block_suspected`, `block_sustained`, `rate_reduced`, `completed`, `failed`, `cancelled`, `notice`. `cancelled` dan `notice` (pesan informasi, misalnya modul yang belum tersedia atau log modul) ditambahkan di migrasi `0002`. |
 | `message` | `text` | Pesan berbahasa Indonesia untuk UI. |
 | `data` | `jsonb` null | |
 
