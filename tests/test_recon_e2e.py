@@ -1,11 +1,13 @@
-"""IPD F5 exit criteria, end to end with the real tools:
+"""IPD F5 and F6 exit criteria, end to end with the real tools:
 
 - recon against testapp finds every endpoint testapp registers (testapp.RECON_ENDPOINTS),
   including the ones that exist only in JavaScript, and its hidden parameter;
-- testapp's logout endpoint is excluded automatically and never requested.
+- testapp's logout endpoint is excluded automatically and never requested;
+- after the checkpoint, Input Validation and the validators turn every Input Validation weakness
+  of testapp (testapp.EXPECTED_FINDINGS) into a `confirmed` finding, with encrypted evidence.
 
-Runs the real engine with the real Information Gathering module, the runner (uvicorn), the egress
-proxy (mitmdump), and testapp, as a logged-in account. Needs PostgreSQL, mitmproxy, the tool
+Runs the real engine with the real modules, the runner (uvicorn), the egress proxy (mitmdump),
+and testapp, as a logged-in account. Needs PostgreSQL, mitmproxy, the tool
 binaries in RAJDOLL_TOOL_BIN_DIR (katana, ffuf, httpx, nmap), and Playwright's Chromium. In CI the
 same check runs inside the containers (tests/integration/smoke_scan.py).
 """
@@ -26,8 +28,8 @@ from sqlalchemy.orm import sessionmaker
 
 from rajdoll.core.bootstrap import enable_tools_login
 from rajdoll.core.crypto import KeyStore
-from rajdoll.core.models import RequestLog, Scan
-from rajdoll.services import engagements, inventory, scans
+from rajdoll.core.models import Endpoint, Evidence, Finding, RequestLog, Scan
+from rajdoll.services import engagements, findings, inventory, scans
 from tests.helpers import MITMDUMP, REPO, clean_env, free_port, start_mitmdump, wait_for_port
 
 BIN_DIR = Path(os.environ.get("RAJDOLL_TOOL_BIN_DIR", "/opt/tools/bin"))
@@ -114,10 +116,22 @@ def stack(db_engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterat
             process.wait(timeout=15)
 
 
-def test_recon_finds_every_testapp_endpoint_and_excludes_logout(
-    stack: dict, db_engine: Engine
-) -> None:
-    testapp = _testapp_module()
+def _run(engine: WorkflowEngine, factory: sessionmaker, scan_id: int, until: tuple) -> str:
+    deadline = time.monotonic() + 900
+    status = None
+    while time.monotonic() < deadline:
+        engine.tick()
+        with factory() as session:
+            status = session.scalar(select(Scan.status).where(Scan.id == scan_id))
+        if status in until:
+            break
+        engine.wait(0.5)
+    return str(status)
+
+
+@pytest.fixture(scope="module")
+def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
+    """One scan of testapp: recon up to the checkpoint (the rest runs in the findings test)."""
     factory = sessionmaker(bind=db_engine, expire_on_commit=False)
     keystore = KeyStore(stack["secrets"])
     login = httpx.post(
@@ -127,11 +141,13 @@ def test_recon_finds_every_testapp_endpoint_and_excludes_logout(
 
     with factory() as session, session.begin():
         engagement = engagements.create(
-            session, keystore, {"name": "Recon e2e", "target_url": stack["app"] + "/"}
+            session, keystore, {"name": "Scan e2e", "target_url": stack["app"] + "/"}
         )
         engagements.update_overrides(session, engagement, {"rate_limit_rps": 100})
         engagements.add_account(session, keystore, engagement, {"session_text": f"sid={sid}"})
-        scan = scans.start(session, engagement, "custom", ["information_gathering"])
+        scan = scans.start(
+            session, engagement, "custom", ["information_gathering", "input_validation"]
+        )
         scan_id, engagement_id = scan.id, engagement.id
 
     engine = WorkflowEngine(
@@ -140,21 +156,33 @@ def test_recon_finds_every_testapp_endpoint_and_excludes_logout(
         keystore=keystore,
         proxy_base=stack["proxy"],
         proxy_token=TOKEN,
-        worker_id="recon-e2e",
+        worker_id="scan-e2e",
     )
     try:
-        deadline = time.monotonic() + 600
-        status = None
-        while time.monotonic() < deadline:
-            engine.tick()
-            with factory() as session:
-                status = session.scalar(select(Scan.status).where(Scan.id == scan_id))
-            if status not in ("queued", "running"):
-                break
-            engine.wait(0.5)
+        status = _run(engine, factory, scan_id, ("awaiting_checkpoint", "failed", "cancelled"))
+        yield {
+            "engine": engine,
+            "factory": factory,
+            "keystore": keystore,
+            "scan_id": scan_id,
+            "engagement_id": engagement_id,
+            "checkpoint_status": status,
+        }
     finally:
         engine.shutdown(grace_seconds=5)
-    assert status == "awaiting_checkpoint"
+        with factory() as session:
+            session.execute(text("DELETE FROM engagement WHERE id = :e"), {"e": engagement_id})
+            session.commit()
+
+
+def test_recon_finds_every_testapp_endpoint_and_excludes_logout(scan_run: dict) -> None:
+    testapp = _testapp_module()
+    factory, scan_id, engagement_id = (
+        scan_run["factory"],
+        scan_run["scan_id"],
+        scan_run["engagement_id"],
+    )
+    assert scan_run["checkpoint_status"] == "awaiting_checkpoint"
 
     with factory() as session:
         failed = session.execute(
@@ -169,8 +197,6 @@ def test_recon_finds_every_testapp_endpoint_and_excludes_logout(
                 RequestLog.engagement_id == engagement_id, RequestLog.url.like("%/logout%")
             )
         )
-        session.execute(text("DELETE FROM engagement WHERE id = :e"), {"e": engagement_id})
-        session.commit()
 
     missing = [(m, p, how) for m, p, how in testapp.RECON_ENDPOINTS if (m, p) not in rows]
     assert missing == [], f"recon missed: {missing}"
@@ -188,3 +214,46 @@ def test_recon_finds_every_testapp_endpoint_and_excludes_logout(
     # nmap scans the top 1000 ports; the test app listens on a random high port, so only check
     # that the scan ran and reported its list.
     assert isinstance(summary["open_ports"], list)
+
+
+def test_input_validation_weaknesses_become_confirmed_findings(scan_run: dict) -> None:
+    testapp = _testapp_module()
+    factory, scan_id, engagement_id = (
+        scan_run["factory"],
+        scan_run["scan_id"],
+        scan_run["engagement_id"],
+    )
+    assert scan_run["checkpoint_status"] == "awaiting_checkpoint"
+    with factory() as session, session.begin():
+        scans.checkpoint_continue(session, session.get(Scan, scan_id))
+    status = _run(scan_run["engine"], factory, scan_id, ("completed", "failed", "cancelled"))
+    assert status == "completed"
+
+    with factory() as session:
+        failed = session.execute(
+            text("SELECT engine, error FROM task WHERE scan_id = :s AND status <> 'done'"),
+            {"s": scan_id},
+        ).all()
+        assert failed == [], failed
+        rows = list(session.scalars(select(Finding).where(Finding.engagement_id == engagement_id)))
+        found = {}
+        for finding in rows:
+            endpoint = session.get(Endpoint, finding.endpoint_id)
+            found[(finding.vuln_type, endpoint.path_template, finding.parameter)] = finding
+        expected = {tuple(item) for item in testapp.EXPECTED_FINDINGS}
+        confirmed = {key for key, f in found.items() if f.validation == "confirmed"}
+        assert expected <= confirmed, f"not confirmed: {expected - confirmed}; found {found.keys()}"
+        # Nothing beyond the planted weaknesses (no false positives on testapp).
+        assert set(found) == expected, f"unexpected: {set(found) - expected}"
+
+        sqli = found[("sqli", "/katalog", "nama")]
+        assert (sqli.severity, float(sqli.cvss31_score)) == ("critical", 9.8)
+        kinds = set(session.scalars(select(Evidence.kind).where(Evidence.finding_id == sqli.id)))
+        assert kinds == {"detection", "validation"}
+        raw = session.scalar(select(Evidence.request_enc).where(Evidence.finding_id == sqli.id))
+        assert b"katalog" not in raw  # evidence is encrypted at rest
+        evidence = findings.evidence_rows(session, scan_run["keystore"], sqli)
+        assert "GET /katalog?nama=" in evidence[0]["request"]
+        assert "sid=" not in "".join(e["request"] for e in evidence)  # session masked
+        poc = findings.poc(session, scan_run["keystore"], sqli)
+        assert (poc["path"], poc["validator"]) == ("/katalog", "sqli")

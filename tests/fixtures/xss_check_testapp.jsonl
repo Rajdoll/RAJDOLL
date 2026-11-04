@@ -1,0 +1,3 @@
+{"type": "xss", "attempt": 0, "status": 200, "dialogs": [], "executed": false, "error": null}
+{"type": "xss", "attempt": 1, "status": 200, "dialogs": [], "executed": false, "error": null}
+{"type": "xss", "attempt": 2, "status": 200, "dialogs": ["RJDLA1B2C3"], "executed": true, "error": null}

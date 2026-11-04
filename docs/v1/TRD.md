@@ -175,7 +175,7 @@ Detail teknis:
 | testssl.sh | Konfigurasi TLS (modul Weak Cryptography) | Dipertahankan |
 | retire.js | Library JavaScript yang rentan | Dipertahankan |
 | smuggler | HTTP request smuggling | Dipertahankan, opsional |
-| Playwright 1.63.0 + Chromium (headless shell) | Render SPA saat recon (adaptor `browser`), verifikasi XSS di browser, auto-login | Dipertahankan |
+| Playwright 1.63.0 + Chromium (headless shell) | Render SPA saat recon (adaptor `browser`), verifikasi XSS di browser (adaptor `xss_check`), auto-login | Dipertahankan |
 | feroxbuster, dirsearch | Fuzzing direktori | **Dihapus**, digantikan ffuf |
 | whatweb | Fingerprint teknologi | **Dihapus**, digantikan httpx (sekaligus menghapus Ruby dari image) |
 | subfinder, subjack | Subdomain dan subdomain takeover | **Dihapus**, tidak relevan untuk clone satu host |
@@ -243,6 +243,8 @@ Setiap modul uji mengimplementasikan:
 
 Modul baru cukup ditambahkan ke registri (PRD NF-08). Cek yang cukup ditulis sebagai template nuclei disimpan di `templates/nuclei/` tanpa kode Python.
 
+Bentuk di kode (F4–F6): `berlaku_untuk` adalah aturan pemilihan modul di perencanaan (`rajdoll/services/planning.py`); modul mengimplementasikan `plan(ctx)` per tahap dan `run(ctx)` per tugas (`rajdoll/modules/base.py`), dan `kandidat` menjadi panggilan `ctx.report_candidate(Candidate)` di dalam `run`. Engine menyimpan kandidat sebagai temuan (dedup per sidik jari, BSD 6.1), sehingga modul tidak pernah menulis ke basis data.
+
 ### 6.2 Pemetaan modul ke mesin
 
 | Modul | Mesin utama | Cek kustom (Python) |
@@ -269,13 +271,17 @@ Cek kustom diambil dari modul sistem lama jika logikanya sudah teruji, lalu ditu
 
 | Jenis | Bukti deterministik |
 |---|---|
-| SQL injection | sqlmap mengonfirmasi, atau perbedaan respons boolean/waktu yang konsisten di beberapa ulangan |
+| SQL injection | sqlmap mengonfirmasi, atau perbedaan respons boolean/waktu yang konsisten di beberapa ulangan, atau pesan error SQL yang muncul dengan kutip tunggal dan hilang dengan kutip ganda di dua ulangan berturut-turut |
 | XSS | Payload tereksekusi di Playwright (hook `alert` atau penanda DOM) |
+| SSTI, command injection | Ekspresi aritmetika dengan angka acak baru (`{{a*b}}`, `echo $((a*b))`) dihitung oleh server, di dua ulangan berturut-turut |
+| SSRF | Server mengambil halaman target sendiri (judul halaman muncul di respons) dan tidak untuk host yang tidak ada, di dua ulangan |
 | IDOR | Akun B mendapat respons sukses untuk objek milik akun A, dan isinya sama dengan respons yang diterima akun A |
 | Kebocoran informasi | Pola spesifik (stack trace, path internal, versi) muncul di respons |
 | Template nuclei | Matcher template cocok, dan ulangan kedua memberi hasil yang sama |
 
 - Kandidat yang tidak memenuhi kriteria menjadi "perlu cek manual" dan masuk mini-loop.
+- Di kode: validator didaftarkan dengan `@validator("<jenis>")` (`rajdoll/validators/`). Modul bawaan `validation` dijalankan engine di tahap validasi untuk setiap temuan scan yang belum terkonfirmasi; satu tugas `validator:<jenis>` per temuan. Validator membangun ulang request dari spesifikasi PoC (BSD 6.2) dan mulai dari nilai normal yang sama dengan deteksi (`validator_params.base`). Validator XSS memakai adaptor `xss_check`: Chromium membuka setiap payload (GET, atau POST form) lewat egress proxy dan mencatat dialog `alert` yang memuat penanda acak; pesan galat navigasi tidak dihitung sebagai eksekusi.
+- Probe deteksi menghindari bukti yang bisa dipalsukan oleh pantulan: perbandingan boolean dilakukan setelah nilai yang dipantulkan dihapus dari halaman, dan pola error SQL dibuat spesifik agar pesan shell ("Unterminated quoted string") tidak terbaca sebagai error SQL.
 
 ### 6.4 Mini-loop verifikasi (PRD F-20)
 

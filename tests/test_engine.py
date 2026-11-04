@@ -15,10 +15,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from rajdoll.core.crypto import KeyStore
 from rajdoll.core.db import listen_dsn
 from rajdoll.core.enums import ScanStage, ScanStatus, SessionStatus, TaskStatus
-from rajdoll.core.models import Engagement, Scan, ScanEvent, TargetAccount, Task
+from rajdoll.core.models import Engagement, Finding, Scan, ScanEvent, TargetAccount, Task
+from rajdoll.modules.base import Candidate, Exchange, PlanContext, TaskContext, TaskSpec, Verdict
 from rajdoll.services import engagements, scans
+from rajdoll.services import findings as findings_service
 from rajdoll.services.errors import Conflict
 from rajdoll.services.session_check import CheckResult
+from rajdoll.validators import base as validator_base
 from rajdoll.worker.engine import Engine
 from tests.dummy_module import DummyModule
 
@@ -711,3 +714,81 @@ def test_task_hooks_store_endpoints_recon_and_sessions(
     with engine._http_client(job, "js") as client:
         assert client.trust_env is False
     assert make_engine(engines, factory, DummyModule())._session_headers(job, None) == {}
+
+
+class FindingModule:
+    """Reports the same candidate from two testing tasks (deduplicated by fingerprint)."""
+
+    name = "input_validation"
+    label = "Input Validation"
+
+    def plan(self, ctx: PlanContext) -> list[TaskSpec]:
+        if ctx.stage != ScanStage.TESTING:
+            return []
+        return [TaskSpec("custom:inpv", {"n": 1}), TaskSpec("custom:inpv", {"n": 2})]
+
+    def run(self, ctx: TaskContext) -> dict[str, Any]:
+        candidate = Candidate(
+            vuln_type="sqli",
+            method="GET",
+            url="https://app.test/cari?q=1",
+            parameter="q",
+            poc={"method": "GET", "path": "/cari", "query": {"q": "1'"}, "validator": "sqli"},
+            evidence=(Exchange("GET /cari?q=1' HTTP/1.1", "SQL syntax", 500, "deteksi"),),
+        )
+        return {"finding_id": ctx.report_candidate(candidate)}
+
+
+def test_candidates_become_findings_and_validators_confirm_them(
+    factory: sessionmaker[Session],
+    engagement_id: int,
+    engines: list[Engine],
+    keystore: KeyStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    def fake_sqli(ctx: TaskContext, finding: dict[str, Any]) -> Verdict:
+        seen.append(finding)
+        return Verdict(True, (Exchange("GET /cari?q=2' HTTP/1.1", "SQL syntax", 500, "ulang"),))
+
+    validator_base._load()
+    monkeypatch.setitem(validator_base.VALIDATORS, "sqli", fake_sqli)
+    engine = make_engine(engines, factory, FindingModule(), keystore=keystore)
+    scan_id = start_scan(factory, engagement_id, checkpoint_enabled=False)
+    drive(factory, scan_id, engine, until=ScanStatus.COMPLETED)
+
+    with factory() as session:
+        (finding,) = session.scalars(select(Finding).where(Finding.engagement_id == engagement_id))
+        assert finding.validation == "confirmed" and finding.decision == "pending"
+        assert finding.title == "SQL Injection di /cari pada parameter q"
+        kinds = [e["kind"] for e in findings_service.evidence_rows(session, keystore, finding)]
+        assert kinds == ["detection", "detection", "validation"]
+    (validation,) = tasks_of(factory, scan_id, ScanStage.VALIDATION)
+    assert validation.engine == "validator:sqli" and validation.status == TaskStatus.DONE
+    assert validation.target == {"finding_id": finding.id}
+    assert seen[0]["poc"]["query"] == {"q": "1'"} and seen[0]["id"] == finding.id
+    events = events_of(factory, scan_id)
+    created = [e for e in events if e.type == "finding_created"]
+    assert [e.message for e in created] == [
+        "Kandidat temuan: SQL Injection di /cari pada parameter q"
+    ]
+    assert any(e.message.startswith("Temuan terkonfirmasi:") for e in events)
+
+    # A later scan sees the finding again but does not validate a confirmed finding twice.
+    second = start_scan(factory, engagement_id, checkpoint_enabled=False)
+    drive(factory, second, engine, until=ScanStatus.COMPLETED)
+    assert tasks_of(factory, second, ScanStage.VALIDATION) == []
+    assert len(seen) == 1
+    assert not [e for e in events_of(factory, second) if e.type == "finding_created"]
+
+
+def test_findings_without_the_key_store_fail_the_task(
+    factory: sessionmaker[Session], engagement_id: int, engines: list[Engine]
+) -> None:
+    engine = make_engine(engines, factory, FindingModule())
+    scan_id = start_scan(factory, engagement_id, checkpoint_enabled=False)
+    drive(factory, scan_id, engine, until=ScanStatus.COMPLETED)
+    testing = tasks_of(factory, scan_id, ScanStage.TESTING)
+    assert {t.status for t in testing} == {TaskStatus.FAILED}
+    assert "key store" in (testing[0].error or "")

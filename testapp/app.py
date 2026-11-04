@@ -7,8 +7,14 @@ modules. RECON_ENDPOINTS lists every endpoint recon must find (IPD F5 exit crite
 way it can be discovered.
 """
 
+import http.client
 import secrets
+import sqlite3
+import subprocess
+import urllib.request
+from html import escape
 
+import jinja2
 from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import (
     HTMLResponse,
@@ -20,7 +26,20 @@ from fastapi.responses import (
 
 WEAKNESSES = {
     "exposed-env": "GET /.env serves configuration with credentials (WSTG-CONF-04, CWE-538)",
+    "sqli": "GET /katalog?nama= builds an SQLite query by string concatenation (CWE-89)",
+    "xss-reflected": "GET /sapa?nama= reflects the name without HTML encoding (CWE-79)",
+    "cmdi": "POST /alat/ping passes `host` to a shell (CWE-78)",
+    "ssti": "GET /pratinjau?templat= renders the value as a Jinja2 template (CWE-1336)",
+    "ssrf": "GET /ambil?url= fetches any http URL from the server (CWE-918)",
 }
+# Input Validation findings the scan must confirm (IPD F6 exit criterion): (type, path, param).
+EXPECTED_FINDINGS: list[tuple[str, str, str]] = [
+    ("sqli", "/katalog", "nama"),
+    ("xss_reflected", "/sapa", "nama"),
+    ("cmdi", "/alat/ping", "host"),
+    ("ssti", "/pratinjau", "templat"),
+    ("ssrf", "/ambil", "url"),
+]
 
 # (method, path template, how recon can find it). Paths use {id} for numeric segments.
 RECON_ENDPOINTS: list[tuple[str, str, str]] = [
@@ -48,6 +67,11 @@ RECON_ENDPOINTS: list[tuple[str, str, str]] = [
     ("GET", "/robots.txt", "known file"),
     ("GET", "/internal/laporan", "robots.txt"),
     ("GET", "/.env", "directory fuzzing"),
+    ("GET", "/katalog", "form"),
+    ("GET", "/sapa", "link"),
+    ("POST", "/alat/ping", "form"),
+    ("GET", "/pratinjau", "link"),
+    ("GET", "/ambil", "link"),
 ]
 # Query parameter only found by parameter discovery: /cari?debug=1 adds diagnostics.
 HIDDEN_PARAMS = {"/cari": ["debug"]}
@@ -93,6 +117,12 @@ def index() -> HTMLResponse:
         '<form method="get" action="/cari"><input name="q"><button>Cari</button></form>'
         '<form method="post" action="/kontak"><input name="nama"><textarea name="pesan">'
         "</textarea><button>Kirim</button></form>"
+        '<form method="get" action="/katalog"><input name="nama"><button>Cari produk</button>'
+        "</form>"
+        '<form method="post" action="/alat/ping"><input name="host" value="localhost">'
+        "<button>Ping</button></form>"
+        '<a href="/sapa?nama=Tamu">Sapa</a> <a href="/pratinjau?templat=Halo">Pratinjau</a> '
+        '<a href="/ambil?url=/health">Status layanan</a>'
         '<div id="ringkasan"></div>',
         script=True,
     )
@@ -300,6 +330,66 @@ def admin() -> Response:
 @app.get("/internal/laporan")
 def internal_report() -> HTMLResponse:
     return _page("Laporan internal", "<p>Laporan bulanan</p>")
+
+
+# --- Deliberate Input Validation weaknesses (WEAKNESSES) ---------------------------------------
+
+_DB = sqlite3.connect(":memory:", check_same_thread=False)
+_DB.executescript(
+    "CREATE TABLE produk (id INTEGER PRIMARY KEY, nama TEXT, harga INTEGER);"
+    "INSERT INTO produk (nama, harga) VALUES ('Kopi Gayo', 85000), ('Teh Melati', 40000);"
+    "CREATE TABLE rahasia (kunci TEXT); INSERT INTO rahasia VALUES ('token-admin-123');"
+)
+
+
+@app.get("/katalog")
+def product_search(nama: str = "") -> Response:
+    # Weakness "sqli": the value is concatenated into the query.
+    query = "SELECT nama, harga FROM produk WHERE nama LIKE '%" + nama + "%'"  # noqa: S608
+    try:
+        rows = _DB.execute(query).fetchall()
+    except sqlite3.Error as exc:
+        return HTMLResponse(f"<p>Kesalahan basis data: sqlite3.OperationalError: {exc}</p>", 500)
+    items = "".join(f"<li>{escape(str(n))} — Rp{h}</li>" for n, h in rows)
+    return _page("Cari produk", f"<ul>{items}</ul><p>{len(rows)} produk</p>")
+
+
+@app.get("/sapa")
+def greet(nama: str = "") -> HTMLResponse:
+    # Weakness "xss-reflected": no HTML encoding.
+    return _page("Sapa", f"<h1>Halo, {nama}!</h1>")
+
+
+@app.post("/alat/ping")
+def ping(host: str = Form("")) -> PlainTextResponse:
+    # Weakness "cmdi": the value reaches a shell. Testapp only, never in RAJDOLL code.
+    result = subprocess.run(  # noqa: S602
+        "echo PING " + host, shell=True, capture_output=True, text=True, timeout=10
+    )
+    return PlainTextResponse(result.stdout + result.stderr)
+
+
+@app.get("/pratinjau")
+def preview(templat: str = "") -> HTMLResponse:
+    # Weakness "ssti": user input becomes the template itself.
+    rendered = jinja2.Environment().from_string(templat).render()  # noqa: S701
+    return _page("Pratinjau", f"<div>{escape(rendered)}</div>")
+
+
+@app.get("/ambil")
+def fetch(url: str, request: Request) -> Response:
+    # Weakness "ssrf": any http(s) URL is fetched from the server.
+    if url.startswith("/"):
+        url = str(request.base_url).rstrip("/") + url
+    if not url.startswith(("http://", "https://")):
+        return PlainTextResponse("URL tidak didukung", 400)
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(url, timeout=5) as remote:  # noqa: S310
+            body = remote.read(65536).decode("utf-8", errors="replace")
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        return PlainTextResponse(f"Gagal mengambil: {exc}", 502)
+    return PlainTextResponse(body)
 
 
 @app.get("/.env")

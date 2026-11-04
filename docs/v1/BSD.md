@@ -290,7 +290,9 @@ Indeks: `(engagement_id, decision, severity)`, `(engagement_id, validation)`.
 }
 ```
 
-Path disimpan relatif; host diambil dari `target_url` atau `scan.base_url` saat retest. Sesi akun diambil dari `target_account` saat dijalankan, tidak disimpan di PoC.
+Path disimpan relatif; host diambil dari endpoint temuan (atau `target_url` jika temuan tidak terkait endpoint), atau dari `scan.base_url` saat retest. Sesi akun diambil dari `target_account` saat dijalankan, tidak disimpan di PoC.
+
+Untuk temuan Input Validation, `query` dan `body` berisi request dengan payload deteksi, dan `validator_params` berisi `parameter`, `location` (`query`, `form`, `json`, `multipart`), `base` (nilai normal yang dipakai saat deteksi), serta rincian teknik (misalnya `technique`, `syntax`, `separator`).
 
 ### 6.3 `evidence`
 

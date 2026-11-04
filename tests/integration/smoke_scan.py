@@ -7,7 +7,9 @@ Starts a real scan of testapp as a logged-in account. The worker runs recon (htt
 Playwright browser, ffuf, nmap, and the custom checks through the runner and the egress proxy),
 then the planning wave (JavaScript analysis, parameter discovery), and stops at the checkpoint.
 IPD F5 exit criteria: every endpoint testapp registers is in the inventory, including those only
-in JavaScript, and logout is excluded and never requested. Not collected by pytest.
+in JavaScript, and logout is excluded and never requested. After the checkpoint, Input Validation
+and the validators run; IPD F6: every Input Validation weakness of testapp becomes a `confirmed`
+finding. Not collected by pytest.
 """
 
 import sys
@@ -21,7 +23,7 @@ from sqlalchemy import select
 from rajdoll.core.config import get_settings
 from rajdoll.core.crypto import KeyStore
 from rajdoll.core.db import get_sessionmaker
-from rajdoll.core.models import RequestLog, Scan, ScanEvent, Task
+from rajdoll.core.models import Endpoint, Finding, RequestLog, Scan, ScanEvent, Task
 from rajdoll.services import engagements, inventory, scans
 
 # Copy of testapp.RECON_ENDPOINTS (the api image does not contain testapp); kept equal by
@@ -51,6 +53,19 @@ EXPECTED = [
     ("GET", "/robots.txt"),
     ("GET", "/internal/laporan"),
     ("GET", "/.env"),
+    ("GET", "/katalog"),
+    ("GET", "/sapa"),
+    ("POST", "/alat/ping"),
+    ("GET", "/pratinjau"),
+    ("GET", "/ambil"),
+]
+# Copy of testapp.EXPECTED_FINDINGS, kept equal by tests/test_testapp.py.
+EXPECTED_FINDINGS = [
+    ("sqli", "/katalog", "nama"),
+    ("xss_reflected", "/sapa", "nama"),
+    ("cmdi", "/alat/ping", "host"),
+    ("ssti", "/pratinjau", "templat"),
+    ("ssrf", "/ambil", "url"),
 ]
 TARGET = "http://testapp:8080"
 
@@ -91,7 +106,7 @@ with Session() as db:
     )
     engagements.update_overrides(db, engagement, {"rate_limit_rps": 100})
     engagements.add_account(db, keystore, engagement, {"session_text": f"sid={sid}"})
-    scan = scans.start(db, engagement, "custom", ["information_gathering"])
+    scan = scans.start(db, engagement, "custom", ["information_gathering", "input_validation"])
     db.commit()
     scan_id, engagement_id = scan.id, engagement.id
 
@@ -140,9 +155,29 @@ with Session() as db:
     scans.checkpoint_continue(db, db.get(Scan, scan_id))
     db.commit()
 
-scan = wait_for(lambda s: s.status == "completed", scan_id, timeout=120)
+scan = wait_for(lambda s: s.status not in ("running", "queued"), scan_id, timeout=900)
 check(scan.status == "completed", f"scan completes after the checkpoint (status={scan.status})")
 check(scan.checkpoint_resolution == "user_continued", "checkpoint resolution recorded")
+
+with Session() as db:
+    not_done = [
+        (t.engine, t.status, t.error)
+        for t in db.scalars(select(Task).where(Task.scan_id == scan_id))
+        if t.status != "done"
+    ]
+    check(not not_done, f"all testing and validation tasks done ({not_done})")
+    found = {
+        (f.vuln_type, path, f.parameter): f.validation
+        for f, path in db.execute(
+            select(Finding, Endpoint.path_template)
+            .join(Endpoint, Finding.endpoint_id == Endpoint.id)
+            .where(Finding.engagement_id == engagement_id)
+        )
+    }
+    for key in EXPECTED_FINDINGS:
+        check(found.get(key) == "confirmed", f"finding {key} confirmed ({found.get(key)})")
+    extra = sorted(set(found) - set(EXPECTED_FINDINGS))
+    check(not extra, f"no findings beyond testapp's weaknesses ({extra})")
 
 with Session() as db:
     types = list(
