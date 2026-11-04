@@ -101,3 +101,65 @@ class BrowserAdapter(Adapter):
             "-c",
             "import importlib.metadata as m; print('playwright ' + m.version('playwright'))",
         ]
+
+
+_MARKER = re.compile(r"^[A-Za-z0-9_-]{4,40}$")
+
+
+class XssAttempt(BaseParams):
+    method: str = Field(default="GET", pattern="^(GET|POST)$")
+    url: str
+    form: dict[str, str] = {}
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        return http_url(value)
+
+
+class XssCheckParams(BaseParams):
+    attempts: list[XssAttempt] = Field(min_length=1, max_length=10)
+    marker: str
+    page_timeout_s: int = Field(default=15, ge=1, le=60)
+
+    @field_validator("marker")
+    @classmethod
+    def _marker(cls, value: str) -> str:
+        if not _MARKER.match(value):
+            raise ValueError("marker must be 4-40 letters, digits, - or _")
+        return value
+
+
+class XssCheckAdapter(BrowserAdapter):
+    """XSS validator: run payloads in Chromium and watch for alert(marker) (TRD 6.3)."""
+
+    name = "xss_check"
+    Params = XssCheckParams
+
+    def targets(self, params: XssCheckParams) -> list[str]:  # type: ignore[override]
+        return [attempt.url for attempt in params.attempts]
+
+    def command(self, params: XssCheckParams, ctx: RunContext) -> list[str]:  # type: ignore[override]
+        config = {
+            "mode": "xss",
+            "attempts": [a.model_dump(include={"method", "url", "form"}) for a in params.attempts],
+            "marker": params.marker,
+            "proxy": proxy_settings(ctx.proxy_url),
+            "headers": params.headers,
+            "page_timeout_ms": params.page_timeout_s * 1000,
+            "out": str(ctx.workdir / "out.jsonl"),
+        }
+        path = ctx.workdir / "config.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+        path.chmod(0o600)
+        return [sys.executable, str(SCRIPT), str(path)]
+
+    def parse(self, ctx: RunContext, stdout: str) -> dict[str, Any]:  # type: ignore[override]
+        attempts = [r for r in read_jsonl(ctx.workdir / "out.jsonl") if r.get("type") == "xss"]
+        executed = next((a for a in attempts if a.get("executed")), None)
+        return {
+            "executed": executed is not None,
+            "attempt": executed["attempt"] if executed else None,
+            "dialogs": executed["dialogs"] if executed else [],
+            "attempts": attempts,
+        }

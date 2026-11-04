@@ -363,3 +363,73 @@ def test_browser_parse(ctx: RunContext) -> None:
     assert login["final_url"] == "http://testapp:8080/login"
     assert {f["action"] for f in result["forms"]} >= {"http://testapp:8080/kontak"}
     assert all(link["followed"] for link in result["links"])
+
+
+# xss_check (browser) ------------------------------------------------------------------
+
+
+def test_xss_check_params_are_strict() -> None:
+    from tools.runner.adapters.browser import XssCheckParams
+
+    ok = {"attempts": [{"url": "http://testapp:8080/sapa?nama=x"}], "marker": "RJDLA1B2C3"}
+    assert XssCheckParams(**ok).attempts[0].method == "GET"
+    for bad in (
+        {**ok, "marker": "a b"},
+        {**ok, "marker": "abc"},
+        {**ok, "attempts": []},
+        {**ok, "attempts": [{"url": "file:///etc/passwd"}]},
+        {**ok, "attempts": [{"url": "http://testapp:8080/", "method": "PUT"}]},
+        {**ok, "attempts": [{"url": "http://testapp:8080/"}] * 11},
+        {**ok, "extra": 1},
+    ):
+        with pytest.raises(ValidationError):
+            XssCheckParams(**bad)
+
+
+def test_xss_check_command_and_targets(ctx: RunContext) -> None:
+    import json
+    import stat
+
+    from tools.runner.adapters import default_adapters
+    from tools.runner.adapters.browser import XssCheckAdapter, XssCheckParams
+
+    assert isinstance(default_adapters()["xss_check"], XssCheckAdapter)
+    params = XssCheckParams(
+        attempts=[
+            {"url": "http://testapp:8080/sapa?nama=x"},
+            {"method": "POST", "url": "http://testapp:8080/kontak", "form": {"pesan": "x"}},
+        ],
+        marker="RJDLA1B2C3",
+        headers={"Cookie": "sid=abc"},
+    )
+    adapter = XssCheckAdapter()
+    assert adapter.targets(params) == [
+        "http://testapp:8080/sapa?nama=x",
+        "http://testapp:8080/kontak",
+    ]
+    config_path = Path(adapter.command(params, ctx)[2])
+    assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+    config = json.loads(config_path.read_text())
+    assert config["mode"] == "xss" and config["marker"] == "RJDLA1B2C3"
+    assert config["attempts"][1] == {
+        "method": "POST",
+        "url": "http://testapp:8080/kontak",
+        "form": {"pesan": "x"},
+    }
+    assert config["proxy"]["username"] == "task.7.nuclei"
+    assert config["headers"] == {"Cookie": "sid=abc"}
+
+
+def test_xss_check_parse(ctx: RunContext) -> None:
+    from tools.runner.adapters.browser import XssCheckAdapter
+
+    shutil.copy(FIXTURES / "xss_check_testapp.jsonl", ctx.workdir / "out.jsonl")
+    result = XssCheckAdapter().parse(ctx, "")
+    assert result["executed"] is True
+    assert (result["attempt"], result["dialogs"]) == (2, ["RJDLA1B2C3"])
+    assert [a["executed"] for a in result["attempts"]] == [False, False, True]
+    (ctx.workdir / "out.jsonl").write_text(
+        '{"type": "xss", "attempt": 0, "status": null, "dialogs": [], "executed": false,'
+        ' "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at http://x/?q=RJDLA1B2C3"}\n'
+    )
+    assert XssCheckAdapter().parse(ctx, "")["executed"] is False

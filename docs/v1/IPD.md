@@ -271,6 +271,8 @@ Pekerjaan:
 - Laporan VA Markdown versi dasar dan riwayat ekspor.
 - `testapp`: contoh untuk setiap jenis kerentanan di atas.
 
+Catatan pelaksanaan: F6 dikirim dalam tiga PR. F6a berisi katalog jenis kerentanan dan CVSS 3.1 (`rajdoll/data/vuln_types.py`, `rajdoll/core/cvss.py`), layanan temuan (sidik jari, evidence dan PoC terenkripsi, `rajdoll/services/findings.py`), tahap validasi di engine, modul Input Validation dengan probe RAJDOLL sendiri (SQLi error dan boolean, XSS terpantul, command injection, SSTI, SSRF), validator `sqli`, `xss_reflected` (adaptor `xss_check`, Chromium lewat Playwright), `cmdi`, `ssti`, `ssrf`, dan contoh kerentanan di `testapp`. F6b berisi adaptor sqlmap, dalfox, commix, nuclei mode DAST, dan validator umum template nuclei. F6c berisi tab Temuan, laporan Markdown, dan riwayat ekspor.
+
 Kriteria selesai (**M1**):
 - Dari penugasan baru sampai unduh laporan `.md` bisa dilakukan di laptop terhadap `testapp`.
 - Semua contoh kerentanan Input Validation di `testapp` muncul sebagai temuan `confirmed`.

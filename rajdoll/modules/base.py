@@ -39,6 +39,38 @@ class EndpointSeen:
 
 
 @dataclass(frozen=True)
+class Exchange:
+    """One HTTP request and its response as raw text: the unit of evidence (BSD 6.3)."""
+
+    request: str
+    response: str | None
+    status: int | None
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """A possible vulnerability a module found; the engine stores it as a finding (BSD 6.1)."""
+
+    vuln_type: str  # key of rajdoll.data.vuln_types.CATALOG
+    method: str
+    url: str  # the URL that was tested
+    parameter: str | None
+    poc: dict[str, Any]  # BSD 6.2: method, path, query, headers, body, body_encoding, ...
+    evidence: tuple[Exchange, ...] = ()
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """A validator's answer for one finding (TRD 6.3)."""
+
+    confirmed: bool
+    evidence: tuple[Exchange, ...] = ()
+    note: str | None = None
+
+
+@dataclass(frozen=True)
 class TaskSpec:
     """A task a module wants created for a stage."""
 
@@ -60,6 +92,8 @@ class PlanContext:
     # The engagement's endpoint inventory, from PLANNING on (dicts of BSD 4.4 columns + "url").
     endpoints: list[dict[str, Any]] = field(default_factory=list)
     has_session: bool = False
+    # Findings of this scan that still need validation (VALIDATION stage): {"id", "vuln_type"}.
+    findings: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -86,6 +120,12 @@ class TaskContext:
     http: Callable[[str], Any] = lambda _purpose: None
     # Session headers (Cookie and others) of a target account; the first account by default.
     session_headers: Callable[[str | None], dict[str, str]] = lambda _label=None: {}
+    # Store a candidate finding (deduplicated by fingerprint); returns the finding id.
+    report_candidate: Callable[[Candidate], int] = lambda _candidate: 0
+    # A finding for validators: {"id", "vuln_type", "parameter", "url", "poc"} (PoC decrypted).
+    finding: Callable[[int], dict[str, Any]] = lambda _id: {}
+    # Store a validator's verdict and its evidence.
+    record_verdict: Callable[[int, Verdict], None] = lambda _id, _verdict: None
 
     def check_cancelled(self) -> None:
         if self.cancel_event.is_set():

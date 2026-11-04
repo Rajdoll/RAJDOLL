@@ -15,15 +15,23 @@ def _testapp():  # type: ignore[no-untyped-def]
     return module
 
 
-def test_smoke_scan_expects_exactly_the_endpoints_testapp_registers() -> None:
+def _smoke_constant(name: str) -> object:
     tree = ast.parse((REPO / "tests" / "integration" / "smoke_scan.py").read_text())
-    expected = next(
+    return next(
         ast.literal_eval(node.value)
         for node in tree.body
-        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "EXPECTED"
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == name
     )
+
+
+def test_smoke_scan_expects_exactly_the_endpoints_testapp_registers() -> None:
     declared = [(method, path) for method, path, _how in _testapp().RECON_ENDPOINTS]
-    assert expected == declared
+    assert _smoke_constant("EXPECTED") == declared
+
+
+def test_smoke_scan_expects_exactly_the_findings_testapp_plants() -> None:
+    assert _smoke_constant("EXPECTED_FINDINGS") == _testapp().EXPECTED_FINDINGS
+    assert len(_testapp().EXPECTED_FINDINGS) == len(_testapp().WEAKNESSES) - 1  # all but .env
 
 
 def test_every_declared_endpoint_is_served() -> None:

@@ -48,8 +48,9 @@ from rajdoll.core.enums import (
     ScanStatus,
     TaskStatus,
 )
-from rajdoll.core.models import Engagement, Scan, TargetAccount, Task
+from rajdoll.core.models import Endpoint, Engagement, Finding, Scan, TargetAccount, Task
 from rajdoll.modules.base import (
+    Candidate,
     EndpointSeen,
     Module,
     PlanContext,
@@ -57,11 +58,13 @@ from rajdoll.modules.base import (
     TaskCancelled,
     TaskContext,
     TransientTaskError,
+    Verdict,
 )
 from rajdoll.modules.registry import available_modules, label
-from rajdoll.services import engagements, inventory, planning, scans, session_check
+from rajdoll.services import engagements, findings, inventory, planning, scans, session_check
 from rajdoll.services.events import emit
 from rajdoll.services.session_check import CheckResult
+from rajdoll.validators.base import ValidationModule
 
 log = logging.getLogger("rajdoll.worker.engine")
 
@@ -160,7 +163,9 @@ class Engine:
     ) -> None:
         self.session_factory = session_factory
         self.tools = tools
-        self.modules = modules if modules is not None else available_modules()
+        self.modules = dict(modules if modules is not None else available_modules())
+        # Built-in: the validation stage runs for every scan, whatever modules it has (TRD 6.3).
+        self.modules.setdefault(ValidationModule.name, ValidationModule())
         self.worker_id = worker_id or default_worker_id()
         self.lease = timedelta(seconds=lease_seconds)
         self.max_parallel = max_parallel
@@ -529,8 +534,14 @@ class Engine:
             stage=stage,
             endpoints=known,
             has_session=bool(engagements.accounts(session, scan.engagement_id)),
+            findings=(
+                findings.for_validation(session, scan.id) if stage == ScanStage.VALIDATION else []
+            ),
         )
-        for name in scan.modules:
+        planned = list(scan.modules)
+        if stage == ScanStage.VALIDATION:
+            planned.append(ValidationModule.name)
+        for name in planned:
             module = self.modules.get(name)
             if module is None:
                 continue
@@ -698,6 +709,11 @@ class Engine:
             add_recon=lambda data: self._add_recon(job, data),
             http=lambda purpose: self._http_client(job, purpose),
             session_headers=lambda label=None: self._session_headers(job, label),
+            report_candidate=lambda candidate: self._report_candidate(job, candidate),
+            finding=lambda finding_id: self._finding(job, finding_id),
+            record_verdict=lambda finding_id, verdict: self._record_verdict(
+                job, finding_id, verdict
+            ),
         )
         try:
             ctx.check_cancelled()
@@ -798,6 +814,68 @@ class Engine:
                 return {}
             stored = engagements.account_session(self.keystore, engagement, chosen)
         return session_check.request_headers(stored)
+
+    def _keystore(self) -> KeyStore:
+        if self.keystore is None:
+            raise RuntimeError("findings need the key store (evidence is encrypted)")
+        return self.keystore
+
+    def _evidence_bytes(self, job: Job) -> int:
+        return int(job.settings.get("evidence_max_bytes", findings.DEFAULT_EVIDENCE_BYTES))
+
+    def _report_candidate(self, job: Job, candidate: Candidate) -> int:
+        with self._transaction() as session:
+            finding, created = findings.record_candidate(
+                session,
+                self._keystore(),
+                job.engagement_id,
+                job.scan_id,
+                job.module,
+                candidate,
+                self._evidence_bytes(job),
+            )
+            if created:
+                emit(
+                    session,
+                    job.scan_id,
+                    EventType.FINDING_CREATED,
+                    _clip(f"Kandidat temuan: {finding.title}"),
+                    level=EventLevel.WARNING,
+                    data={"finding_id": finding.id, "vuln_type": finding.vuln_type},
+                )
+            return finding.id
+
+    def _finding(self, job: Job, finding_id: int) -> dict[str, Any]:
+        with self.session_factory() as session:
+            finding = session.get(Finding, finding_id)
+            if finding is None or finding.engagement_id != job.engagement_id:
+                return {}
+            endpoint = session.get(Endpoint, finding.endpoint_id) if finding.endpoint_id else None
+            return {
+                **findings.as_dict(finding),
+                "poc": findings.poc(session, self._keystore(), finding),
+                # The PoC path is relative (BSD 6.2): the endpoint's host, else the target's.
+                "base_url": f"{endpoint.scheme}://{endpoint.host}" if endpoint else None,
+            }
+
+    def _record_verdict(self, job: Job, finding_id: int, verdict: Verdict) -> None:
+        with self._transaction() as session:
+            finding = session.get(Finding, finding_id, with_for_update=True)
+            if finding is None or finding.engagement_id != job.engagement_id:
+                return
+            was_confirmed = finding.validation == "confirmed"
+            findings.record_verdict(
+                session, self._keystore(), finding, job.scan_id, verdict, self._evidence_bytes(job)
+            )
+            if verdict.confirmed and not was_confirmed:
+                emit(
+                    session,
+                    job.scan_id,
+                    EventType.NOTICE,
+                    _clip(f"Temuan terkonfirmasi: {finding.title}"),
+                    level=EventLevel.WARNING,
+                    data={"finding_id": finding.id, "validation": "confirmed"},
+                )
 
     def _task_log(self, job: Job, message: str) -> None:
         with self._transaction() as session:

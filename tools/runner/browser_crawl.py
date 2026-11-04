@@ -33,8 +33,85 @@ FORMS_JS = """
 """
 
 
+def xss_check(config: dict) -> int:
+    """Open each attempt (GET URL or POSTed form) and report whether alert(marker) ran."""
+    out = open(config["out"], "a", encoding="utf-8")  # noqa: SIM115 (closed below)
+    marker = config["marker"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            proxy=config["proxy"], args=["--disable-dev-shm-usage"]
+        )
+        context = browser.new_context(
+            ignore_https_errors=True, extra_http_headers=config.get("headers", {})
+        )
+        for index, attempt in enumerate(config["attempts"]):
+            page = context.new_page()
+            dialogs: list[str] = []
+
+            def on_dialog(dialog, seen=dialogs) -> None:  # type: ignore[no-untyped-def]
+                seen.append(dialog.message)
+                dialog.dismiss()
+
+            page.on("dialog", on_dialog)
+            page.set_default_timeout(config.get("page_timeout_ms", 15000))
+            status, error = None, None
+            try:
+                if attempt["method"] == "GET":
+                    response = page.goto(attempt["url"], wait_until="load")
+                    status = response.status if response else None
+                else:
+                    page.goto("about:blank")
+                    with page.expect_navigation(wait_until="load") as navigation:
+                        page.evaluate(SUBMIT_FORM_JS, attempt)
+                    response = navigation.value
+                    status = response.status if response else None
+                page.wait_for_timeout(config.get("settle_ms", 1000))
+            except PlaywrightError as exc:
+                # Kept apart from dialogs: the message quotes the URL, which holds the marker.
+                error = str(exc).splitlines()[0][:200]
+            executed = any(marker in message for message in dialogs)
+            out.write(
+                json.dumps(
+                    {
+                        "type": "xss",
+                        "attempt": index,
+                        "status": status,
+                        "dialogs": dialogs[:10],
+                        "executed": executed,
+                        "error": error,
+                    }
+                )
+                + "\n"
+            )
+            out.flush()
+            page.close()
+            if executed:
+                break
+        browser.close()
+    out.close()
+    return 0
+
+
+SUBMIT_FORM_JS = """
+(attempt) => {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = attempt.url;
+  for (const [name, value] of Object.entries(attempt.form || {})) {
+    const input = document.createElement('input');
+    input.type = 'hidden'; input.name = name; input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
+"""
+
+
 def main(config_path: str) -> int:
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    if config.get("mode") == "xss":
+        return xss_check(config)
     out = open(config["out"], "a", encoding="utf-8")  # noqa: SIM115 (closed below)
 
     def write(record: dict) -> None:
