@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://rajdoll_app@db:5432/rajdoll"
     secrets_dir: str = "/secrets"
     tools_url: str = "http://tools:9000"
+    proxy_url: str = "http://tools:8081"
+    tools_token: str = ""
+    tools_db_password: str = ""
     llm_base_url: str = "http://host.docker.internal:1234/v1"
     llm_model: str = "qwen3-4b"
     worker_heartbeat_seconds: float = 30.0

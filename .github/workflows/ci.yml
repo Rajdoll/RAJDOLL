@@ -28,6 +28,7 @@ jobs:
     env:
       RAJDOLL_TEST_DATABASE_URL: postgresql+psycopg://rajdoll_app:ci@127.0.0.1:5432/postgres
       RAJDOLL_REQUIRE_DB_TESTS: "1"
+      RAJDOLL_REQUIRE_PROXY_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,7 +36,8 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install
-        run: pip install -e ".[dev]"
+        # The tools requirements (mitmproxy) are needed for the egress proxy tests.
+        run: pip install -e ".[dev]" -r tools/requirements.txt
       - name: Ruff lint
         run: ruff check .
       - name: Ruff format
@@ -51,7 +53,9 @@ jobs:
       - name: Prepare .env
         run: |
           cp .env.example .env
-          sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-$(openssl rand -hex 12)/" .env
+          for key in POSTGRES_PASSWORD TOOLS_DB_PASSWORD TOOLS_TOKEN; do
+            sed -i "s/^${key}=.*/${key}=ci-$(openssl rand -hex 12)/" .env
+          done
       - name: Validate compose file
         run: docker compose config --quiet
       - name: Build and start
@@ -66,6 +70,17 @@ jobs:
           test "$count" -eq 18
       - name: Check master key was created
         run: docker compose exec -T api test -s /secrets/master.key
+      - name: Check the proxy role can log in
+        run: >-
+          docker compose exec -T tools python -c
+          "import os, psycopg; psycopg.connect(os.environ['RAJDOLL_PROXY_DATABASE_URL']).close()"
+      - name: Check the egress proxy refuses unauthenticated traffic
+        run: >-
+          docker compose exec -T api python -c
+          "import httpx, sys; r = httpx.get('http://example.invalid/', proxy='http://tools:8081');
+          print(r.status_code); sys.exit(r.status_code != 407)"
+      - name: Check the tools container cannot read app secrets
+        run: docker compose exec -T tools sh -c 'test ! -e /secrets' 
       - name: Show service status
         if: always()
         run: docker compose ps

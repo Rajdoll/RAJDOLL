@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from rajdoll import __version__
@@ -17,9 +18,15 @@ def test_api_does_not_expose_interactive_docs() -> None:
     assert client.get("/redoc").status_code == 404
 
 
-def test_tools_health() -> None:
-    response = TestClient(tools_app).get("/health")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "ok"
-    assert body["service"] == "tools"
+def test_tools_health_reports_proxy_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    import tools.runner.app as runner
+
+    monkeypatch.setattr(runner, "proxy_listening", lambda: True)
+    ok = TestClient(tools_app).get("/health")
+    assert ok.status_code == 200
+    assert ok.json()["proxy"] == "listening"
+
+    monkeypatch.setattr(runner, "proxy_listening", lambda: False)
+    down = TestClient(tools_app).get("/health")
+    assert down.status_code == 503  # unhealthy container keeps the worker from starting
+    assert down.json()["proxy"] == "down"
