@@ -745,6 +745,7 @@ class Engine:
             add_recon=lambda data: self._add_recon(job, data),
             http=lambda purpose: self._http_client(job, purpose),
             session_headers=lambda label=None: self._session_headers(job, label),
+            account_username=lambda label: self._account_username(job, label),
             report_candidate=lambda candidate: self._report_candidate(job, candidate),
             finding=lambda finding_id: self._finding(job, finding_id),
             record_verdict=lambda finding_id, verdict: self._record_verdict(
@@ -856,6 +857,19 @@ class Engine:
                 return {}
             stored = engagements.account_session(self.keystore, engagement, chosen)
         return session_check.request_headers(stored)
+
+    def _account_username(self, job: Job, label: str) -> str:
+        if self.keystore is None:
+            return ""
+        with self.session_factory() as session:
+            engagement = session.get(Engagement, job.engagement_id)
+            account = next(
+                (a for a in engagements.accounts(session, job.engagement_id) if a.label == label),
+                None,
+            )
+            if engagement is None or account is None:
+                return ""
+            return engagements.account_username(self.keystore, engagement, account)
 
     def _llm_call(self, job: Job, task: Any, messages: list[dict[str, str]], **ids: Any) -> Any:
         if self.llm is None:

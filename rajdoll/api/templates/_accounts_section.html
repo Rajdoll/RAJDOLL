@@ -8,7 +8,7 @@
       <strong>{{ account.label }}</strong>
       <span class="badge session-{{ account.session_status }}">{{ session_status_labels[account.session_status] }}</span>
     </header>
-    <p><small>Cookie: {{ account.cookie_names | join(", ") or "—" }}<br>Header: {{ account.header_names | join(", ") or "—" }}</small></p>
+    <p><small>Cookie: {{ account.cookie_names | join(", ") or "—" }}<br>Header: {{ account.header_names | join(", ") or "—" }}<br>Username: {{ account.username or "—" }}</small></p>
     {% set result = check_results.get(account.id) %}
     {% if result %}<p class="{{ 'success' if result.valid else 'error' }}" role="status">{{ result.message }}</p>{% endif %}
     <details>
@@ -16,6 +16,13 @@
       <form hx-patch="/engagements/{{ engagement.id }}/accounts/{{ account.id }}" hx-target="#accounts-section" hx-swap="outerHTML">
         <textarea name="session_text" rows="4" required aria-label="Sesi baru untuk {{ account.label }}" placeholder="Cookie: session=..."></textarea>
         <button type="submit" class="secondary">Simpan sesi baru</button>
+      </form>
+    </details>
+    <details>
+      <summary>Ubah username</summary>
+      <form hx-patch="/engagements/{{ engagement.id }}/accounts/{{ account.id }}" hx-target="#accounts-section" hx-swap="outerHTML">
+        <input name="username" value="{{ account.username }}" maxlength="200" autocomplete="off" aria-label="Username {{ account.label }}">
+        <button type="submit" class="secondary">Simpan username</button>
       </form>
     </details>
     <footer>
@@ -36,6 +43,11 @@
       <label>
         Sesi
         <textarea name="session_text" rows="6" required placeholder="Cookie: session=abc123; theme=dark&#10;Authorization: Bearer eyJ..."></textarea>
+      </label>
+      <label>
+        Username (opsional)
+        <input name="username" maxlength="200" autocomplete="off">
+        <small>Username akun ini di aplikasi target. Dipakai uji enumerasi akun (satu login gagal per pengujian); disimpan terenkripsi.</small>
       </label>
       <button type="submit">Tambah akun</button>
     </form>

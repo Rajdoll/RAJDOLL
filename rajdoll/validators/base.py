@@ -107,6 +107,7 @@ def _load() -> None:
         configuration,
         crypto,
         errors,
+        identity,
         injection,
         session,
     )

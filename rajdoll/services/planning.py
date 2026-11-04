@@ -37,7 +37,7 @@ MODULE_RULES: dict[str, Rule] = {
     "authorization": lambda t, e: bool({"idor_candidate", "admin", "profile"} & t),
     "authentication": lambda t, e: bool({"auth", "password_reset", "registration"} & t),
     "session": lambda t, e: "auth" in t,
-    "identity": lambda t, e: bool({"registration", "profile"} & t),
+    "identity": lambda t, e: bool({"registration", "profile", "auth"} & t),
     "business_logic": lambda t, e: "price" in t,
     "file_upload": lambda t, e: "upload" in t,
     "error_handling": lambda t, e: "has_params" in t,

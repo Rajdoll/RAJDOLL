@@ -600,6 +600,30 @@ CATALOG: dict[str, VulnType] = {
                 "https://cwe.mitre.org/data/definitions/319.html",
             ),
         ),
+        VulnType(
+            key="account_enumeration",
+            title="Enumerasi Akun lewat Respons Login",
+            wstg_id="WSTG-IDNT-04",
+            cwe_id="CWE-204",
+            cvss31="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+            description=(
+                "Endpoint login menjawab username yang terdaftar berbeda dari username yang tidak "
+                "terdaftar (pesan, status, atau pengalihan), sehingga daftar pengguna dapat "
+                "ditebak satu per satu."
+            ),
+            impact=(
+                "Penyerang dapat mengumpulkan username yang sah, lalu memusatkan tebakan password "
+                "atau phishing pada akun-akun tersebut."
+            ),
+            recommendation=(
+                "Berikan jawaban yang sama untuk username salah dan password salah (misalnya "
+                '"Username atau password salah") dengan status dan waktu respons yang setara.'
+            ),
+            references=(
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/03-Identity_Management_Testing/04-Testing_for_Account_Enumeration_and_Guessable_User_Account",
+                "https://cwe.mitre.org/data/definitions/204.html",
+            ),
+        ),
     ]
 }
 

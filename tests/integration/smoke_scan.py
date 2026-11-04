@@ -94,6 +94,7 @@ EXPECTED_FINDINGS = [
     ("certificate_problem", "/", None),
     ("cleartext_credentials", "/login", None),
     ("cleartext_credentials", "/api/v1/token", None),
+    ("account_enumeration", "/api/v1/token", "username"),
 ]
 TARGET = "http://testapp:8080"
 
@@ -138,10 +139,11 @@ with Session() as db:
     )
     engagements.update_overrides(db, engagement, {"rate_limit_rps": 100})
     for label, user, password in [("Akun A", "budi", "budi123"), ("Akun B", "sari", "sari123")]:
-        account = {"label": label, "session_text": login(user, password)}
+        account = {"label": label, "session_text": login(user, password), "username": user}
         engagements.add_account(db, keystore, engagement, account)
     modules = ["information_gathering", "configuration", "authentication", "authorization",
-               "session", "input_validation", "error_handling", "cryptography"]  # fmt: skip
+               "session", "input_validation", "error_handling", "cryptography",
+               "identity"]  # fmt: skip
     scan = scans.start(db, engagement, "custom", modules)
     db.commit()
     scan_id, engagement_id = scan.id, engagement.id

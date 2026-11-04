@@ -31,6 +31,7 @@ def available_modules() -> dict[str, Module]:
     from rajdoll.modules.authorization import Authorization
     from rajdoll.modules.configuration import Configuration
     from rajdoll.modules.error_handling import ErrorHandling
+    from rajdoll.modules.identity import Identity
     from rajdoll.modules.information_gathering import InformationGathering
     from rajdoll.modules.input_validation import InputValidation
     from rajdoll.modules.session_management import SessionManagement
@@ -39,6 +40,7 @@ def available_modules() -> dict[str, Module]:
     modules: list[Module] = [
         InformationGathering(),
         Configuration(),
+        Identity(),
         Authentication(),
         Authorization(),
         SessionManagement(),

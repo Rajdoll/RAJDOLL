@@ -150,7 +150,7 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
         )
         engagements.update_overrides(session, engagement, {"rate_limit_rps": 100})
         for label, user, password in [("Akun A", "budi", "budi123"), ("Akun B", "sari", "sari123")]:
-            account = {"label": label, "session_text": login(user, password)}
+            account = {"label": label, "session_text": login(user, password), "username": user}
             engagements.add_account(session, keystore, engagement, account)
         modules = [
             "information_gathering",
@@ -161,6 +161,7 @@ def scan_run(stack: dict, db_engine: Engine) -> Iterator[dict]:
             "input_validation",
             "error_handling",
             "cryptography",
+            "identity",
         ]
         scan = scans.start(session, engagement, "custom", modules)
         scan_id, engagement_id = scan.id, engagement.id

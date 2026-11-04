@@ -57,6 +57,7 @@ WEAKNESSES = {
     "tls-legacy-protocols": "the HTTPS site (serve.py --tls-port) accepts TLS 1.0 and 1.1",
     "tls-self-signed": "the HTTPS site presents a self-signed certificate (CWE-295)",
     "cleartext-login": "POST /login and POST /api/v1/token take credentials over plain HTTP",
+    "account-enumeration": "POST /api/v1/token says whether a username exists (/login does not)",
 }
 # Findings the scan must confirm (IPD F6 and F8 exit criteria): (type, path, parameter).
 # Authorization needs two accounts: Akun A = budi (admin), Akun B = sari (user). Each pasted
@@ -86,6 +87,7 @@ EXPECTED_FINDINGS: list[tuple[str, str, str | None]] = [
     ("certificate_problem", "/", None),
     ("cleartext_credentials", "/login", None),
     ("cleartext_credentials", "/api/v1/token", None),
+    ("account_enumeration", "/api/v1/token", "username"),
 ]
 
 # (method, path template, how recon can find it). Paths use {id} for numeric segments.
@@ -363,8 +365,11 @@ async def api_token(request: Request) -> Response:
     except ValueError:
         body = None
     # Weakness "no-lockout" here too: failed attempts are never limited.
-    if not isinstance(body, dict) or USERS.get(str(body.get("username"))) != body.get("password"):
-        return JSONResponse({"detail": "Username atau password salah"}, status_code=401)
+    if not isinstance(body, dict) or str(body.get("username")) not in USERS:
+        # Weakness "account-enumeration": unknown usernames get their own message.
+        return JSONResponse({"detail": "Username tidak terdaftar"}, status_code=401)
+    if USERS[str(body["username"])] != body.get("password"):
+        return JSONResponse({"detail": "Password salah"}, status_code=401)
     return JSONResponse({"token": _jwt_for(str(body["username"]))})
 
 

@@ -127,6 +127,9 @@ class TaskContext:
     http: Callable[[str], Any] = lambda _purpose: None
     # Session headers (Cookie and others) of a target account; the first account by default.
     session_headers: Callable[[str | None], dict[str, str]] = lambda _label=None: {}
+    # The username the assessor gave for an account ("" when none); decrypted at run time so
+    # it never lands in a task's plaintext target.
+    account_username: Callable[[str], str] = lambda _label: ""
     # Store a candidate finding (deduplicated by fingerprint); returns the finding id.
     report_candidate: Callable[[Candidate], int] = lambda _candidate: 0
     # A finding for validators: {"id", "vuln_type", "parameter", "url", "poc"} (PoC decrypted).
