@@ -1,0 +1,45 @@
+{% extends layout %}
+{% block title %}{{ engagement.name }} · RAJDOLL{% endblock %}
+{% block content %}
+{% include "_engagement_header.html" %}
+{% if warnings %}
+<article class="warning-box">
+  <strong>Perlu perhatian</strong>
+  <ul>{% for message in warnings %}<li>{{ message }}</li>{% endfor %}</ul>
+</article>
+{% endif %}
+<div class="grid">
+  <article>
+    <h2 class="h5">Target</h2>
+    <p><code>{{ engagement.target_url }}</code></p>
+    <p><small>{{ scope_count }} aturan scope · <a href="/engagements/{{ engagement.id }}/scope">ubah</a></small></p>
+    {% if engagement.start_date or engagement.end_date %}
+    <p><small>Periode: {{ engagement.start_date or "?" }} s.d. {{ engagement.end_date or "?" }}</small></p>
+    {% endif %}
+  </article>
+  <article>
+    <h2 class="h5">Akun</h2>
+    {% if accounts %}
+    <ul class="plain">
+      {% for account in accounts %}
+      <li>{{ account.label }} <span class="badge session-{{ account.session_status }}">{{ session_status_labels[account.session_status] }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p>Belum ada akun.</p>{% endif %}
+    <p><small>Cek sesi: {% if engagement.session_check_url %}<code>{{ engagement.session_check_url }}</code>{% else %}belum diatur{% endif %}</small></p>
+  </article>
+</div>
+<article>
+  <h2 class="h5">Temuan</h2>
+  <div class="overflow-auto">
+  <table>
+    <thead><tr><th></th>{% for sev in severity_labels %}<th>{{ severity_labels[sev][1] }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      <tr><th scope="row">Diterima</th>{% for sev in severity_labels %}<td>{{ counts.accepted[sev] }}</td>{% endfor %}</tr>
+      <tr><th scope="row">Belum diputuskan</th>{% for sev in severity_labels %}<td>{{ counts.pending[sev] }}</td>{% endfor %}</tr>
+    </tbody>
+  </table>
+  </div>
+  <p><small class="muted">Scan tersedia mulai fase F4.</small></p>
+</article>
+{% endblock %}

@@ -2,7 +2,7 @@
 
 Asisten pribadi untuk vulnerability assessment (VA) aplikasi web. RAJDOLL menjalankan pipeline VA lengkap di laptop: recon, pengujian per kategori OWASP WSTG v4.2, validasi temuan secara deterministik, bantuan LLM lokal untuk tugas-tugas kecil, triase, laporan Markdown, dan retest.
 
-> **Status: sedang dibangun ulang.** Saat ini repo berada di fase **F1 (fondasi: database, enkripsi, login)**. Belum ada fitur VA yang bisa dipakai. Rencana lengkap ada di [`docs/v1/IPD.md`](docs/v1/IPD.md).
+> **Status: sedang dibangun ulang.** Saat ini repo berada di fase **F2 (penugasan, scope, akun)**. Belum ada fitur VA yang bisa dipakai. Rencana lengkap ada di [`docs/v1/IPD.md`](docs/v1/IPD.md).
 
 ## Dokumen
 

@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
+from rajdoll.core.crypto import KeyStore
 from rajdoll.services import auth
 from rajdoll.services.auth import ActiveSession
 
@@ -25,6 +26,11 @@ def get_db(request: Request) -> Iterator[Session]:
     finally:
         session.rollback()
         session.close()
+
+
+def get_keystore(request: Request) -> KeyStore:
+    keystore: KeyStore = request.app.state.keystore
+    return keystore
 
 
 def current_session(request: Request, db: Session = Depends(get_db)) -> ActiveSession:

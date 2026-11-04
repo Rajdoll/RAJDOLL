@@ -1,0 +1,11 @@
+<section id="delete-section" class="danger-zone">
+  <h2>Hapus penugasan</h2>
+  <p>Semua temuan, evidence, sesi akun, log, dan <strong>kunci enkripsi</strong> penugasan ini dihapus permanen. Data yang terhapus tidak bisa dipulihkan, termasuk dari backup database.</p>
+  {% if delete_errors %}<div class="error" role="alert">{% for message in delete_errors %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}
+  <form hx-delete="/engagements/{{ engagement.id }}" hx-target="#delete-section" hx-swap="outerHTML">
+    <label>Ketik <strong>{{ engagement.name }}</strong> untuk konfirmasi
+      <input name="confirm_name" required autocomplete="off">
+    </label>
+    <button type="submit" class="danger">Hapus permanen</button>
+  </form>
+</section>

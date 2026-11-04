@@ -1,0 +1,13 @@
+<section id="status-section">
+  <h2>Status</h2>
+  {% if status_errors %}<div class="error" role="alert">{% for message in status_errors %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}
+  <p>Status saat ini: <strong>{{ engagement_status_labels[engagement.status] }}</strong>.
+  {% if engagement.status == "draft" %}Penugasan menjadi siap setelah URL target berada di dalam scope.{% endif %}</p>
+  {% if engagement.status == "ready" %}
+  <button type="button" class="secondary" hx-patch="/engagements/{{ engagement.id }}" hx-vals='{"section": "status", "status": "done"}' hx-target="#status-section" hx-swap="outerHTML">Tandai selesai</button>
+  <small>Penanda saja (misalnya laporan sudah dikirim); data tidak dikunci.</small>
+  {% elif engagement.status == "done" %}
+  <button type="button" class="secondary" hx-patch="/engagements/{{ engagement.id }}" hx-vals='{"section": "status", "status": "reopen"}' hx-target="#status-section" hx-swap="outerHTML">Buka kembali</button>
+  {% endif %}
+  {% if htmx %}{% include "_engagement_status.html" %}{% endif %}
+</section>

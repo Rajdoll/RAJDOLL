@@ -1,6 +1,5 @@
 """Application settings stored in `app_setting` (BSD 3.3), with defaults and validation."""
 
-from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, ValidationError
@@ -8,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rajdoll.core.models import AppSetting
+from rajdoll.services.errors import FieldError, ValidationFailed
 
 
 class LlmSettings(BaseModel):
@@ -73,26 +73,16 @@ FIELD_LABELS: dict[str, str] = {
     "block_detection.pause_ratio": "Rasio blokir untuk menjeda",
     "block_detection.pause_after_s": "Jeda setelah blokir berlanjut (detik)",
     "excluded_patterns": "Pola endpoint yang dikecualikan",
+    "defaults.identity_header.name": "Nama header identitas",
+    "defaults.identity_header.value": "Nilai header identitas",
 }
 
 # Values the UI shows in a different unit than the stored setting.
 _DISPLAY_DIVISOR = {"defaults.evidence_max_bytes": 1024}
 
 
-@dataclass(frozen=True)
-class FieldError:
-    field: str
-    message: str
-
-
-class SettingsError(Exception):
-    def __init__(self, errors: list[FieldError]) -> None:
-        super().__init__("; ".join(e.message for e in errors))
-        self.field_errors = errors
-
-    @property
-    def errors(self) -> list[str]:
-        return [e.message for e in self.field_errors]
+class SettingsError(ValidationFailed):
+    code = "invalid_settings"
 
 
 def _number(field: str, value: Any) -> str:
@@ -135,10 +125,11 @@ def _message(field: str, error: dict[str, Any]) -> str:
     return str(error.get("msg", "tidak valid"))
 
 
-def _field_errors(exc: ValidationError) -> list[FieldError]:
+def field_errors(exc: ValidationError, prefix: str = "") -> list[FieldError]:
+    """Pydantic errors as Indonesian messages labelled like the form fields."""
     result = []
     for error in exc.errors():
-        field = ".".join(str(part) for part in error["loc"])
+        field = prefix + ".".join(str(part) for part in error["loc"])
         label = FIELD_LABELS.get(field, field)
         result.append(FieldError(field, f"{label}: {_message(field, error)}"))
     return result
@@ -167,7 +158,7 @@ def update(session: Session, changes: dict[str, Any]) -> AppSettings:
     try:
         validated = AppSettings.model_validate(merged)
     except ValidationError as exc:
-        raise SettingsError(_field_errors(exc)) from exc
+        raise SettingsError(field_errors(exc)) from exc
     dumped = validated.model_dump(mode="json")
     for key in changes:
         row = session.get(AppSetting, key)

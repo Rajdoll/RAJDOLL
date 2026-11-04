@@ -468,6 +468,13 @@ Peran `rajdoll_tools` dibuat oleh migrasi baseline tanpa `LOGIN`. Login dengan p
 | `PUT` | `/engagements/{id}/session-check` | Body: `url`, `marker`. |
 | `GET` | `/engagements/{id}/endpoints` | Filter: `tag`, `excluded`, `source`. |
 
+Catatan:
+- `/` menampilkan daftar penugasan yang sama dengan `GET /engagements`.
+- Halaman yang hanya untuk UI: `GET /engagements/new` (form penugasan baru) dan `GET /engagements/{id}/settings` (tab Pengaturan; versi JSON-nya berisi `settings` dan `effective_settings`). Tab Scope & Akun disajikan oleh `GET /engagements/{id}/scope`.
+- `PATCH /engagements/{id}` mengubah satu bagian per permintaan, dipilih lewat field `section`: `details` (nama, instansi, URL target, catatan, tanggal), `overrides` (pengaturan scan, untuk JSON di dalam `settings`), atau `status` (`done` untuk menandai selesai, `reopen` untuk membuka kembali). Klien JSON boleh tanpa `section`; bagiannya ditentukan dari field yang dikirim.
+- `DELETE` membaca `confirm_name` dari query string, body JSON, atau form, karena htmx 2 mengirim parameter `DELETE` di URL.
+- Status `draft`/`ready` dihitung ulang setiap kali scope atau URL target berubah; `active` dan `done` tidak disentuh.
+
 Contoh `POST /engagements` (JSON):
 
 ```json

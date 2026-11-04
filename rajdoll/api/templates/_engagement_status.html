@@ -1,0 +1,2 @@
+{# Out-of-band update of the header badge after an htmx change that can alter the status. #}
+<span id="engagement-status" class="badge status-{{ engagement.status }}" hx-swap-oob="true">{{ engagement_status_labels[engagement.status] }}</span>

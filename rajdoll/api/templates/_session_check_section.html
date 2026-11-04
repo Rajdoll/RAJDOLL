@@ -1,0 +1,13 @@
+<section id="session-check-section">
+  <h2>Cek sesi</h2>
+  <p><small>URL yang hanya bisa dibuka saat login, dan teks yang hanya muncul saat login (misalnya nama pengguna). Dipakai untuk mendeteksi sesi kedaluwarsa selama scan. Kosongkan URL untuk mematikan.</small></p>
+  {% if session_check_errors %}<div class="error" role="alert">{% for message in session_check_errors %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}
+  {% if session_check_saved %}<p class="success" role="status">Cek sesi disimpan.</p>{% endif %}
+  <form hx-put="/engagements/{{ engagement.id }}/session-check" hx-target="#session-check-section" hx-swap="outerHTML">
+    <div class="grid">
+      <label>URL cek sesi <input type="url" name="url" value="{{ engagement.session_check_url or '' }}" placeholder="https://app.instansi.test/profil"></label>
+      <label>Penanda login <input name="marker" maxlength="200" value="{{ engagement.session_check_marker or '' }}" placeholder="Nama pengguna"></label>
+    </div>
+    <button type="submit" class="secondary">Simpan cek sesi</button>
+  </form>
+</section>
