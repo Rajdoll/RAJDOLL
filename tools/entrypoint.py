@@ -13,6 +13,7 @@ import time
 PROXY_PORT = os.environ.get("RAJDOLL_PROXY_PORT", "8081")
 RUNNER_PORT = os.environ.get("RAJDOLL_RUNNER_PORT", "9000")
 CONFDIR = os.environ.get("RAJDOLL_PROXY_CONFDIR", "/data/mitmproxy")
+SCRIPT = os.environ.get("RAJDOLL_PROXY_SCRIPT", "/app/tools/proxy/mitm_script.py")
 
 COMMANDS = {
     "proxy": [
@@ -31,7 +32,7 @@ COMMANDS = {
         "--set",
         "stream_large_bodies=5m",
         "-s",
-        "/app/tools/proxy/mitm_script.py",
+        SCRIPT,
     ],
     "runner": [
         "uvicorn",

@@ -21,12 +21,12 @@ def test_api_does_not_expose_interactive_docs() -> None:
 def test_tools_health_reports_proxy_state(monkeypatch: pytest.MonkeyPatch) -> None:
     import tools.runner.app as runner
 
-    monkeypatch.setattr(runner, "proxy_listening", lambda: True)
+    monkeypatch.setattr(runner, "proxy_listening", lambda *_: True)
     ok = TestClient(tools_app).get("/health")
     assert ok.status_code == 200
     assert ok.json()["proxy"] == "listening"
 
-    monkeypatch.setattr(runner, "proxy_listening", lambda: False)
+    monkeypatch.setattr(runner, "proxy_listening", lambda *_: False)
     down = TestClient(tools_app).get("/health")
     assert down.status_code == 503  # unhealthy container keeps the worker from starting
     assert down.json()["proxy"] == "down"
