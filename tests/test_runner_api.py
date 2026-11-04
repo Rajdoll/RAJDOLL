@@ -206,3 +206,33 @@ def test_non_http_tool_never_runs_without_its_audit_row(tmp_path: Path) -> None:
     assert response.status_code == 503
     assert "audit log unavailable" in response.json()["detail"]
     assert FakeAdapter.contexts == []
+
+
+class VersionedAdapter(FakeAdapter):
+    name = "versioned"
+
+    def version_command(self, bin_dir: Path) -> list[str]:
+        return [sys.executable, "-c", "print('versioned 1.2.3')"]
+
+
+def test_health_does_not_need_a_writable_tool_home(tmp_path: Path) -> None:
+    # In CI the runner's default /data/home cannot be created; /health must still answer.
+    blocker = tmp_path / "file"
+    blocker.write_text("not a directory")
+    config = RunnerConfig(
+        token=TOKEN,
+        bin_dir=tmp_path / "bin",
+        template_dir=tmp_path / "templates",
+        tool_home=blocker / "home",
+        work_root=tmp_path,
+    )
+    import tools.runner.app as runner
+
+    original = runner.proxy_listening
+    runner.proxy_listening = lambda *_: True
+    try:
+        response = TestClient(create_app(config, {"versioned": VersionedAdapter()})).get("/health")
+    finally:
+        runner.proxy_listening = original
+    assert response.status_code == 200
+    assert response.json()["tools"] == {"versioned": "1.2.3"}
