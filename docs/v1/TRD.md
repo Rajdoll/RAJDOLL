@@ -4,7 +4,7 @@
 |---|---|
 | Dokumen | Technical Requirement Document (TRD) |
 | Acuan | PRD v1.1 (`docs/v1/PRD.md`) |
-| Status | Draf untuk ditinjau |
+| Status | Disetujui (v1.0, 4 November 2026) |
 | Dokumen terkait | AFD (alur dan layar), BSD (skema data dan API), IPD (tahapan) |
 
 Dokumen ini menjelaskan **bagaimana** kebutuhan di PRD dipenuhi secara teknis. Skema tabel dan kontrak API dirinci di BSD; di sini hanya disebut sejauh perlu untuk menjelaskan desain.
@@ -324,7 +324,7 @@ Tidak dienkripsi agar bisa dicari dan difilter: metadata temuan (judul, severity
 - **Kunci utama** (master key) disimpan sebagai berkas di volume Docker terpisah, dibuat saat instalasi pertama.
 - **Setiap penugasan punya kunci data sendiri**, yang dienkripsi dengan kunci utama dan disimpan di database.
 - **Menghapus penugasan (F-03)** menghapus baris datanya sekaligus kunci data penugasan itu. Sisa data di cadangan atau berkas log Postgres tidak bisa dibaca lagi tanpa kunci tersebut.
-- Disarankan mengaktifkan BitLocker di laptop sebagai lapisan tambahan.
+- **BitLocker (atau Device encryption) wajib diaktifkan** di drive tempat data Docker Desktop berada (biasanya `C:`). Karena berkas kunci utama ada di disk yang sama dengan database, tanpa enkripsi disk, laptop yang hilang berarti database dan kuncinya ikut hilang bersama. Enkripsi di level aplikasi tetap melindungi dari salinan database atau backup yang bocor.
 
 ### 8.3 Batas ukuran
 
@@ -360,7 +360,7 @@ Body evidence dipotong pada ukuran maksimum (bawaan 1 MB per body, bisa diatur),
 
 | Aspek | Ketentuan |
 |---|---|
-| Prasyarat | Windows dengan Docker Desktop (backend WSL2), LM Studio dengan server lokal aktif di port 1234. |
+| Prasyarat | Windows dengan Docker Desktop (backend WSL2), LM Studio dengan server lokal aktif di port 1234, BitLocker atau Device encryption aktif di drive data Docker (bagian 8.2). |
 | Lokasi repo | Di dalam filesystem WSL (misalnya `~/RAJDOLL`), bukan di `/mnt/c`, agar akses berkas dan build jauh lebih cepat. |
 | Memori WSL2 | Bawaan WSL2 memakai maksimal 50% RAM (16 GB dari 32 GB). Ini cukup; bisa diatur lewat `%UserProfile%\.wslconfig` jika perlu. |
 | Volume | `pgdata` (database), `secrets` (kunci utama dan CA proxy), `nuclei-templates`. |
@@ -413,4 +413,4 @@ Pengaturan per penugasan menimpa pengaturan aplikasi.
 | No | Pertanyaan | Usulan bawaan |
 |---|---|---|
 | T1 | Versi CVSS utama bawaan: 3.1 atau 4.0? | Selesai: 3.1, bisa diubah di pengaturan. |
-| T2 | Kunci utama: berkas di volume Docker, atau diturunkan dari password login (data tidak bisa dibuka tanpa login)? | Berkas di volume untuk v1. Opsi password lebih aman tetapi membuat worker tidak bisa melanjutkan scan setelah restart sebelum Anda login. |
+| T2 | Kunci utama: berkas di volume Docker, atau diturunkan dari password login? | Selesai: berkas di volume Docker, dengan BitLocker wajib aktif (bagian 8.2). |
