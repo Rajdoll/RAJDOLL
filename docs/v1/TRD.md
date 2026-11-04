@@ -164,24 +164,26 @@ Detail teknis:
 | Tool | Fungsi | Status dibanding sistem lama |
 |---|---|---|
 | nuclei 3.11.1 | Mesin utama: template dan mode DAST | Baru |
-| katana | Crawling, termasuk mode headless untuk SPA | Dipertahankan, dipindah ke image `tools` |
-| ffuf | Fuzzing direktori dan parameter | Dipertahankan |
+| katana 1.8.0 | Crawling mode standar: link, form, parsing JavaScript, file umum | Dipertahankan, dipindah ke image `tools` |
+| ffuf 2.2.1 | Fuzzing direktori dan penemuan parameter, dengan wordlist bawaan RAJDOLL (`tools/wordlists/`) | Dipertahankan |
 | httpx (ProjectDiscovery) 1.12.0 | Probe HTTP dan deteksi teknologi | Dipertahankan, menggantikan whatweb |
-| nmap | Port scan dan deteksi layanan | Dipertahankan |
+| nmap (paket Debian, versi dikunci) | Port scan TCP connect dan deteksi layanan ringan | Dipertahankan |
 | sqlmap | SQL injection | Dipertahankan |
 | dalfox | XSS | Dipertahankan |
 | commix | Command injection | Dipertahankan |
 | testssl.sh | Konfigurasi TLS (modul Weak Cryptography) | Dipertahankan |
 | retire.js | Library JavaScript yang rentan | Dipertahankan |
 | smuggler | HTTP request smuggling | Dipertahankan, opsional |
-| Playwright + Chromium | Verifikasi XSS di browser, auto-login, render SPA | Dipertahankan |
+| Playwright 1.63.0 + Chromium (headless shell) | Render SPA saat recon (adaptor `browser`), verifikasi XSS di browser, auto-login | Dipertahankan |
 | feroxbuster, dirsearch | Fuzzing direktori | **Dihapus**, digantikan ffuf |
 | whatweb | Fingerprint teknologi | **Dihapus**, digantikan httpx (sekaligus menghapus Ruby dari image) |
 | subfinder, subjack | Subdomain dan subdomain takeover | **Dihapus**, tidak relevan untuk clone satu host |
 | tplmap | SSTI | **Dihapus** (tidak lagi dirawat), digantikan template nuclei dan verifikasi SSTI yang sudah ada |
 | ssrfmap, kxss | SSRF dan refleksi XSS | **Dihapus**, digantikan template nuclei dan dalfox |
 
-Semua tool dipasang dengan versi pasti di `tools/Dockerfile` (sistem lama memakai `@latest` untuk beberapa tool). Tool berbasis Go (nuclei, httpx, dan nanti katana, ffuf, dalfox) dibangun dari source di tahap build terpisah dengan `go install modul@versi`, sehingga setiap modul diverifikasi terhadap checksum database Go. Template kustom RAJDOLL disimpan di repo (`templates/nuclei/`) dan disalin ke image; template nuclei resmi, dikunci pada satu rilis, ditambahkan bersama modul yang memakainya (F5/F6).
+Semua tool dipasang dengan versi pasti di `tools/Dockerfile` (sistem lama memakai `@latest` untuk beberapa tool). Tool berbasis Go (nuclei, httpx, katana, ffuf, dan nanti dalfox) dibangun dari source di tahap build terpisah dengan `go install modul@versi`, sehingga setiap modul diverifikasi terhadap checksum database Go. Template kustom RAJDOLL disimpan di repo (`templates/nuclei/`) dan disalin ke image; template nuclei resmi, dikunci pada satu rilis, ditambahkan bersama modul yang memakainya (F5/F6).
+
+**Render SPA memakai Playwright, bukan katana headless (keputusan F5).** Mode headless katana meneruskan alamat proxy ke Chrome lewat `--proxy-server`, yang mengabaikan kredensial di URL, sehingga semua request ditolak egress proxy (407). Adaptor `browser` menjalankan Chromium lewat Playwright, yang mengirim kredensial proxy, lalu merekam request yang dibuat halaman (termasuk fetch/XHR), link, dan form. katana tetap dipakai dalam mode standar.
 
 **Out-of-band (interactsh) dimatikan secara bawaan.** Server interactsh publik berada di internet, sehingga data pengujian keluar dari laptop (melanggar NF-06), dan clone target belum tentu bisa menjangkau internet. Bisa diaktifkan per penugasan dengan peringatan, atau memakai server interactsh lokal di versi berikutnya.
 
@@ -244,7 +246,7 @@ Modul baru cukup ditambahkan ke registri (PRD NF-08). Cek yang cukup ditulis seb
 
 | Modul | Mesin utama | Cek kustom (Python) |
 |---|---|---|
-| Information Gathering | katana, ffuf, httpx, nmap, nuclei (exposure) | Analisis bundle JavaScript |
+| Information Gathering | katana, Playwright (`browser`), ffuf, httpx, nmap | Analisis bundle JavaScript (termasuk source map), probe OpenAPI/GraphQL, robots.txt/sitemap, sidik jari WAF |
 | Configuration & Deployment | nuclei (misconfig, header), httpx | Metode HTTP, file cadangan |
 | Identity Management | nuclei | Enumerasi akun, kebijakan pendaftaran |
 | Authentication | nuclei | JWT, lockout, alur reset password |
@@ -304,7 +306,7 @@ Hanya metode yang diizinkan di konfigurasi yang boleh diusulkan (bawaan: GET, PO
 
 | Bagian | Desain |
 |---|---|
-| Deteksi WAF di recon | Template nuclei untuk deteksi WAF dan sidik jari header/cookie/halaman blokir yang umum. Hasilnya ditampilkan di checkpoint. |
+| Deteksi WAF di recon | Cek kustom: satu request biasa dan satu request bermuatan serangan yang jelas, dicocokkan dengan sidik jari header/cookie/halaman blokir yang umum (Cloudflare, Akamai, Imperva, F5, AWS WAF, ModSecurity, FortiWeb, Barracuda, Sucuri, Wallarm). Template nuclei resmi belum dikunci, jadi deteksi ini memakai cek kustom. Hasilnya ditampilkan di checkpoint. |
 | Deteksi blokir saat scan | Egress proxy menghitung rasio respons 403/406/429/503, koneksi diputus, dan kecocokan dengan pola halaman blokir atau CAPTCHA dalam jendela waktu bergulir. |
 | Reaksi bertahap | Rasio melewati ambang pertama → rate limit diturunkan setengah. Tetap tinggi setelah beberapa menit → scan di-pause dan asesor diberi tahu. |
 | Penandaan | Tugas yang sebagian besar requestnya diblokir berstatus `blocked`. Laporan memuat daftar modul dan endpoint yang **tidak teruji (terblokir)**. |

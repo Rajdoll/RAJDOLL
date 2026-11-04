@@ -252,6 +252,8 @@ Pekerjaan:
 - Perencanaan berbasis aturan: penanda endpoint, pola pengecualian, pemilihan modul per endpoint, perkiraan jumlah request.
 - Layar Checkpoint lengkap (AFD A5), termasuk tempel request mentah dari Burp dan tambah ke scope.
 
+Catatan pelaksanaan: F5 dikirim dalam dua PR. F5a berisi adaptor katana, ffuf, nmap, dan `browser` (Playwright; menggantikan katana headless, lihat TRD 4.3), modul Information Gathering (recon dan gelombang kedua di tahap perencanaan: analisis JavaScript dan penemuan parameter), inventaris endpoint dengan pengecualian otomatis, ringkasan recon, dan tampilan baca-saja di checkpoint. F5b berisi penanda berbasis aturan, pemilihan modul per endpoint, perkiraan jumlah request, dan penyuntingan checkpoint (termasuk tempel request Burp dan tambah ke scope).
+
 Kriteria selesai:
 - Recon terhadap `testapp` menemukan semua endpoint yang didaftarkan di aplikasi uji, termasuk yang hanya ada di JavaScript.
 - Endpoint `logout` di `testapp` otomatis dikecualikan.
