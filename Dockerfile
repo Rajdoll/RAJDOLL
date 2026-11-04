@@ -16,6 +16,7 @@ COPY rajdoll ./rajdoll
 RUN pip install --no-cache-dir .
 COPY alembic.ini ./
 COPY migrations ./migrations
+COPY profiles ./profiles
 
 USER rajdoll
 EXPOSE 8000

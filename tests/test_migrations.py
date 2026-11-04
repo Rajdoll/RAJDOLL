@@ -137,3 +137,37 @@ def test_downgrade_then_upgrade(empty_db_url: str, db_engine: Engine) -> None:
         assert _public_tables(engine) == EXPECTED_TABLES
     finally:
         engine.dispose()
+
+
+def test_check_constraints_match_enums(db_engine: Engine) -> None:
+    """Every `x IN (...)` CHECK in the database lists exactly the values of its model enum.
+
+    Alembic autogenerate ignores CHECK bodies, so an enum change without a hand-written
+    migration would otherwise go unnoticed.
+    """
+    import re
+
+    from sqlalchemy import CheckConstraint
+
+    expected: dict[str, set[str]] = {}
+    for table in Base.metadata.tables.values():
+        for constraint in table.constraints:
+            if not isinstance(constraint, CheckConstraint):
+                continue
+            match = re.fullmatch(r"\w+ IN \((.*)\)", str(constraint.sqltext))
+            if match:
+                name = str(constraint.name)  # already converted by the naming convention
+                expected[name if name.startswith("ck_") else f"ck_{table.name}_{name}"] = set(
+                    re.findall(r"'([^']*)'", match.group(1))
+                )
+    with db_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE contype = 'c' AND connamespace = 'public'::regnamespace"
+            )
+        ).all()
+    actual = {name: set(re.findall(r"'([^']*)'::text", definition)) for name, definition in rows}
+    assert len(expected) >= 20
+    for name, values in expected.items():
+        assert actual.get(name) == values, name

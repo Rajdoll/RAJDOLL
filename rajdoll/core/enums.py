@@ -108,6 +108,8 @@ class EventType(StrEnum):
     RATE_REDUCED = "rate_reduced"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    NOTICE = "notice"
 
 
 class Severity(StrEnum):
