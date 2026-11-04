@@ -1,0 +1,93 @@
+{# Finding detail (AFD A8, 5.5). Swapped into #finding-detail; after a decision the list item
+   and the counters update out of band. #}
+{% set sev = severity_labels.get(finding.severity, ("?", finding.severity)) %}
+<article class="finding" id="finding-{{ finding.id }}">
+  <header>
+    <h2 class="h4">{{ finding.title }}</h2>
+    <p>
+      <span class="sev sev-{{ finding.severity }}">{{ sev[1] }}</span>
+      {% if finding.cvss31 %}· CVSS 3.1: <strong>{{ finding.cvss31.score }}</strong>{% endif %}
+      · <span class="badge validation-{{ finding.validation }}">{{ validation_labels.get(finding.validation, finding.validation) }}</span>
+      · <span class="badge decision-{{ finding.decision }}">{{ decision_labels.get(finding.decision, finding.decision) }}</span>
+    </p>
+    <p class="muted">
+      {{ module_label(finding.module) }}{% if finding.wstg_id %} · {{ finding.wstg_id }}{% endif %}{% if finding.cwe_id %} · {{ finding.cwe_id }}{% endif %}
+      {% if finding.endpoint %}· <code>{{ finding.endpoint.method }} {{ finding.endpoint.path_template }}</code>{% endif %}
+      {% if finding.parameter %}· param: <code>{{ finding.parameter }}</code>{% endif %}
+    </p>
+    {% if finding.cvss31 %}<p class="muted"><code>{{ finding.cvss31.vector }}</code></p>{% endif %}
+  </header>
+
+  <section>
+    <h3 class="h6">Deskripsi</h3>
+    <p class="prewrap">{{ finding.description }}</p>
+    <h3 class="h6">Dampak</h3>
+    <p class="prewrap">{{ finding.impact }}</p>
+    <h3 class="h6">Rekomendasi</h3>
+    <p class="prewrap">{{ finding.recommendation }}</p>
+    {% if finding.references %}
+    <h3 class="h6">Referensi</h3>
+    <ul>{% for ref in finding.references %}<li><a href="{{ ref }}" rel="noopener noreferrer" target="_blank">{{ ref }}</a></li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+
+  {% if poc %}
+  <section>
+    <h3 class="h6">PoC</h3>
+    <div class="controls">
+      <button type="button" class="secondary btn-small" data-copy="#poc-curl-{{ finding.id }}">Salin curl</button>
+      <button type="button" class="secondary btn-small" data-copy="#poc-raw-{{ finding.id }}">Salin request mentah</button>
+      <a class="secondary btn-small" role="button" href="/findings/{{ finding.id }}/poc?format=curl" target="_blank">curl (teks)</a>
+    </div>
+    <pre class="raw"><code id="poc-curl-{{ finding.id }}">{{ poc.curl }}</code></pre>
+    <pre class="raw" hidden><code id="poc-raw-{{ finding.id }}">{{ poc.raw }}</code></pre>
+    <p class="muted"><small>Sesi akun tidak disertakan; tambahkan header Cookie atau Authorization akun uji.</small></p>
+  </section>
+  {% endif %}
+
+  <section>
+    <h3 class="h6">Evidence ({{ finding.evidence_count }})</h3>
+    {% include "_finding_evidence.html" %}
+  </section>
+
+  <footer id="finding-decision">
+    {% if decision_errors %}
+    <div class="error" role="alert"><ul>{% for message in decision_errors %}<li>{{ message }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if finding.decision == "rejected" and finding.decision_reason %}
+    <p class="muted">Ditolak: {{ finding.decision_reason }}</p>
+    {% endif %}
+    <div class="controls">
+      {% if finding.decision != "accepted" %}
+      <form method="post" action="/findings/{{ finding.id }}/decision" hx-post="/findings/{{ finding.id }}/decision" hx-target="#finding-detail">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="decision" value="accepted">
+        <button type="submit">Terima</button>
+      </form>
+      {% endif %}
+      {% if finding.decision != "rejected" %}
+      <details class="inline">
+        <summary role="button" class="secondary outline">Tolak…</summary>
+        <form method="post" action="/findings/{{ finding.id }}/decision" hx-post="/findings/{{ finding.id }}/decision" hx-target="#finding-detail">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="decision" value="rejected">
+          <input type="text" name="reason" placeholder="Alasan (wajib)" required maxlength="2000" value="{{ reason_value if reason_value is defined else '' }}" aria-label="Alasan menolak">
+          <button type="submit" class="secondary">Tolak</button>
+        </form>
+      </details>
+      {% endif %}
+      {% if finding.decision != "pending" %}
+      <form method="post" action="/findings/{{ finding.id }}/decision" hx-post="/findings/{{ finding.id }}/decision" hx-target="#finding-detail">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="decision" value="pending">
+        <button type="submit" class="secondary outline">Kembalikan ke belum diputuskan</button>
+      </form>
+      {% endif %}
+    </div>
+  </footer>
+</article>
+{% if oob_item is defined and oob_item %}
+{% set item = oob_item %}
+{% include "_finding_item.html" %}
+{% include "_finding_counts.html" %}
+{% endif %}

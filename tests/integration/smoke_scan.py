@@ -12,6 +12,7 @@ and the validators run; IPD F6: every Input Validation weakness of testapp becom
 finding. Not collected by pytest.
 """
 
+import re
 import sys
 import time
 import uuid
@@ -199,6 +200,52 @@ with Session() as db:
         )
     )
     check(commix_rows is not None, "commix traffic went through the proxy")
+
+# IPD F6 (M1): triage and the VA report through the real api, as the assessor would.
+API = "http://127.0.0.1:8000"
+PASSWORD = "smoke-scan-password-" + uuid.uuid4().hex[:8]
+api = httpx.Client(base_url=API, trust_env=False, follow_redirects=False, timeout=60)
+setup = api.post(
+    "/setup",
+    json={"password": PASSWORD, "password_confirm": PASSWORD},
+    headers={"Accept": "application/json"},
+)
+if setup.status_code == 409:
+    print("skip api triage checks: the api already has a password (not a fresh stack)")
+else:
+    check(setup.status_code == 201, f"first-run setup through the api ({setup.status_code})")
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', api.get("/settings").text)
+    headers = {"Accept": "application/json", "X-CSRF-Token": csrf.group(1) if csrf else ""}
+    listed = api.get(f"/engagements/{engagement_id}/findings", headers=headers).json()["items"]
+    check(len(listed) == len(EXPECTED_FINDINGS), f"findings tab lists {len(listed)} findings")
+    rejected_id = None
+    for item in listed:
+        if item["vuln_type"] == "ssrf":
+            rejected_id = item["id"]
+            body = {"decision": "rejected", "reason": "Uji smoke: ditolak"}
+        else:
+            body = {"decision": "accepted"}
+        decided = api.post(f"/findings/{item['id']}/decision", json=body, headers=headers)
+        check(decided.status_code == 200, f"decision on #{item['id']} ({decided.status_code})")
+    curl = api.get(f"/findings/{listed[0]['id']}/poc?format=curl").text
+    check(curl.startswith("curl -i -X "), "PoC as curl")
+    created = api.post(f"/engagements/{engagement_id}/reports", json={"kind": "va"},
+                       headers=headers)  # fmt: skip
+    check(created.status_code == 201, f"VA report created ({created.status_code})")
+    report_id = created.json().get("id")
+    download = api.get(f"/reports/{report_id}/download")
+    markdown = download.text
+    check(download.headers.get("content-type", "").startswith("text/markdown"), "report is .md")
+    check("attachment; filename=" in download.headers.get("content-disposition", ""),
+          "report downloads as a file")  # fmt: skip
+    check(markdown.count("\n### 3.") == len(EXPECTED_FINDINGS) - 1,
+          "report details every accepted finding")  # fmt: skip
+    check("SSRF" not in markdown and "Server-Side Request Forgery" not in markdown,
+          "rejected finding left out of the report")  # fmt: skip
+    check("curl -i -X GET" in markdown, "report has reproduction steps")
+    preview = api.get(f"/reports/{report_id}")
+    check(preview.status_code == 200 and "<h1>Laporan Vulnerability Assessment" in preview.text,
+          "report preview renders")  # fmt: skip
 
 with Session() as db:
     types = list(

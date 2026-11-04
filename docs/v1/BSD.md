@@ -555,6 +555,8 @@ Contoh `GET /scans/{scan_id}/checkpoint`:
 | `GET` | `/findings/{finding_id}/poc` | `?format=curl` atau `?format=raw`; balikan `text/plain`. |
 | `POST` | `/findings/{finding_id}/resend` | Body: `raw_request`, `account`. Dikirim lewat egress proxy; hasil disimpan sebagai evidence `resend`. Ditolak `403` jika di luar scope. |
 
+Catatan implementasi (F6c): `GET`, `/decision`, `/evidence`, dan `/poc` tersedia; `POST /engagements/{id}/findings`, `PATCH`, `/merge`, dan `/resend` datang di F9. `GET /findings/{id}` dari navigasi browser biasa dialihkan ke tab Temuan dengan temuan itu terpilih; dengan HTMX membalas panel detail. Daftar belum dipaginasi (`next_cursor` selalu `null`). PoC `raw` dan `curl` tidak memuat sesi akun.
+
 Contoh `GET /findings/{finding_id}`:
 
 ```json
@@ -591,6 +593,8 @@ Pada contoh ini severity `high` mengikuti skor CVSS 4.0 (7.1) karena `cvss_prima
 | `POST` | `/engagements/{id}/reports` | Body: `kind` (`va`/`retest`), `retest_scan_id`. Balikan `201` berisi `id` dan `warnings`. |
 | `GET` | `/reports/{report_id}` | Pratinjau (HTML hasil render Markdown). |
 | `GET` | `/reports/{report_id}/download` | `text/markdown`, nama berkas `<aplikasi>-<jenis>-<tanggal>.md`. |
+
+Catatan implementasi (F6c): hanya `kind = va`; `retest` dibalas 422 sampai F10. `warnings` disimpan sebagai `{"pending_findings": n, "blocked_tasks": n}`; balikan `POST` berisi pesannya. Pratinjau dirender dari Markdown dengan HTML mentah dimatikan, dan evidence target ditaruh dalam blok kode yang pagarnya lebih panjang dari deretan backtick di dalamnya. Nama berkas memakai slug ASCII dari nama penugasan dan tanggal WIB. Rute template temuan datang di F9.
 | `GET`/`POST` | `/finding-templates` | |
 | `GET`/`PATCH`/`DELETE` | `/finding-templates/{id}` | Template bawaan tidak bisa dihapus, hanya disunting atau dikembalikan ke isi awal (`POST /finding-templates/{id}/reset`). |
 

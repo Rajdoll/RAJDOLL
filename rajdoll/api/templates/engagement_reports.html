@@ -1,0 +1,43 @@
+{% extends layout %}
+{% block title %}Laporan · {{ engagement.name }} · RAJDOLL{% endblock %}
+{% block content %}
+{% include "_engagement_header.html" %}
+<section id="report-new">
+  <h2 class="h5">Laporan VA</h2>
+  <p>Laporan Markdown berisi ringkasan, daftar dan detail temuan (evidence, langkah reproduksi, rekomendasi), pengujian yang terblokir, serta lampiran scope dan metodologi. Hanya temuan yang <strong>diterima</strong> yang masuk ({{ accepted }} saat ini).</p>
+  {% if report_errors %}
+  <div class="error" role="alert"><ul>{% for message in report_errors %}<li>{{ message }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if warnings %}
+  <ul class="warnings">{% for message in warnings %}<li>{{ message }}</li>{% endfor %}</ul>
+  {% endif %}
+  <form method="post" action="/engagements/{{ engagement.id }}/reports">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="kind" value="va">
+    <button type="submit">Buat laporan VA</button>
+  </form>
+</section>
+<section>
+  <h2 class="h5">Riwayat ekspor</h2>
+  {% if history %}
+  <div class="overflow-auto">
+  <table class="striped">
+    <thead><tr><th>Waktu</th><th>Jenis</th><th>Temuan</th><th>Peringatan</th><th></th></tr></thead>
+    <tbody>
+      {% for report in history %}
+      <tr>
+        <td>{{ wib(report.created_at, "%d-%m-%Y %H:%M") }}</td>
+        <td>{{ kind_labels.get(report.kind, report.kind) }}</td>
+        <td>{{ report.finding_count }}</td>
+        <td>{% if report.warnings.pending_findings %}{{ report.warnings.pending_findings }} belum diputuskan{% endif %}{% if report.warnings.pending_findings and report.warnings.blocked_tasks %} · {% endif %}{% if report.warnings.blocked_tasks %}{{ report.warnings.blocked_tasks }} terblokir{% endif %}{% if not report.warnings.pending_findings and not report.warnings.blocked_tasks %}—{% endif %}</td>
+        <td class="actions"><a href="/reports/{{ report.id }}">Pratinjau</a> · <a href="/reports/{{ report.id }}/download">Unduh .md</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Belum ada laporan yang diekspor.</p>
+  {% endif %}
+</section>
+{% endblock %}

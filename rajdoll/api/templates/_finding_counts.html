@@ -1,0 +1,2 @@
+{# Counters above the list (AFD 5.5); also swapped out of band after a decision. #}
+<p id="finding-counts"{% if oob_item is defined and oob_item %} hx-swap-oob="true"{% endif %}><strong>{{ counts.pending }}</strong> belum diputuskan · <strong>{{ counts.accepted }}</strong> diterima · <strong>{{ counts.rejected }}</strong> ditolak</p>

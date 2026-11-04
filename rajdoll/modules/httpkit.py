@@ -233,5 +233,36 @@ def curl(base_url: str, poc: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+MULTIPART_BOUNDARY = "----rajdoll-poc"
+
+
+def raw_from_poc(base_url: str, poc: dict[str, Any]) -> str:
+    """The PoC as a raw HTTP/1.1 request, ready to paste into Burp Repeater."""
+    parts = urlsplit(base_url)
+    target = (parts.path.rstrip("/") + poc.get("path", "/")) or "/"
+    if poc.get("query"):
+        target += "?" + urlencode(poc["query"])
+    lines = [f"{poc.get('method', 'GET')} {target} HTTP/1.1", f"Host: {parts.netloc}"]
+    lines += [f"{name}: {value}" for name, value in (poc.get("headers") or {}).items()]
+    body = poc.get("body")
+    content = ""
+    if body is not None:
+        encoding = poc.get("body_encoding")
+        if encoding == "json":
+            content, kind = json.dumps(body), "application/json"
+        elif encoding == "multipart":
+            chunks = [
+                f'--{MULTIPART_BOUNDARY}\r\nContent-Disposition: form-data; name="{name}"'
+                f"\r\n\r\n{value}\r\n"
+                for name, value in body.items()
+            ]
+            content = "".join(chunks) + f"--{MULTIPART_BOUNDARY}--\r\n"
+            kind = f"multipart/form-data; boundary={MULTIPART_BOUNDARY}"
+        else:
+            content, kind = urlencode(body), "application/x-www-form-urlencoded"
+        lines += [f"Content-Type: {kind}", f"Content-Length: {len(content.encode())}"]
+    return "\r\n".join(lines) + "\r\n\r\n" + content
+
+
 def _quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"

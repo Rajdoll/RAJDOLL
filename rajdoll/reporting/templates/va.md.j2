@@ -1,0 +1,130 @@
+# Laporan Vulnerability Assessment: {{ engagement.name }}
+
+| Butir | Keterangan |
+|---|---|
+| Aplikasi | {{ engagement.name | cell }} |
+{% if engagement.organization %}
+| Instansi | {{ engagement.organization | cell }} |
+{% endif %}
+| Target | `{{ engagement.target_url | cell }}` |
+{% if period %}
+| Periode pengujian | {{ period }} |
+{% endif %}
+| Tanggal laporan | {{ generated }} |
+| Scan | {% for scan in scans %}#{{ scan.number }} ({{ scan.date }}){% if not loop.last %}, {% endif %}{% else %}—{% endfor %} |
+
+## 1. Ringkasan
+
+Pengujian kerentanan dilakukan terhadap `{{ engagement.target_url | cell }}` dengan acuan OWASP Web Security Testing Guide (WSTG). Laporan ini memuat **{{ findings | length }} temuan** yang telah diperiksa dan diterima oleh asesor.
+
+| Severity | Jumlah |
+|---|---|
+{% for row in severity_counts %}
+| {{ row.label }} | {{ row.count }} |
+{% endfor %}
+
+{% if not findings %}
+Tidak ada temuan yang diterima.
+{% endif %}
+## 2. Daftar temuan
+
+{% if findings %}
+| No | Judul | Severity | CVSS 3.1 | WSTG | Validasi |
+|---|---|---|---|---|---|
+{% for f in findings %}
+| {{ f.number }} | {{ f.title | cell }} | {{ f.severity_label }} | {{ f.cvss31_score if f.cvss31_score is not none else "—" }} | {{ f.wstg_id or "—" }} | {{ f.validation_label }} |
+{% endfor %}
+{% else %}
+Tidak ada temuan yang diterima.
+{% endif %}
+
+## 3. Detail temuan
+{% for f in findings %}
+
+### 3.{{ f.number }} {{ f.title }}
+
+| Butir | Keterangan |
+|---|---|
+| Severity | {{ f.severity_label }} |
+| CVSS 3.1 | {% if f.cvss31_vector %}{{ f.cvss31_score }} (`{{ f.cvss31_vector }}`){% else %}—{% endif %} |
+| WSTG / CWE | {{ f.wstg_id or "—" }} / {{ f.cwe_id or "—" }} |
+| Endpoint | {% if f.endpoint %}`{{ f.endpoint | cell }}`{% else %}—{% endif %} |
+| Parameter | {% if f.parameter %}`{{ f.parameter | cell }}`{% else %}—{% endif %} |
+| Status validasi | {{ f.validation_label }} |
+
+**Deskripsi**
+
+{{ f.description }}
+
+**Dampak**
+
+{{ f.impact }}
+{% if f.curl %}
+
+**Langkah reproduksi**
+
+{{ f.curl | fenced("bash") }}
+
+Sesi akun tidak disertakan; tambahkan header `Cookie` atau `Authorization` milik akun uji bila endpoint membutuhkan login.
+{% endif %}
+{% if f.evidence %}
+
+**Evidence**
+{% for e in f.evidence %}
+
+_{{ e.label }}{% if e.note %}: {{ e.note }}{% endif %}_
+
+{{ e.request | fenced("http") }}
+{% if e.response %}
+
+{{ e.response | fenced("http") }}
+{% endif %}
+{% if e.cut %}
+
+_Response dipotong untuk laporan; evidence lengkap tersimpan di RAJDOLL._
+{% endif %}
+{% endfor %}
+{% endif %}
+
+**Rekomendasi**
+
+{{ f.recommendation }}
+{% if f.references %}
+
+**Referensi**
+
+{% for ref in f.references %}
+- <{{ ref }}>
+{% endfor %}
+{% endif %}
+{% else %}
+
+Tidak ada temuan yang diterima.
+{% endfor %}
+
+## 4. Pengujian yang terblokir
+
+{% if blocked %}
+Pengujian berikut tidak selesai karena terblokir; area ini belum teruji dan sebaiknya diuji ulang atau diperiksa manual.
+
+{% for task in blocked %}
+- {{ task.module }}, `{{ task.engine }}`{% if task.target %} pada `{{ task.target | cell }}`{% endif %}{% if task.error %}: {{ task.error }}{% endif %}
+
+{% endfor %}
+{% else %}
+Tidak ada pengujian yang terblokir.
+{% endif %}
+
+## Lampiran A. Scope
+
+{% for pattern in scope %}
+- `{{ pattern }}`
+{% endfor %}
+
+## Lampiran B. Metodologi
+
+- Pengujian mengikuti kategori OWASP WSTG. Modul yang dijalankan: {{ modules | join(", ") if modules else "—" }}.
+- Seluruh lalu lintas ke target melewati egress proxy RAJDOLL yang menegakkan scope dan mencatat setiap request.
+- Temuan berstatus **terkonfirmasi** dibuktikan secara deterministik oleh validator (respons diulang dengan nilai baru, atau payload tereksekusi di browser). Temuan **perlu cek manual** belum terbukti otomatis dan telah diperiksa asesor.
+- Skor CVSS dihitung dari vektor CVSS 3.1; severity mengikuti skor tersebut.
+- Laporan hanya memuat temuan yang diterima asesor.

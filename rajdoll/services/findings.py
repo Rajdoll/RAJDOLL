@@ -9,19 +9,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from rajdoll.core import cvss
 from rajdoll.core.crypto import FieldCipher, KeyStore
-from rajdoll.core.enums import EvidenceKind, Validation
+from rajdoll.core.enums import Decision, EvidenceKind, RetestResult, Validation
 from rajdoll.core.models import Endpoint, Engagement, Evidence, Finding
 from rajdoll.data import vuln_types
+from rajdoll.modules import httpkit
 from rajdoll.modules.base import Candidate, Exchange, Verdict
 from rajdoll.services import engagements, inventory
+from rajdoll.services.errors import NotFound, ValidationFailed
 
 DEFAULT_EVIDENCE_BYTES = 1_048_576
 
@@ -250,3 +254,191 @@ def as_dict(finding: Finding) -> dict[str, Any]:
 
 def dumps(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+# --------------------------------------------------------------------------------------
+# Triage (AFD A8, BSD 10.5)
+# --------------------------------------------------------------------------------------
+
+VALIDATION_LABELS = {
+    Validation.CONFIRMED: "terkonfirmasi",
+    Validation.NEEDS_MANUAL_CHECK: "perlu cek manual",
+    Validation.MANUAL: "manual",
+}
+DECISION_LABELS = {
+    Decision.PENDING: "belum diputuskan",
+    Decision.ACCEPTED: "diterima",
+    Decision.REJECTED: "ditolak",
+}
+EVIDENCE_KIND_LABELS = {
+    "detection": "deteksi",
+    "validation": "validasi",
+    "verification_round": "putaran verifikasi",
+    "resend": "kirim ulang",
+    "retest": "retest",
+    "manual": "manual",
+}
+SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+FILTERS = ("validation", "decision", "severity", "module", "scan_id")
+MAX_REASON = 2000
+
+
+def _filter_values(filters: dict[str, Any]) -> dict[str, Any]:
+    """Known filters with a non-empty value; unknown values are a validation error."""
+    allowed = {
+        "validation": set(Validation),
+        "decision": set(Decision),
+        "severity": set(SEVERITY_ORDER),
+    }
+    chosen: dict[str, Any] = {}
+    for name in FILTERS:
+        value = str(filters.get(name) or "").strip()
+        if not value:
+            continue
+        if name in allowed and value not in allowed[name]:
+            raise ValidationFailed.one(name, f"Nilai filter {name} tidak dikenal.")
+        if name == "scan_id":
+            if not value.isdigit():
+                raise ValidationFailed.one("scan_id", "Filter scan harus berupa nomor.")
+            chosen[name] = int(value)
+        else:
+            chosen[name] = value
+    return chosen
+
+
+def list_for(
+    session: Session, engagement_id: int, filters: dict[str, Any] | None = None
+) -> list[Finding]:
+    """Findings of an engagement in the AFD A8 order: undecided first, then confirmed before
+    needs-manual-check, then highest severity. Merged findings are hidden."""
+    chosen = _filter_values(filters or {})
+    query = select(Finding).where(
+        Finding.engagement_id == engagement_id, Finding.merged_into_id.is_(None)
+    )
+    for name in ("validation", "decision", "severity", "module"):
+        if name in chosen:
+            query = query.where(getattr(Finding, name) == chosen[name])
+    if "scan_id" in chosen:
+        query = query.where(
+            or_(
+                Finding.first_scan_id == chosen["scan_id"],
+                Finding.last_scan_id == chosen["scan_id"],
+            )
+        )
+    decision_rank = case({"pending": 0, "accepted": 1, "rejected": 2}, value=Finding.decision)
+    validation_rank = case(
+        {"confirmed": 0, "manual": 1, "needs_manual_check": 2}, value=Finding.validation
+    )
+    severity_rank = case({s: i for i, s in enumerate(SEVERITY_ORDER)}, value=Finding.severity)
+    return list(
+        session.scalars(query.order_by(decision_rank, validation_rank, severity_rank, Finding.id))
+    )
+
+
+def decision_counts(session: Session, engagement_id: int) -> dict[str, int]:
+    rows = session.execute(
+        select(Finding.decision, func.count())
+        .where(Finding.engagement_id == engagement_id, Finding.merged_into_id.is_(None))
+        .group_by(Finding.decision)
+    )
+    counts = {d.value: 0 for d in Decision}
+    counts.update({decision: count for decision, count in rows})
+    return counts
+
+
+def get(session: Session, finding_id: int) -> Finding:
+    finding = session.get(Finding, finding_id)
+    if finding is None or finding.merged_into_id is not None:
+        raise NotFound("Temuan tidak ditemukan.")
+    return finding
+
+
+def decide(session: Session, finding: Finding, decision: str, reason: str | None = None) -> None:
+    """The assessor's decision (AFD 3.4). Rejecting needs a reason; leaving `accepted` clears
+    the retest result first (BSD 6.1)."""
+    if decision not in set(Decision):
+        raise ValidationFailed.one(
+            "decision", "Keputusan harus diterima, ditolak, atau belum diputuskan."
+        )
+    reason = (reason or "").strip()
+    if decision == Decision.REJECTED and not reason:
+        raise ValidationFailed.one("reason", "Alasan wajib diisi saat menolak temuan.")
+    if len(reason) > MAX_REASON:
+        raise ValidationFailed.one("reason", f"Alasan paling panjang {MAX_REASON} karakter.")
+    if decision != Decision.ACCEPTED:
+        finding.retest_result = RetestResult.NOT_TESTED
+    finding.decision = decision
+    finding.decision_reason = reason if decision == Decision.REJECTED else None
+    finding.decided_at = None if decision == Decision.PENDING else datetime.now(UTC)
+    session.flush()
+
+
+def base_url_of(session: Session, finding: Finding) -> str:
+    """Where the PoC path is sent: the finding's endpoint host, else the engagement target."""
+    endpoint = session.get(Endpoint, finding.endpoint_id) if finding.endpoint_id else None
+    if endpoint is not None:
+        return f"{endpoint.scheme}://{endpoint.host}"
+    target = urlsplit(session.get(Engagement, finding.engagement_id).target_url)
+    return f"{target.scheme}://{target.netloc}"
+
+
+def poc_text(session: Session, keystore: KeyStore, finding: Finding, fmt: str) -> str:
+    """The PoC as a curl command or a raw HTTP request (Burp Repeater), without the session."""
+    spec = poc(session, keystore, finding)
+    if not spec:
+        raise NotFound("Temuan ini tidak punya PoC.")
+    base = base_url_of(session, finding)
+    if fmt == "curl":
+        return httpkit.curl(base, spec)
+    if fmt == "raw":
+        return httpkit.raw_from_poc(base, spec)
+    raise ValidationFailed.one("format", "Format PoC harus curl atau raw.")
+
+
+def detail(session: Session, keystore: KeyStore, finding: Finding) -> dict[str, Any]:
+    """BSD 10.5 `GET /findings/{id}` (without evidence)."""
+    endpoint = session.get(Endpoint, finding.endpoint_id) if finding.endpoint_id else None
+    evidence_count = session.scalar(
+        select(func.count()).select_from(Evidence).where(Evidence.finding_id == finding.id)
+    )
+    return {
+        "id": finding.id,
+        "title": finding.title,
+        "vuln_type": finding.vuln_type,
+        "module": finding.module,
+        "wstg_id": finding.wstg_id,
+        "cwe_id": finding.cwe_id,
+        "endpoint": (
+            {
+                "id": endpoint.id,
+                "method": endpoint.method,
+                "path_template": endpoint.path_template,
+                "url": inventory.url_of(endpoint),
+            }
+            if endpoint is not None
+            else None
+        ),  # fmt: skip
+        "parameter": finding.parameter,
+        "severity": finding.severity,
+        "cvss31": _cvss(finding.cvss31_vector, finding.cvss31_score),
+        "cvss40": _cvss(finding.cvss40_vector, finding.cvss40_score),
+        "validation": finding.validation,
+        "decision": finding.decision,
+        "decision_reason": finding.decision_reason,
+        "decided_at": finding.decided_at,
+        "retest_result": finding.retest_result,
+        "description": finding.description,
+        "impact": finding.impact,
+        "recommendation": finding.recommendation,
+        "references": list(finding.references or []),
+        "evidence_count": evidence_count or 0,
+        "first_scan_id": finding.first_scan_id,
+        "last_scan_id": finding.last_scan_id,
+        "has_poc": finding.poc_spec_enc is not None,
+    }
+
+
+def _cvss(vector: str | None, score: Decimal | None) -> dict[str, Any] | None:
+    if not vector:
+        return None
+    return {"vector": vector, "score": float(score) if score is not None else None}
