@@ -29,7 +29,7 @@ def _template(ctx: TaskContext, finding: dict[str, Any], params: dict[str, Any])
         return Verdict(False, (), "PoC tidak menyebut template nuclei; perlu cek manual.")
     url = _url(ctx, finding)
     origin = config_checks.origin_of(url)
-    run = {"targets": [origin + "/"], "templates": [template]}
+    run = {"targets": [origin], "templates": [template]}  # no trailing slash, as in detection
     result = ctx.run_tool("nuclei", run, timeout_s=config_checks.NUCLEI_TIMEOUT_S)
     for hit in (result.get("normalized") or {}).get("candidates") or []:
         matched = (hit.get("matched_at") or "").split("?", 1)[0]

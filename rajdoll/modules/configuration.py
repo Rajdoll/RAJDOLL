@@ -88,7 +88,9 @@ class Configuration:
 
     def _nuclei(self, ctx: TaskContext) -> list[str]:
         origin = ctx.target["origin"]
-        params = {"targets": [origin + "/"], "templates": config_checks.NUCLEI_TEMPLATES}
+        # The origin without a trailing slash: templates that build `{{BaseURL}}{{paths}}` from
+        # paths starting with "/" would otherwise request `//info.php`.
+        params = {"targets": [origin], "templates": config_checks.NUCLEI_TEMPLATES}
         result = ctx.run_tool("nuclei", params, timeout_s=config_checks.NUCLEI_TIMEOUT_S)
         if result.get("status") != "completed":
             ctx.log(f"nuclei config {origin}: {result.get('status')}")

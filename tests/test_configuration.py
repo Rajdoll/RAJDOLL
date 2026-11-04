@@ -232,7 +232,7 @@ def test_nuclei_hits_become_findings_with_their_endpoints() -> None:
         return {"status": "completed", "normalized": {"candidates": hits}}
 
     reported, added = _run(TESTAPP.app, "nuclei:config", {"origin": BASE}, run_tool=run_tool)
-    assert calls == [{"targets": [BASE + "/"], "templates": ["config", "rajdoll/exposure"]}]
+    assert calls == [{"targets": [BASE], "templates": ["config", "rajdoll/exposure"]}]
     assert [(c.vuln_type, c.url) for c in reported] == [
         ("sensitive_file", BASE + "/.git/config"),
         ("sensitive_file", BASE + "/.env"),
