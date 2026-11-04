@@ -105,6 +105,7 @@ def _load() -> None:
         authentication,
         authorization,
         configuration,
+        errors,
         injection,
         session,
     )
