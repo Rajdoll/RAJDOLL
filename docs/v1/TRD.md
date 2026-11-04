@@ -107,7 +107,7 @@ Profil scan (Lengkap dan Kustom) didefinisikan dalam berkas YAML di repo: daftar
 |---|---|
 | Pause oleh asesor | Worker berhenti mengambil tugas baru. Tugas yang sedang berjalan dihentikan dan dikembalikan ke `pending`. |
 | Resume | Worker melanjutkan dari tugas `pending` berikutnya. |
-| Worker crash atau laptop restart | Saat worker hidup kembali, tugas berstatus `running` milik worker lama dikembalikan ke `pending`. |
+| Worker crash atau laptop restart | Saat worker hidup kembali, tugas berstatus `running` milik worker lama dikembalikan ke `pending` setelah lease-nya habis (bawaan 60 detik tanpa pembaruan `locked_at`). Worker yang dihentikan dengan baik (SIGTERM) langsung mengembalikan tugasnya. |
 | Cancel | Semua tugas yang belum selesai menjadi `skipped`. Temuan yang sudah ada tetap disimpan. |
 
 Agar tugas aman diulang, setiap temuan punya **sidik jari** (gabungan modul, jenis kerentanan, endpoint yang dinormalisasi, dan parameter). Temuan dengan sidik jari sama tidak dibuat dua kali; evidence barunya ditambahkan ke temuan yang sudah ada.
