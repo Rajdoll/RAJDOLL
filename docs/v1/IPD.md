@@ -4,7 +4,7 @@
 |---|---|
 | Dokumen | Implementation Plan Document (IPD) |
 | Acuan | PRD v1.1, TRD v1.1, AFD v1.0, BSD v1.0 |
-| Status | Draf untuk ditinjau |
+| Status | Disetujui (v1.0, 4 November 2026) |
 | Pelaksana | Claude menulis kode; pemilik proyek me-review dan menyetujui setiap PR |
 
 Dokumen ini berisi urutan pengerjaan, pemetaan kode lama, dan kriteria selesai setiap fase. Tidak ada perkiraan waktu; urutan dan kriteria yang menjadi pegangan.
@@ -376,9 +376,9 @@ Setelah M1, sistem sudah bisa dicoba pada pekerjaan nyata secara terbatas, sambi
 | Model 4B lambat sehingga scan terasa lama | Anggaran panggilan LLM per scan dan jalan cadangan; LLM tidak pernah menghalangi tahap berjalan. |
 | Lingkup bertambah di tengah jalan | Permintaan baru dicatat sebagai kandidat v2 di PRD bagian 10, kecuali Anda memutuskan memasukkannya ke v1. |
 
-## 8. Pertanyaan terbuka
+## 8. Keputusan tambahan
 
-| No | Pertanyaan | Usulan |
+| No | Pertanyaan | Keputusan |
 |---|---|---|
-| I1 | Folder `.github/` di-ignore oleh `.gitignore`, sehingga CI (GitHub Actions) tidak bisa di-commit. Apakah CI diaktifkan? | Aktifkan: hapus `.github/` dari `.gitignore` dan tambah workflow yang menjalankan `ruff` dan `pytest` di setiap PR. |
+| I1 | Aktifkan CI (GitHub Actions)? | Ya. `.github/` dihapus dari `.gitignore`; workflow menjalankan `ruff` dan `pytest` di setiap PR (F0). |
 | I2 | Branch tujuan PR | `main`, dengan setiap fase di branch sendiri. |
