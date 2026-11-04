@@ -502,11 +502,17 @@ Contoh `POST /engagements` (JSON):
 | `POST` | `/scans/{scan_id}/skip-blocked-modules` | Menandai tugas modul yang terblokir sebagai `blocked`, lalu melanjutkan scan. |
 | `GET` | `/scans/{scan_id}/tasks` | Filter: `status`, `module`. |
 | `GET` | `/scans/{scan_id}/events` | Polling: `?after_id=`. |
-| `GET` | `/scans/{scan_id}/events/stream` | SSE untuk UI. Nama event: `stage`, `task`, `stats`, `finding`, `notice`. Isi event berupa potongan HTML untuk ekstensi SSE HTMX. |
+| `GET` | `/scans/{scan_id}/events/stream` | SSE untuk UI. Nama event: `stage`, `task`, `stats`, `finding`, `notice`, `done`. Isi event berupa potongan HTML untuk ekstensi SSE HTMX. |
 | `GET` | `/scans/{scan_id}/checkpoint` | Data checkpoint (lihat contoh). |
 | `POST` | `/scans/{scan_id}/checkpoint/hold` | Menahan hitung mundur (`checkpoint_deadline = null`) saat mulai menyunting. |
 | `PATCH` | `/scans/{scan_id}/checkpoint` | Body: `modules`, `endpoints` (`[{"id", "excluded", "tags"}]`), `add_endpoints` (`[{"method", "url"}]` atau `[{"raw_request"}]`), `add_scope` (`[pattern]`). |
 | `POST` | `/scans/{scan_id}/checkpoint/continue` | Lanjut ke tahap pengujian. |
+
+Catatan implementasi (F4b):
+- Stream SSE memakai satu koneksi `LISTEN scan_events` per klien. Setiap ada notifikasi untuk scan itu (dan paling lambat setiap 15 detik), potongan `stage`, `task`, `stats`, dan `finding` dirender ulang dan hanya yang berubah dikirim. `notice` berisi baris log baru dengan `id` = ID event terakhir, sehingga browser yang tersambung ulang (header `Last-Event-ID`) tidak menerima baris lama. `done` dikirim setelah scan selesai, dibatalkan, atau gagal; halaman memakainya sebagai `sse-close` agar browser tidak menyambung ulang. Stream ditutup server setelah 10 menit dan browser menyambung ulang sendiri.
+- `GET /scans/{scan_id}/events` mengembalikan event urut naik (untuk polling); versi HTML berisi 500 baris terbaru.
+- Aksi jeda, lanjut, batal, dan checkpoint menjawab potongan status scan untuk htmx, JSON ringkasan scan untuk klien JSON, atau redirect ke monitor untuk form biasa.
+- Di F4b, `GET /scans/{scan_id}/checkpoint` berisi tenggat, ringkasan recon dari hasil tugas recon (teknologi dan endpoint yang menjawab), dan daftar modul; `endpoints` masih kosong. `PATCH /scans/{scan_id}/checkpoint` hadir di F5 dan `POST /scans/{scan_id}/skip-blocked-modules` di F9.
 
 Contoh `GET /scans/{scan_id}/checkpoint`:
 
