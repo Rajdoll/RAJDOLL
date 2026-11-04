@@ -16,7 +16,7 @@ The approved documents in `docs/v1/` define what to build. Read the relevant one
 
 ## Current phase
 
-**F0 — preparation.** Skeleton only: `/health` on `api` and `tools`, a heartbeat-only `worker`, and `db`. See `docs/v1/IPD.md` section 4 for what each later phase adds.
+**F1 — foundation.** F1a adds the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b adds login, CSRF, renderers, and the UI layout. See `docs/v1/IPD.md` section 4 for later phases.
 
 ## Layout
 
@@ -53,6 +53,17 @@ pip install -e ".[dev]"
 ruff check . && ruff format --check . && pytest
 docker compose up -d --build        # needs .env with POSTGRES_PASSWORD
 ```
+
+Database tests need PostgreSQL 16 (UTF-8) and a user that can create databases and roles:
+
+```bash
+export RAJDOLL_TEST_DATABASE_URL=postgresql+psycopg://rajdoll_app:secret@127.0.0.1:5432/postgres
+pytest                              # each test module gets a fresh migrated database
+```
+
+Without that variable the database tests are skipped; CI sets `RAJDOLL_REQUIRE_DB_TESTS=1` so they can never be skipped there.
+
+New migration: change the models, then `alembic revision --autogenerate -m "<what>"`, review the file, and keep `tests/test_migrations.py::test_models_match_migration` green.
 
 ## Conventions
 
