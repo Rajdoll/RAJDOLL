@@ -195,8 +195,16 @@ class LlmGateway:
         if self._down_until.get(config.base_url, 0) > self.clock():
             return LlmOutcome(None, UNAVAILABLE)
 
-        with self._process_lock, self.session_factory() as session:
-            session.execute(select(func.pg_advisory_lock(ADVISORY_LOCK_KEY)))
+        # The advisory lock lives on its own connection, held for the whole call: the recording
+        # session commits, and a session-level lock must be released on the connection that
+        # took it.
+        with (
+            self._process_lock,
+            self.session_factory() as lock_session,
+            self.session_factory() as session,
+        ):
+            lock = lock_session.connection()
+            lock.execute(select(func.pg_advisory_lock(ADVISORY_LOCK_KEY)))
             try:
                 return self._locked_call(
                     session, task, messages, snapshot, config,
@@ -204,8 +212,8 @@ class LlmGateway:
                 )  # fmt: skip
             finally:
                 session.rollback()  # anything not committed by _locked_call
-                session.execute(select(func.pg_advisory_unlock(ADVISORY_LOCK_KEY)))
-                session.commit()
+                lock.execute(select(func.pg_advisory_unlock(ADVISORY_LOCK_KEY)))
+                lock_session.commit()
 
     def _locked_call(
         self,

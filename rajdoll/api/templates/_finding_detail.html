@@ -45,6 +45,40 @@
   </section>
   {% endif %}
 
+  {% if ai_notes %}
+  <section class="ai-notes" aria-label="Catatan AI">
+    <h3 class="h6">Catatan AI <span class="badge ai">keluaran AI, periksa sebelum dipakai</span></h3>
+    {% if ai_notes.get('explanation') %}<p class="prewrap">{{ ai_notes.get('explanation') }}</p>{% endif %}
+    {% if ai_notes.get('impact') %}<p class="prewrap"><strong>Dampak:</strong> {{ ai_notes.get('impact') }}</p>{% endif %}
+    {% if ai_notes.get('fix') %}<p class="prewrap"><strong>Saran perbaikan:</strong> {{ ai_notes.get('fix') }}</p>{% endif %}
+    {% if ai_notes.get('manual_test_suggestions') %}
+    <p><strong>Saran uji manual:</strong></p>
+    <ul>{% for item in ai_notes.get('manual_test_suggestions') or [] %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if ai_notes.get('possible_duplicates') %}
+    <p>Kemungkinan duplikat dengan: {% for other in ai_notes.get('possible_duplicates') or [] %}<a href="/findings/{{ other }}" hx-get="/findings/{{ other }}" hx-target="#finding-detail">#{{ other }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if ai_notes.get('verification_rounds') %}
+    <details>
+      <summary>Riwayat mini-loop verifikasi ({{ (ai_notes.get('verification_rounds') or []) | length }} putaran)</summary>
+      <ol>
+        {% for round in ai_notes.get('verification_rounds') or [] %}
+        <li>
+          {% if round.get('confirmed') %}<strong class="success">terkonfirmasi validator</strong>{% else %}belum terkonfirmasi{% endif %}
+          {% if round.get('reasoning') %}· {{ round.get('reasoning') }}{% endif %}
+          <ul>
+            {% for req in round.get('requests') or [] %}<li><code>{{ req.method }} {{ req.path }}</code> {% if req.get('skipped') %}<span class="muted">dilewati: {{ req.get('skipped') }}</span>{% else %}→ HTTP {{ req.get('status') }}{% endif %}</li>{% endfor %}
+            {% if round.get('base_value') %}<li>nilai dasar usulan: <code>{{ round.get('base_value') }}</code></li>{% endif %}
+            {% if round.get('validator_note') %}<li class="muted">validator: {{ round.get('validator_note') }}</li>{% endif %}
+          </ul>
+        </li>
+        {% endfor %}
+      </ol>
+    </details>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <section>
     <h3 class="h6">Evidence ({{ finding.evidence_count }})</h3>
     {% include "_finding_evidence.html" %}

@@ -1,0 +1,13 @@
+Temuan #{{ finding.id }}: {{ finding.title }}
+Jenis: {{ finding.vuln_type }} · severity: {{ finding.severity }} · validasi: {{ finding.validation }}
+Endpoint: {{ endpoint or "-" }} · parameter: {{ finding.parameter or "-" }}
+
+Evidence ringkas:
+{{ evidence }}
+{% if others %}
+
+Temuan lain di scan ini:
+{% for other in others %}
+- #{{ other.id }} {{ other.title }}
+{% endfor %}
+{% endif %}

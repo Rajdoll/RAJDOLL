@@ -289,7 +289,7 @@ Pekerjaan:
 - Pengaturan LLM dan uji koneksi di UI, indikator di navigasi, peringatan jika memakai API.
 - Catatan AI dan riwayat mini-loop di detail temuan.
 
-Catatan pelaksanaan: F7 dikirim dalam dua PR. F7a berisi klien dan gateway LLM (antrean satu-per-satu, batas waktu, satu kali ulang dengan prompt perbaikan, anggaran per scan, pencatatan `llm_call` terenkripsi, lewati server yang tidak terjangkau), pemangkas konteks dan pembungkus konten target, `ctx.llm` di engine, serta pengaturan LLM (aktif/mati, kunci API terenkripsi, batas waktu, anggaran, uji koneksi) dan indikator lokal/API/mati di navigasi. F7b berisi kelima tugas LLM beserta jalan cadangannya, mini-loop, dan catatan AI di detail temuan.
+Catatan pelaksanaan: F7 dikirim dalam dua PR. F7a berisi klien dan gateway LLM (antrean satu-per-satu, batas waktu, satu kali ulang dengan prompt perbaikan, anggaran per scan, pencatatan `llm_call` terenkripsi, lewati server yang tidak terjangkau), pemangkas konteks dan pembungkus konten target, `ctx.llm` di engine, serta pengaturan LLM (aktif/mati, kunci API terenkripsi, batas waktu, anggaran, uji koneksi) dan indikator lokal/API/mati di navigasi. F7b berisi kelima tugas LLM beserta jalan cadangannya (`rajdoll/llm/tasks.py`, prompt di `rajdoll/llm/prompts/`), modul bawaan `ai` (tanda endpoint di perencanaan, triase di tahap triase AI), `build_input` di probe Input Validation, mini-loop di tahap validasi (`rajdoll/validators/miniloop.py`), dan catatan AI serta riwayat mini-loop di detail temuan. `judge_response` siap dipakai modul Authorization (F8).
 
 Kriteria selesai:
 - Dengan LLM mati, hasil scan terhadap `testapp` sama dengan M1.

@@ -167,13 +167,19 @@ class Injection:
         }
 
 
-def injections(endpoint: dict[str, Any]) -> list[Injection]:
-    """Every parameter of an inventory endpoint as an injection point."""
+def injections(endpoint: dict[str, Any], values: dict[str, str] | None = None) -> list[Injection]:
+    """Every parameter of an inventory endpoint as an injection point. `values` replaces the
+    built-in normal values (for example realistic values from the LLM's `build_input`)."""
+    chosen = values or {}
+
+    def normal(name: str) -> str:
+        return chosen.get(name) or default_value(name)
+
     method = endpoint["method"]
     url = concrete_url(endpoint["url"])
-    query = {name: default_value(name) for name in endpoint.get("query_params") or []}
+    query = {name: normal(name) for name in endpoint.get("query_params") or []}
     body_params = [p for p in endpoint.get("body_params") or [] if p.get("name")]
-    body = {p["name"]: default_value(p["name"]) for p in body_params}
+    body = {p["name"]: normal(p["name"]) for p in body_params}
     locations = {p.get("location") for p in body_params}
     body_location = (
         "json"

@@ -57,6 +57,7 @@ def detail_context(db: Session, keystore: KeyStore, finding: Finding) -> dict[st
         "finding": detail,
         "evidence": evidence,
         "poc": poc,
+        "ai_notes": findings.llm_notes(db, keystore, finding),
         "decision_errors": [],
     }
 

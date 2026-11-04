@@ -13,8 +13,10 @@ weakness add evidence to one finding (same fingerprint). The validation stage co
 from __future__ import annotations
 
 from typing import Any, ClassVar
+from urllib.parse import urlsplit
 
 from rajdoll.core.enums import ScanStage
+from rajdoll.llm import tasks
 from rajdoll.modules import httpkit, injection_checks, injection_tools
 from rajdoll.modules.base import Candidate, PlanContext, TaskContext, TaskSpec
 
@@ -74,10 +76,11 @@ class InputValidation:
         endpoint = dict(ctx.target)
         headers = ctx.session_headers(None)
         reported: list[str] = []
+        values = self._input_values(ctx, endpoint)
         with ctx.http("inpv") as client:
             root = client.get(ctx.target_url, headers=headers)
             marker = injection_checks.page_marker(root.text)
-            for point in httpkit.injections(endpoint):
+            for point in httpkit.injections(endpoint, values):
                 ctx.check_cancelled()
                 hits = self._probe(ctx, client, point, headers, marker)
                 for hit in hits:
@@ -96,6 +99,28 @@ class InputValidation:
         if reported:
             ctx.log(f"{endpoint['method']} {endpoint['url']}: kandidat {', '.join(reported)}")
         return {"candidates": reported}
+
+    def _input_values(self, ctx: TaskContext, endpoint: dict[str, Any]) -> dict[str, str]:
+        """Realistic normal values from the LLM (`build_input`, PRD F-18), so the application
+        processes the request before a payload is added; the built-in defaults otherwise."""
+        names = [p.parameter for p in httpkit.injections(endpoint)]
+        if not names:
+            return {}
+        outcome = ctx.llm(
+            tasks.BUILD_INPUT,
+            tasks.messages(
+                "build_input",
+                method=endpoint["method"],
+                path=urlsplit(endpoint["url"]).path or "/",
+                parameters=names,
+                sample=None,
+            ),
+            endpoint_id=endpoint.get("endpoint_id"),
+        )
+        if outcome is None or not outcome.ok:
+            return {}
+        # Only values for the endpoint's own parameters, and never an empty one.
+        return {v.name: v.value for v in outcome.value.values if v.name in names and v.value}
 
     def _probe(
         self,

@@ -259,7 +259,7 @@ Indeks: `(scan_id, id)`. Trigger `scan_event_notify` menjalankan `pg_notify('sca
 | `references` | `jsonb` | Daftar tautan. |
 | `template_id` | FK → `finding_template` null | |
 | `poc_spec_enc` | `bytea` null | Lihat 6.2. |
-| `llm_notes_enc` | `bytea` null | JSON `{"explanation", "manual_test_suggestions": [..], "verification_rounds": [..]}`. |
+| `llm_notes_enc` | `bytea` null | JSON `{"explanation", "impact", "fix", "manual_test_suggestions": [..], "possible_duplicates": [<id temuan>], "verification_rounds": [{"round", "requests": [{"method", "path", "status" \| "skipped"}], "base_value", "reasoning", "validator_note", "confirmed"}]}`. Putaran baru ditambahkan; kunci lain diganti oleh triase terakhir (F7b). |
 | `merged_into_id` | FK → `finding` null | Diisi jika digabung ke temuan lain; temuan ini disembunyikan dari daftar dan laporan. |
 | `first_scan_id`, `last_scan_id` | FK → `scan` null | |
 | `created_at`, `updated_at` | `timestamptz` | |
