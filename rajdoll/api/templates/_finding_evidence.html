@@ -1,0 +1,31 @@
+{# Evidence in order (AFD A8). Raw text is escaped; HTML responses can be previewed in a
+   sandboxed iframe that runs no script and, under the page CSP, loads nothing external. #}
+{% for row in evidence %}
+<article class="evidence">
+  <header>
+    <strong>#{{ row.sequence }} {{ evidence_kind_labels.get(row.kind, row.kind) }}</strong>
+    {% if row.note %}<span class="muted">· {{ row.note }}</span>{% endif %}
+    {% if row.status %}<span class="badge">HTTP {{ row.status }}</span>{% endif %}
+    {% if row.truncated %}<span class="badge">dipotong</span>{% endif %}
+    <small class="muted">{{ wib(row.created_at, "%d-%m-%Y %H:%M") }}</small>
+  </header>
+  <details{% if loop.first %} open{% endif %}>
+    <summary>Request</summary>
+    <pre class="raw"><code>{{ row.request }}</code></pre>
+  </details>
+  {% if row.response %}
+  <details>
+    <summary>Response</summary>
+    <pre class="raw"><code>{{ row.response }}</code></pre>
+  </details>
+  {% endif %}
+  {% if row.preview %}
+  <details>
+    <summary>Pratinjau HTML</summary>
+    <iframe class="preview" sandbox="" referrerpolicy="no-referrer" title="Pratinjau response #{{ row.sequence }}" srcdoc="{{ row.preview }}"></iframe>
+  </details>
+  {% endif %}
+</article>
+{% else %}
+<p class="muted">Tidak ada evidence.</p>
+{% endfor %}

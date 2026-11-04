@@ -1,0 +1,11 @@
+{% extends layout %}
+{% block title %}Temuan · {{ engagement.name }} · RAJDOLL{% endblock %}
+{% block content %}
+{% include "_engagement_header.html" %}
+<div class="findings-layout">
+  <section id="findings-list" class="findings-list">{% include "_findings_list.html" %}</section>
+  <section id="finding-detail" class="finding-detail" aria-live="polite">
+    {% if finding %}{% include "_finding_detail.html" %}{% else %}<p class="muted">Pilih temuan di daftar untuk melihat detailnya.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

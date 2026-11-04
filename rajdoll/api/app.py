@@ -16,7 +16,7 @@ from rajdoll.api.render import (
     service_error_response,
     wants_json,
 )
-from rajdoll.api.routes import auth, engagements, scans
+from rajdoll.api.routes import auth, engagements, findings, scans
 from rajdoll.api.routes import settings as settings_routes
 from rajdoll.core.config import get_settings
 from rajdoll.core.crypto import KeyStore
@@ -111,6 +111,7 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(engagements.router)
     app.include_router(scans.router)
+    app.include_router(findings.router)
     app.include_router(settings_routes.router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

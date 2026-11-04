@@ -12,9 +12,9 @@ TABS = [
     ("summary", "Ringkasan", "", None),
     ("scope", "Scope & Akun", "/scope", None),
     ("scan", "Scan", "/scans", None),
-    ("findings", "Temuan", None, "F6"),
+    ("findings", "Temuan", "/findings", None),
     ("retest", "Retest", None, "F10"),
-    ("report", "Laporan", None, "F6"),
+    ("report", "Laporan", "/reports", None),
     ("settings", "Pengaturan", "/settings", None),
 ]
 

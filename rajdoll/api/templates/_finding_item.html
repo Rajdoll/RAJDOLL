@@ -1,0 +1,9 @@
+{# One list entry. `item` is a Finding. #}
+{% set sev = severity_labels.get(item.severity, ("?", item.severity)) %}
+<li id="finding-item-{{ item.id }}" class="finding-item{% if item.id == selected_id %} selected{% endif %}"{% if oob_item is defined and oob_item and oob_item.id == item.id %} hx-swap-oob="true"{% endif %}>
+  <a href="/engagements/{{ item.engagement_id }}/findings?finding={{ item.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}"
+     hx-get="/findings/{{ item.id }}" hx-target="#finding-detail" hx-push-url="/engagements/{{ item.engagement_id }}/findings?finding={{ item.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
+    <span class="sev sev-{{ item.severity }}" title="{{ sev[1] }}">{{ sev[0] }}</span>{{ item.title }}
+  </a>
+  <small class="muted">{{ validation_labels.get(item.validation, item.validation) }} · <span class="decision-{{ item.decision }}">{{ decision_labels.get(item.decision, item.decision) }}</span></small>
+</li>

@@ -1,0 +1,31 @@
+{# The findings list with filters (AFD A8, 5.5). Swapped on filter changes. #}
+{% include "_finding_counts.html" %}
+<form class="filters" method="get" action="/engagements/{{ engagement.id }}/findings"
+      hx-get="/engagements/{{ engagement.id }}/findings" hx-target="#findings-list" hx-push-url="true" hx-trigger="change">
+  <select name="validation" aria-label="Status validasi">
+    <option value="">validasi: semua</option>
+    {% for value, label in validation_labels.items() %}<option value="{{ value }}"{% if filters.validation == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <select name="decision" aria-label="Keputusan">
+    <option value="">keputusan: semua</option>
+    {% for value, label in decision_labels.items() %}<option value="{{ value }}"{% if filters.decision == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <select name="severity" aria-label="Severity">
+    <option value="">severity: semua</option>
+    {% for value, pair in severity_labels.items() %}<option value="{{ value }}"{% if filters.severity == value %} selected{% endif %}>{{ pair[1] }}</option>{% endfor %}
+  </select>
+  {% if module_options | length > 1 %}
+  <select name="module" aria-label="Modul">
+    <option value="">modul: semua</option>
+    {% for value, label in module_options %}<option value="{{ value }}"{% if filters.module == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <noscript><button type="submit" class="secondary btn-small">Terapkan</button></noscript>
+</form>
+{% if items %}
+<ul class="finding-items">
+  {% for item in items %}{% include "_finding_item.html" %}{% endfor %}
+</ul>
+{% else %}
+<p class="muted">{% if filter_query %}Tidak ada temuan yang cocok dengan filter.{% else %}Belum ada temuan. Temuan muncul di sini setelah scan menjalankan modul pengujian.{% endif %}</p>
+{% endif %}
