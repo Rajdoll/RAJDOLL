@@ -16,7 +16,7 @@ The approved documents in `docs/v1/` define what to build. Read the relevant one
 
 ## Current phase
 
-**F1 — foundation.** F1a adds the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b adds login, CSRF, renderers, and the UI layout. See `docs/v1/IPD.md` section 4 for later phases.
+**F1 — foundation.** F1a: the 17-table schema (`rajdoll/core/models/`, `migrations/`), the `rajdoll_tools` role, the scan-event NOTIFY trigger, encryption (`rajdoll/core/crypto.py`), and the startup bootstrap (`rajdoll/core/bootstrap.py`). F1b: single-user login and UI sessions (`rajdoll/services/auth.py`), CSRF, settings (`rajdoll/services/settings.py`), HTML/HTMX/JSON rendering (`rajdoll/api/render.py`), and the base UI. Next is F2 (engagements, scope, accounts). See `docs/v1/IPD.md` section 4.
 
 ## Layout
 
@@ -64,6 +64,15 @@ pytest                              # each test module gets a fresh migrated dat
 Without that variable the database tests are skipped; CI sets `RAJDOLL_REQUIRE_DB_TESTS=1` so they can never be skipped there.
 
 New migration: change the models, then `alembic revision --autogenerate -m "<what>"`, review the file, and keep `tests/test_migrations.py::test_models_match_migration` green.
+
+## Web layer conventions
+
+- Every route returns through `respond()` (or `error_response()`), so one route serves a full page, an HTMX fragment (`HX-Request`), or JSON (`Accept: application/json`). Templates extend `{% extends layout %}`.
+- Routes commit explicitly with `db.commit()`; the `get_db` dependency rolls back anything left uncommitted.
+- State-changing authenticated routes depend on `require_csrf` (header `X-CSRF-Token`, set on `<body hx-headers>`, or form field `csrf_token`).
+- No inline `<script>`, `style=` or `<style>`: the CSP is `script-src 'self'; style-src 'self'`. Add CSS to `rajdoll/api/static/app.css`. Front-end libraries are vendored with pinned versions in `rajdoll/api/static/vendor/` (see `LICENSES.txt` there).
+- htmx swaps 2xx and 422 responses; return 422 with the re-rendered fragment for validation errors.
+- UI text is Indonesian; validation messages go through the label maps in the services.
 
 ## Conventions
 
